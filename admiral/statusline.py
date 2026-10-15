@@ -156,7 +156,7 @@ class Lines:
         if len(teams) > TEAMS:
             lines.append(c(DIM, "  " + W["more_commanders"].format(n=len(teams) - TEAMS)))
 
-        if me and not me["isCommander"] and me["registered"]:
+        if me and not me["isCommander"] and (me["registered"] or me.get("finished")):
             st = me.get("stage") or 0
             word = W["reported_done"] if me.get("reportedDone") else W["stages"][st]
             parts = [self.pips(st, me.get("reportedDone")) + " " + word + (f" {me['note']}" if me.get("note") else "")]

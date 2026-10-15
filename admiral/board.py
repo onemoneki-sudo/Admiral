@@ -44,6 +44,7 @@ TEXT = words_mod.phrases({
         "pr_open": "PR not merged", "merged_left": "merged, wrap-up left: {what}", "worktree": "worktree not deleted",
         "holds": "holds {n} {n:lock|locks}", "registered": "still registered", "merged_clean": "merged and wrapped up",
         "deregister": " (run `admiral done` before closing)", "pr_closed": "PR closed without merging",
+        "pr_unknown": "GitHub did not answer: its PR is unknown",
         "reported_only": "reported done, but no merged PR shows it: confirm the work is over before closing",
         "left": "; wrap-up left: {what}",
         "plan_reported": "plan finished, but {n} {n:deliverable is|deliverables are} only reported done, with no merged PR: "
@@ -95,6 +96,7 @@ TEXT = words_mod.phrases({
         "pr_open": "PR 未合并", "merged_left": "已合并，待收尾：{what}", "worktree": "worktree 未删除",
         "holds": "占用 {n} 把锁", "registered": "仍在登记中", "merged_clean": "已合并并收尾",
         "deregister": "（关闭前 admiral done）", "pr_closed": "PR 已关闭但未合并",
+        "pr_unknown": "GitHub 没有响应，PR 状态未知",
         "reported_only": "已报告完成，但没有已合并的 PR 可以印证：确认任务已结束再关闭",
         "left": "；待收尾：{what}",
         "plan_reported": "交付清单都已完成，但有 {n} 项只是自报完成、没有已合并的 PR：确认后再关闭交付清单",
@@ -226,6 +228,8 @@ def closing(x, locks, groups, now, cfg, T):
     pr = x["pr"]
     if pr and pr["state"] == "OPEN":  # a commander's own PR too
         return "keep", T["pr_open"]
+    if x["prUnknown"]:
+        return "keep", T["pr_unknown"]
     if x["isCommander"]:
         g = next((g for g in groups if g["lead"] == x["name"]), None)
         members = (g or {}).get("members") or []
@@ -382,7 +386,8 @@ def build(cfg, use_gh=True, now=None, starts=sessions.proc_starts, fetch=github.
         own = [b for b in bs if b not in c["guessed"]
                or (not c["isCommander"] and (prs.get(b) or {}).get("state") == "OPEN")]
         pr, lead, finished = github.pick(own, prs), (r or {}).get("lead", ""), False
-        st = stage(r, pr, unknown and bool(own))
+        pr_unknown = unknown and bool(bs)  # any branch it has, its own or taken, may have a PR GitHub did not report
+        st = stage(r, pr, pr_unknown)
         mem = memory.get(c["sessionId"]) if not r else None
         if mem:  # deregistered since: finished if what it last worked on reached the last milestone, as above
             mpr = github.pick(mem.get("branches", []), prs)
@@ -396,6 +401,7 @@ def build(cfg, use_gh=True, now=None, starts=sessions.proc_starts, fetch=github.
             "lead": lead or ("" if c["isCommander"] else inferred.get(c["sessionId"], "")),
             "leadFrom": "registered" if lead else ("message" if inferred.get(c["sessionId"]) else ""),
             "stage": st, "done": st == 5, "reportedDone": st == 5 and not merged(pr), "finished": finished,
+            "prUnknown": pr_unknown and not finished,
             "status": status, "claudeStatus": c["status"], "waitKind": c["waitKind"],
             "run": W["run"].get(status, status), "statusSince": c["statusSince"],
             "waitingFor": c["ask"] or c["waitingFor"], "registered": bool(r),
@@ -422,7 +428,11 @@ def build(cfg, use_gh=True, now=None, starts=sessions.proc_starts, fetch=github.
     unassigned = [x for x in rows if not x["isCommander"] and not x["lead"]]
 
     reg_by_who = {r["who"]: r for r in regs}
-    mem_by_who = {m["who"]: m for m in memory.values() if m.get("who")}  # an owner that deregistered since
+    mem_by_who = {}  # an owner that deregistered since, by the name it registered under and its session's name now
+    for c in convs:
+        m = memory.get(c["sessionId"])
+        for n in ({m.get("who"), c["name"]} if m else set()) - {None, ""}:
+            mem_by_who[n] = m
     for p in plans:
         lead = alias.get(p["lead"], p["lead"])
         g = next((g for g in groups if g["lead"] == lead), None)
@@ -434,7 +444,9 @@ def build(cfg, use_gh=True, now=None, starts=sessions.proc_starts, fetch=github.
             pr = prs.get(it["branch"])
             ci_text, ci_level = github.ci(pr, cfg.summary_checks)
             owner = it.get("owner", "")
-            st = item_stage(reg_by_who.get(owner) or mem_by_who.get(owner), pr, unknown)
+            mem = mem_by_who.get(owner)
+            mem = mem if mem and it["branch"] in mem.get("branches", []) else None  # only for what it worked on
+            st = item_stage(reg_by_who.get(owner) or mem, pr, unknown)
             items.append({"branch": it["branch"], "title": it.get("title", ""), "owner": it.get("owner", ""),
                           "stage": st, "reportedDone": st == 5 and not merged(pr),
                           "pr": github.pr_label(pr, cfg.language), "ci": ci_text, "ciLevel": ci_level})
@@ -550,7 +562,9 @@ def markdown(b, live=False):
     def table(rows):
         out = [T["cols"], "|---|---|---|---|---|---|---|"]
         for x in rows:
-            if not x["registered"]:
+            if x["finished"]:  # deregistered after finishing: its last registration says how
+                ph = stage_word(x, W)
+            elif not x["registered"]:
                 ph = T["unreg"]
             elif x["phase"]:
                 ph = f"{stage_word(x, W)} · {W['phases'].get(x['phase'], x['phase'])} {x['note']}".rstrip()

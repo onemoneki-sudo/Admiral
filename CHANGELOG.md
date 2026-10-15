@@ -12,10 +12,13 @@ its cache, one copy per version, so a change to the sidebar or the playbook reac
   *reported done*, its own progress complete, and closing it is yours to confirm too. PR counts, the plan's "merged
   n/m" and "plan all merged" count only PRs GitHub merged.
 - A draft PR no longer moves its session to CI: the session stays at the phase it reported until the PR is ready.
-- While GitHub does not answer, a session's `done` is not taken for a task with no PR: it stays at accept until
-  GitHub says what became of its PR.
+- While GitHub does not answer, a session's `done` is not taken for a task with no PR: a session with any branch,
+  registered or taken from its push, stays at accept and is kept until GitHub says what became of its PR.
 - A commander whose own PR is still open is kept, like any session.
-- A planned PR whose owner reported done and then deregistered keeps its place rather than going back to not started.
+- A planned PR whose owner reported done and then deregistered keeps its place rather than going back to not started;
+  the owner's last registration speaks only for the branches it named, under its old name or its session's new one.
+- A session that finished and deregistered reads as finished in `admiral board` and its own status line, not as
+  unregistered.
 
 **Sidebar**
 - A session or planned PR only reported done says so, and its last milestone is drawn dim: it no longer looks merged.

@@ -66,4 +66,5 @@ test('a deliverable only reported done says so, and is not drawn as merged', asy
   const { shown } = await mount($, on, b)
   expect(shown).toContain('reported done')
   expect(shown).toContain('PRs merged 0/1')
+  expect(shown).toContain('{"type":"Text","props":{"dimColor":true},"children":["▰"]}')  // the last milestone dim
 })
