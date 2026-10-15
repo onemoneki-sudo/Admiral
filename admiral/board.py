@@ -296,7 +296,8 @@ def remember(cfg, convs):
     for c in convs:
         r = c["reg"]
         if r:
-            fresh[c["sessionId"]] = {"who": r["who"], "branches": c["branches"], "worktree": first(r.get("worktree")),
+            fresh[c["sessionId"]] = {"who": r["who"], "aka": registry.names_of(r)[1:], "branches": c["branches"],
+                                     "worktree": first(r.get("worktree")),
                                      "lead": r.get("lead", ""), "phase": r.get("phase"),
                                      "registered": branches_of(r.get("branch"))}
         elif c["sessionId"] in memory:
@@ -470,7 +471,12 @@ def build(cfg, use_gh=True, now=None, starts=sessions.proc_starts, fetch=github.
                        "members": [x for x in rows if not x["isCommander"] and x["lead"] == lead]})
     unassigned = [x for x in rows if not x["isCommander"] and not x["lead"]]
 
-    reg_by_who = {r["who"]: r for r in regs}
+    reg_by_who = {}  # by the name each is under, then the names it was under before
+    for r in regs:
+        reg_by_who.setdefault(r["who"], r)
+    for r in regs:
+        for n in registry.names_of(r)[1:]:
+            reg_by_who.setdefault(n, r)
     finished = []  # plans of batches over, with nobody of them running: not shown, left to `admiral plan close`
     # a planned PR's owner may run ungrouped, or outside the projects
     running = {n for c in convs for n in [c["name"]] + c["former"]} | running_elsewhere
@@ -478,7 +484,7 @@ def build(cfg, use_gh=True, now=None, starts=sessions.proc_starts, fetch=github.
     mem_by_who = {}  # owners that deregistered since, by the name each registered under and its session's name now
     for c in convs:
         m = memory.get(c["sessionId"])
-        for n in ({m.get("who"), c["name"]} if m else set()) - {None, ""}:
+        for n in ({m.get("who"), c["name"], *(m.get("aka") or [])} if m else set()) - {None, ""}:
             mem_by_who.setdefault(n, []).append(m)
     for p in plans:
         lead = alias.get(p["lead"], p["lead"])
@@ -547,8 +553,12 @@ def build(cfg, use_gh=True, now=None, starts=sessions.proc_starts, fetch=github.
     hints += [T["h_lead_gone"].format(lead=lead) for lead in orphans]
     hints += [T["h_twice"].format(name=name, n=n, where=", ".join(where)) for name, n, where in open_twice]
     hints += [T["h_plan_finished"].format(lead=lead) for lead in finished]
+    live_ids = {s.get("sessionId") for s in live + elsewhere}
     for r in regs:
-        if r["who"] not in matched and r["who"] not in running_elsewhere:
+        # its session has ended: by its session when it records one, else by its name, wherever sessions run
+        ended = r["sessionId"] not in live_ids if r.get("sessionId") else \
+            r["who"] not in matched and r["who"] not in running_elsewhere
+        if ended:
             hints.append(T["h_gone"].format(who=r["who"]))
             continue
         wt = first(r.get("worktree"))

@@ -91,7 +91,7 @@ def main(argv=None):
         reg = registry.register(cfg, a.who, a.task, a.branch, a.worktree, a.files, a.lead)
         sid, names = registry.caller(cfg)
         if reg.get("sessionId") and a.who not in names:  # itself, under another name: the board knows it anyway
-            print(f"registered {a.who}, for this session ({names[0]})")
+            print(f"registered {a.who}, for this session ({names[0] if names else sid[:8]})")
             warn_not_running(cfg, a.lead)
         else:
             warn_not_running(cfg, a.who, a.lead)

@@ -49,9 +49,23 @@ def running_names(cfg):
 
 
 # ---- registrations ----
+#
+# A registration its session made is kept under that session, one per session whatever it is called (and whatever
+# it registers under), so a rename moves nothing and two sessions of one name never share a file. One made without a
+# session (by hand, or for another session) is kept under its name, as it always was.
 
 def reg_path(cfg, who):
+    """The file of a registration made without a session, under its name."""
     return cfg.sub("registry", key(who) + ".json")
+
+
+def session_path(cfg, sid):
+    """The file of a registration its session made."""
+    return cfg.sub("registry", "session-" + key(sid) + ".json")
+
+
+def path_of(cfg, reg):
+    return session_path(cfg, reg["sessionId"]) if reg.get("sessionId") else reg_path(cfg, reg["who"])
 
 
 def caller(cfg):
@@ -64,20 +78,9 @@ def caller(cfg):
     return sid, [n for n in [d.get("name")] + [f.get("name") for f in d.get("formerNames") or []] if n]
 
 
-def own(cfg, who):
-    """The registration of the session running this command, when `who` is that session's name now or before;
-    re-keyed under `who` when the session was renamed since it registered. None otherwise."""
-    sid, names = caller(cfg)
-    if not sid or who not in names:
-        return None
-    for reg in registrations(cfg):
-        if reg.get("sessionId") == sid:
-            if reg["who"] != who:
-                os.remove(reg_path(cfg, reg["who"]))
-                reg = dict(reg, who=who)
-                write_json(reg_path(cfg, who), reg)
-            return reg
-    return None
+def names_of(reg):
+    """The names a registration answers to: the one it is under now and those it was under before."""
+    return [reg["who"]] + [n for n in reg.get("aka") or [] if n != reg["who"]]
 
 
 def itself(cfg, who, sid, names):
@@ -88,18 +91,49 @@ def itself(cfg, who, sid, names):
         return False
     if who in running_names(cfg) - set(names):
         return False
-    return not any(r.get("sessionId") == sid and r["who"] != who for r in registrations(cfg))
+    return read_json(session_path(cfg, sid)) is None
+
+
+def resolve(cfg, who):
+    """The registration a command naming `who` means: from inside a session, its own when `who` is a name of the
+    session or of its registration; else the one made under that name without a session; else that of the one other
+    session registered under that name. None when there is none, or more than one."""
+    sid, names = caller(cfg)
+    own = read_json(session_path(cfg, sid)) if sid else None
+    if own and (who in names or who in names_of(own)):
+        return own
+    reg = read_json(reg_path(cfg, who))
+    if reg:
+        return reg
+    others = [r for r in registrations(cfg) if r.get("sessionId") and r["who"] == who]
+    return others[0] if len(others) == 1 else None
+
+
+def renamed(reg, who):
+    """The registration under `who`, keeping the names it was under before."""
+    if reg["who"] == who:
+        return reg
+    return dict(reg, who=who, aka=list(dict.fromkeys(names_of(reg))))
 
 
 def register(cfg, who, task="", branch="", worktree="", files="", lead=""):
-    """Create or replace a registration; a phase already reported is kept. Made by the session it names, it records
-    that session, so it follows the session through renames; one made for another session records none."""
-    old = own(cfg, who) or read_json(reg_path(cfg, who)) or {}
+    """Create or replace a registration; a phase already reported is kept. Made by the session it names (or by a
+    session registering itself under another name), it is kept under that session and follows it through renames;
+    one made for another session is kept under its name."""
     sid, names = caller(cfg)
-    reg = {"who": who, "task": task, "branch": branch, "worktree": worktree, "files": files, "lead": lead,
-           "since": time.time(), "phase": old.get("phase"), "note": old.get("note", ""), "phaseAt": old.get("phaseAt")}
+    fields = {"task": task, "branch": branch, "worktree": worktree, "files": files, "lead": lead, "since": time.time()}
     if sid and (who in names or itself(cfg, who, sid, names)):
-        reg["sessionId"] = sid
+        own = read_json(session_path(cfg, sid))
+        by_name = read_json(reg_path(cfg, who))  # made for it under this name before it registered itself
+        old = own or (by_name if by_name and not by_name.get("sessionId") else None) or {}
+        reg = dict(renamed(old, who) if old.get("who") else {"who": who}, **fields, sessionId=sid,
+                   phase=old.get("phase"), note=old.get("note", ""), phaseAt=old.get("phaseAt"))
+        write_json(session_path(cfg, sid), reg)
+        if by_name and not own:
+            os.remove(reg_path(cfg, who))  # after the write, so nothing is lost if it fails
+        return reg
+    old = read_json(reg_path(cfg, who)) or {}
+    reg = dict({"who": who}, **fields, phase=old.get("phase"), note=old.get("note", ""), phaseAt=old.get("phaseAt"))
     write_json(reg_path(cfg, who), reg)
     return reg
 
@@ -113,20 +147,22 @@ def set_phase(cfg, who, phase, note=""):
         return False, "the waiting phase needs a note saying on whom or what it waits"
     if k == "needs_you" and not note:
         return False, "the needs_you phase needs a note saying what the person must do"
-    reg = read_json(reg_path(cfg, who)) or own(cfg, who)
+    reg = resolve(cfg, who)
     if reg is None:
         return False, f"{who} is not registered; register first"
+    sid, names = caller(cfg)
+    if reg.get("sessionId") == sid and names and who == names[0]:
+        reg = renamed(reg, who)  # its session reports under the name it has now
     reg.update(phase=k, note=note.replace("\n", " "), phaseAt=time.time())
-    write_json(reg_path(cfg, who), reg)
+    write_json(path_of(cfg, reg), reg)
     return True, k
 
 
 def done(cfg, who):
-    if not os.path.exists(reg_path(cfg, who)):
-        own(cfg, who)  # registered under a name the session had before
+    reg = resolve(cfg, who)
     try:
-        os.remove(reg_path(cfg, who))
-        return True
+        os.remove(path_of(cfg, reg)) if reg else None
+        return reg is not None
     except FileNotFoundError:
         return False
 

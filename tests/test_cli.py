@@ -29,10 +29,14 @@ class Cli(unittest.TestCase):
             json.dump({"pid": pid, "sessionId": sid, "name": name, "formerNames": [{"name": f} for f in former]}, fh)
         self.env.update(CLAUDE_CODE_SESSION_ID=sid, CLAUDE_PID=str(pid))
 
+    def regs(self):
+        d = os.path.join(self.dir, "state", "registry")
+        return [json.load(open(os.path.join(d, f))) for f in sorted(os.listdir(d))] if os.path.isdir(d) else []
+
     def reg(self, who):
-        from admiral import registry
-        path = os.path.join(self.dir, "state", "registry", registry.key(who) + ".json")
-        return json.load(open(path)) if os.path.exists(path) else None
+        found = [r for r in self.regs() if r["who"] == who]
+        self.assertLessEqual(len(found), 1, found)
+        return found[0] if found else None
 
     def tearDown(self):
         shutil.rmtree(self.dir)
@@ -102,6 +106,48 @@ class Cli(unittest.TestCase):
         self.run_cli("register", "--who", "worker-to-come")  # for a session not open yet
         self.assertNotIn("sessionId", self.reg("worker-to-come"))
         self.assertEqual(self.reg("helper")["sessionId"], "sid-41")
+
+    def test_a_renamed_session_taking_another_ones_name_touches_only_its_own(self):
+        self.in_session(42, "sid-b", "new")
+        self.run_cli("register", "--who", "new", "--branch", "feat/b")
+        self.in_session(41, "sid-a", "old")
+        self.run_cli("register", "--who", "old", "--branch", "feat/a")
+        self.in_session(41, "sid-a", "new", former=("old",))  # renamed to the other one's name
+        self.assertEqual(self.run_cli("state", "--who", "new", "--phase", "review").returncode, 0)
+        self.run_cli("register", "--who", "new", "--branch", "feat/a2")
+        by_sid = {r["sessionId"]: r for r in self.regs()}
+        self.assertEqual((by_sid["sid-a"]["branch"], by_sid["sid-a"]["phase"]), ("feat/a2", "review"))
+        self.assertEqual((by_sid["sid-b"]["branch"], by_sid["sid-b"]["phase"]), ("feat/b", None))
+        self.run_cli("done", "--who", "new")
+        self.assertEqual([r["sessionId"] for r in self.regs()], ["sid-b"])
+
+    def test_a_new_session_registering_an_ended_ones_name_inherits_nothing(self):
+        self.in_session(41, "sid-old", "worker")
+        self.run_cli("register", "--who", "worker", "--branch", "feat/old")
+        self.run_cli("state", "--who", "worker", "--phase", "done")
+        self.in_session(43, "sid-new", "worker")
+        self.run_cli("register", "--who", "worker", "--branch", "feat/new")
+        new = next(r for r in self.regs() if r["sessionId"] == "sid-new")
+        self.assertEqual((new["branch"], new["phase"]), ("feat/new", None))
+
+    def test_two_processes_of_one_session_keep_one_registration(self):
+        self.in_session(41, "sid-a", "old")
+        self.run_cli("register", "--who", "old")
+        self.in_session(44, "sid-a", "new", former=("old",))  # the same conversation, another process, renamed
+        self.run_cli("register", "--who", "new")
+        self.assertEqual([(r["who"], r["sessionId"]) for r in self.regs()], [("new", "sid-a")])
+
+    def test_a_registration_made_for_it_by_name_becomes_its_own(self):
+        self.run_cli("register", "--who", "worker", "--lead", "Commander-A")  # by its commander, before it opened
+        self.run_cli("state", "--who", "worker", "--phase", "working")
+        self.in_session(41, "sid-41", "worker")
+        self.run_cli("register", "--who", "worker", "--branch", "feat/a", "--lead", "Commander-A")
+        self.assertEqual([(r["who"], r.get("sessionId"), r["phase"]) for r in self.regs()], [("worker", "sid-41", "working")])
+
+    def test_a_session_with_no_name_registering_says_whose_it_is(self):
+        self.in_session(46, "sid-46abcdef", "")
+        r = self.run_cli("register", "--who", "the task")
+        self.assertEqual((r.returncode, r.stdout.strip()), (0, "registered the task, for this session (sid-46ab)"))
 
     def test_phases_are_checked(self):
         self.run_cli("register", "--who", "worker")
