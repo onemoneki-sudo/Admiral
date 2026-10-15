@@ -304,6 +304,11 @@ class Cli(unittest.TestCase):
         line = subprocess.run(["/bin/sh", "-c", command], input="{}", capture_output=True, text=True, env=env).stdout
         self.assertIn("54 sessions", line)
 
+    def test_without_a_clone_the_demo_says_what_the_session_needs(self):
+        from admiral import demo
+        self.assertEqual(demo.try_command("/x/config.toml", root=self.dir), ("ADMIRAL_CONFIG=/x/config.toml claude", False))
+        self.assertTrue(demo.try_command("/x/config.toml")[1])  # this clone has its plugin and bin/admiral
+
     def test_the_demo_fleet_speaks_chinese(self):
         import json
         r = self.run_cli("demo", "--once", "--lang", "zh")

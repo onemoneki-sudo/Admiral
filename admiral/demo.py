@@ -278,16 +278,16 @@ def build(root, ttys, now=None, fleet=FLEET):
     return snap
 
 
-def try_command(demo_cfg):
-    """The command that opens Claude Code on the demo, its status line and sidebar read straight from this clone for
-    that session only: nothing installed, no setting changed."""
-    root = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+def try_command(demo_cfg, root=os.path.dirname(os.path.dirname(os.path.abspath(__file__)))):
+    """The command that opens Claude Code on the demo, and whether it brings Admiral's status line and sidebar, read
+    straight from the clone at `root` for that session only (nothing installed, no setting changed): only a clone has
+    them to bring."""
     plugin, launcher = os.path.join(root, "plugin"), os.path.join(root, "bin", "admiral")
     cmd = f"ADMIRAL_CONFIG={shlex.quote(demo_cfg)} claude"
-    if os.path.isdir(plugin) and os.path.isfile(launcher):
-        line = {"type": "command", "command": f"{shlex.quote(launcher)} statusline", "refreshInterval": 20}
-        cmd += f" --plugin-dir {shlex.quote(plugin)} --settings {shlex.quote(json.dumps({'statusLine': line}))}"
-    return cmd
+    if not (os.path.isdir(plugin) and os.path.isfile(launcher)):
+        return cmd, False
+    line = {"type": "command", "command": f"{shlex.quote(launcher)} statusline", "refreshInterval": 20}
+    return cmd + f" --plugin-dir {shlex.quote(plugin)} --settings {shlex.quote(json.dumps({'statusLine': line}))}", True
 
 
 def run(cfg, language, ttys, once=False):
@@ -305,12 +305,12 @@ def run(cfg, language, ttys, once=False):
     build(root, ttys, fleet=fleet)
     cols = statusline.columns()
     lines = statusline.admiral_lines(cfg_demo.sub("board.json"), None, cols=cols)
-    where = "" if once else " in another terminal"
+    cmd, brought = try_command(demo_cfg)
+    how = ("with Admiral's status line and sidebar for that session only (nothing installed, no setting of yours "
+           "changed)" if brought else "with Admiral's plugin installed and its status line set")
     print("Demo board written. Its status line:\n\n" + "\n".join(statusline.fit(x, cols) for x in lines) + "\n\n"
-          "To see it in Claude Code, with Admiral's status line and sidebar for that session only (nothing installed, "
-          f"no setting of yours changed), run{where}:\n\n  {try_command(demo_cfg)}\n\n"
-          "and open the sidebar with /admiral."
-          + ("" if once else " Rebuilding every 20 seconds; Ctrl-C stops."))
+          f"To see it in Claude Code, {how}, run{'' if once else ' in another terminal'}:\n\n  {cmd}\n\n"
+          "and open the sidebar with /admiral." + ("" if once else " Rebuilding every 20 seconds; Ctrl-C stops."))
     while not once:
         time.sleep(20)
         build(root, ttys, fleet=fleet)
