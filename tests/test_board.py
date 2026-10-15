@@ -940,6 +940,47 @@ class FinishedBatches(World):
         self.assertFalse([h for h in self.build()["hints"] if "Commander-Gone" in h])
 
 
+class OneConversation(World):
+    """One conversation resumed in several terminals is one session; two sessions sharing a name are told apart."""
+
+    def test_a_conversation_open_in_two_terminals_is_one_session(self):
+        self.session(3, "worker", status="busy", since=NOW - 300)
+        self.session(4, "worker", status="waiting", since=NOW - 30, sessionId="s3")  # the same one, resumed again
+        b = self.build(use_gh=False)
+        rows = [x for x in b["unassigned"] if x["name"] == "worker"]
+        self.assertEqual((b["count"], len(rows)), (1, 1))
+        self.assertEqual((rows[0]["status"], rows[0]["tty"]), ("waiting", "ttys004"))  # the one that needs the person
+        self.assertEqual(len(b["waiting"]), 1)
+        self.assertTrue(any("worker" in h and "ttys003" in h and "ttys004" in h for h in b["hints"]), b["hints"])
+
+    def test_a_commander_open_twice_leads_one_batch(self):
+        self.session(1, "Commander-A", status="busy")
+        self.session(2, "Commander-A", status="idle", sessionId="s1")
+        self.session(3, "worker")
+        self.transcript(3, (1, "Commander-A"))
+        groups = [g for g in self.build(use_gh=False)["groups"] if g["lead"] == "Commander-A"]
+        self.assertEqual(len(groups), 1)
+        self.assertEqual([m["name"] for m in groups[0]["members"]], ["worker"])
+
+    def test_two_sessions_sharing_a_commanders_name_are_one_batch_and_flagged(self):
+        self.session(1, "Commander-A", status="busy")
+        self.session(2, "Commander-A", status="idle")  # another conversation, given the same name
+        self.session(3, "worker")
+        self.register("worker", lead="Commander-A")
+        b = self.build(use_gh=False)
+        groups = [g for g in b["groups"] if g["lead"] == "Commander-A"]
+        self.assertEqual((len(groups), [m["name"] for m in groups[0]["members"]]), (1, ["worker"]))
+        self.assertEqual(groups[0]["leadRow"]["status"], "busy")
+        self.assertTrue(any("Commander-A" in h and "2" in h for h in b["hints"]), b["hints"])
+
+    def test_different_conversations_with_different_names_stay_apart(self):
+        self.session(3, "one", status="busy")
+        self.session(4, "two", status="waiting")
+        b = self.build(use_gh=False)
+        self.assertEqual(sorted(x["name"] for x in b["unassigned"]), ["one", "two"])
+        self.assertFalse([h for h in b["hints"] if "terminals" in h or "share the name" in h])
+
+
 class Sources(World):
     def test_a_registered_branch_keeps_its_merge_while_its_session_is_away(self):
         self.session(4, "other")  # keeps the board refreshing

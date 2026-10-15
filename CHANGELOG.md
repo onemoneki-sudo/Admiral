@@ -7,6 +7,11 @@ its cache, one copy per version, so a change to the sidebar or the playbook reac
 ## Unreleased
 
 **Board**
+- One conversation resumed in several terminals is one session: counted once, shown as its most pressing process
+  (waiting before working before idle), and the to-tidy list names its terminals, since each writes the same
+  conversation. A commander open twice no longer shows two batches.
+- Two sessions sharing a commander's name lead one batch, and the to-tidy list asks to rename all but one, since
+  registrations and messages find sessions by name.
 - Merged means merged on GitHub. A session's own `done` no longer counts as a merge: with its PR still open it stays
   in CI; with its PR closed unmerged it is not finished, and closing it is yours to confirm; with no PR at all it reads
   *reported done*, its own progress complete, and closing it is yours to confirm too. PR counts, the plan's "merged

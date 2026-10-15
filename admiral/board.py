@@ -55,6 +55,9 @@ TEXT = words_mod.phrases({
         "h_renamed": "registered under the old name \"{old}\"; the session is now \"{new}\": register again under the new name and `done` the old one",
         "h_idle": "idle over {days} days: {name}; close it if its work is over",
         "h_lead_gone": "--lead names a commander that is not running: {lead}",
+        "h_twice": "{name} is open in {n} terminals ({ttys}): close all but one, as each writes the same conversation",
+        "h_same_name": "{n} sessions share the name {name}: rename all but one, as registrations and messages find "
+                       "sessions by name",
         "h_plan_finished": "the plan of {lead} is all merged and nobody of its batch runs: no longer shown; "
                            "admiral plan close --lead \"{lead}\" puts it away",
         "h_gone": "registered but the session has ended: {who} (`admiral done --who \"{who}\"` once confirmed)",
@@ -109,6 +112,8 @@ TEXT = words_mod.phrases({
         "h_renamed": "登记名仍为旧名「{old}」，对话已改名为「{new}」：请用新名重新登记，并 done 旧名",
         "h_idle": "空闲超过 {days} 天：{name}，任务已结束的请按收尾规则关闭",
         "h_lead_gone": "--lead 指定的总指挥未运行：{lead}",
+        "h_twice": "{name} 同时开在 {n} 个终端里（{ttys}）：只留一个，它们写的是同一份对话记录",
+        "h_same_name": "有 {n} 个对话都叫 {name}：只留一个用这个名字，登记和消息都是按名字找对话的",
         "h_plan_finished": "{lead} 的交付清单已全部合并，批次里也没有对话在运行：已不再显示；"
                            "用 admiral plan close --lead \"{lead}\" 收起它",
         "h_gone": "已登记但对话已结束：{who}（确认后 admiral done --who \"{who}\"）",
@@ -309,6 +314,18 @@ def build(cfg, use_gh=True, now=None, starts=sessions.proc_starts, fetch=github.
     now = time.time() if now is None else now
     T, W = TEXT[cfg.language], words(cfg.language)
     live, broken, shapeless = sessions.load(cfg, starts)
+    # One conversation resumed in several terminals runs as several processes: it is one session, shown as its most
+    # pressing process (waiting before working before idle, then the latest change), the others named in a hint.
+    by_sid = {}
+    for s in live:
+        by_sid.setdefault(s.get("sessionId") or f"pid {s['pid']}", []).append(s)
+    live, open_twice = [], []
+    for procs in by_sid.values():
+        procs.sort(key=lambda s: (ORDER.get(s.get("status"), 9), -(s.get("statusUpdatedAt") or 0)))
+        live.append(procs[0])
+        if len(procs) > 1:
+            open_twice.append((procs[0].get("name") or procs[0].get("sessionId", "?")[:8],
+                               [p.get("_tty") or f"pid {p['pid']}" for p in procs]))
     regs = registry.registrations(cfg)
     by_name = {}
     for r in regs:
@@ -430,7 +447,9 @@ def build(cfg, use_gh=True, now=None, starts=sessions.proc_starts, fetch=github.
     names = {x["name"] for x in commanders}
     alias = {f: c["name"] for c in convs if c["isCommander"] for f in c["former"]}
     groups = []
-    for cmd in sorted(commanders, key=lambda x: x["name"]):
+    for cmd in sorted(commanders, key=lambda x: x["name"]):  # stable: of commanders sharing a name, the most pressing
+        if any(g["lead"] == cmd["name"] for g in groups):
+            continue  # one batch per name: members find their commander by it (the hints name the sessions sharing it)
         members = [x for x in rows if not x["isCommander"] and alias.get(x["lead"], x["lead"]) == cmd["name"]]
         groups.append({"lead": cmd["name"], "leadRow": cmd, "members": members})
     orphans = sorted({x["lead"] for x in rows if x["lead"] and not x["isCommander"]
@@ -512,6 +531,11 @@ def build(cfg, use_gh=True, now=None, starts=sessions.proc_starts, fetch=github.
         if c["status"] == "idle" and c["statusSince"] and now - c["statusSince"] > cfg.idle_flag_s:
             hints.append(T["h_idle"].format(days=cfg.idle_flag_s // 86400, name=c["name"]))
     hints += [T["h_lead_gone"].format(lead=lead) for lead in orphans]
+    hints += [T["h_twice"].format(name=name, n=len(ttys), ttys=", ".join(ttys)) for name, ttys in open_twice]
+    shared = {}
+    for x in rows:
+        shared[x["name"]] = shared.get(x["name"], 0) + 1
+    hints += [T["h_same_name"].format(name=name, n=n) for name, n in sorted(shared.items()) if n > 1]
     hints += [T["h_plan_finished"].format(lead=lead) for lead in finished]
     for r in regs:
         if r["who"] not in matched:
