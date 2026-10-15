@@ -7,8 +7,11 @@ Milestones, 0 to 5, for a session or a planned deliverable:
   1 develop      registered, nothing later yet
   2 review       phase `review`: development done, independent review and its fixes
   3 accept       phase `accepting`: the person's acceptance or the local full gate
-  4 CI           its PR is open: everything local is done and it was pushed once, ready
-  5 merged       its PR merged, or phase `done`
+  4 CI           its PR is open and ready: everything local is done and it was pushed once (a draft is not)
+  5 merged       its PR merged, as GitHub says
+A PR, when there is one, speaks for itself: phase `done` with a PR not merged is at most accept. Only where no PR speaks
+does phase `done` reach the last milestone, shown as reported done: never counted as a merge, and never enough on its
+own for a session to be closed.
 Each milestone is worth a share (config `progress`) and a percentage is the mean worth. A commander's progress counts
 its plan's deliverables when it has one (a merged deliverable keeps counting after its session closes), else its
 live members. Grouping: a registered `--lead` wins; otherwise the commander whose cross-session message the session
@@ -41,6 +44,11 @@ TEXT = words_mod.phrases({
         "pr_open": "PR not merged", "merged_left": "merged, wrap-up left: {what}", "worktree": "worktree not deleted",
         "holds": "holds {n} {n:lock|locks}", "registered": "still registered", "merged_clean": "merged and wrapped up",
         "deregister": " (run `admiral done` before closing)", "pr_closed": "PR closed without merging",
+        "pr_unknown": "GitHub did not answer: its PR is unknown",
+        "reported_only": "reported done, but no merged PR shows it: confirm the work is over before closing",
+        "left": "; wrap-up left: {what}",
+        "plan_reported": "plan finished, but {n} {n:deliverable is|deliverables are} only reported done, with no merged PR: "
+                         "confirm, then close the plan",
         "idle_unregistered": "unregistered, no PR, idle {age}", "unregistered_locks": "unregistered, holds {n} {n:lock|locks}",
         "developing": "developing",
         "h_unregistered": "running but not registered: {name}",
@@ -89,6 +97,10 @@ TEXT = words_mod.phrases({
         "pr_open": "PR 未合并", "merged_left": "已合并，待收尾：{what}", "worktree": "worktree 未删除",
         "holds": "占用 {n} 把锁", "registered": "仍在登记中", "merged_clean": "已合并并收尾",
         "deregister": "（关闭前 admiral done）", "pr_closed": "PR 已关闭但未合并",
+        "pr_unknown": "GitHub 没有响应，PR 状态未知",
+        "reported_only": "已报告完成，但没有已合并的 PR 可以印证：确认任务已结束再关闭",
+        "left": "；待收尾：{what}",
+        "plan_reported": "交付清单都已完成，但有 {n} 项只是自报完成、没有已合并的 PR：确认后再关闭交付清单",
         "idle_unregistered": "未登记、无 PR，已空闲 {age}", "unregistered_locks": "未登记，仍占用 {n} 把锁",
         "developing": "开发中",
         "h_unregistered": "运行中但未登记：{name}",
@@ -146,12 +158,20 @@ def first(cell):
     return "" if v in ("-", "(detached)") else v
 
 
-def stage_of(phase, pr):
-    # a PR opens only once everything local is done (one push, straight to ready), so it outranks the phases
-    if phase == "done" or (pr and pr["state"] == "MERGED"):
+def merged(pr):
+    return bool(pr) and pr["state"] == "MERGED"
+
+
+def stage_of(phase, pr, unknown=False):
+    """`unknown`: GitHub did not answer this time, so finding no PR does not mean there is none."""
+    # a PR is opened ready only once everything local is done (one push, straight to ready), so it outranks the
+    # phases; a draft does not, and a session's `done` is its word against a PR GitHub has not merged
+    if merged(pr):
         return 5
-    if pr and pr["state"] == "OPEN":
+    if pr and pr["state"] == "OPEN" and not pr.get("isDraft"):
         return 4
+    if phase == "done":
+        return 3 if pr or unknown else 5
     if phase == "accepting":
         return 3
     if phase == "review":
@@ -159,16 +179,16 @@ def stage_of(phase, pr):
     return 1
 
 
-def stage(reg, pr):
+def stage(reg, pr, unknown=False):
     """A registered session's milestone; 0 when it is not registered."""
-    return stage_of(reg.get("phase"), pr) if reg else 0
+    return stage_of(reg.get("phase"), pr, unknown) if reg else 0
 
 
-def item_stage(owner_reg, pr):
+def item_stage(owner_reg, pr, unknown=False):
     """A deliverable's milestone: 0 (not started) while it has neither a PR nor a registered owner."""
     if pr is None and not owner_reg:
         return 0
-    return stage_of((owner_reg or {}).get("phase"), pr)
+    return stage_of((owner_reg or {}).get("phase"), pr, unknown)
 
 
 def pr_count(group):
@@ -176,10 +196,15 @@ def pr_count(group):
     not); without a plan, every PR its sessions' branches have (open or merged)."""
     if group.get("batch"):
         items = group["batch"]["items"]
-        return sum(i["stage"] == 5 for i in items), len(items)
+        return sum((i["pr"] or {}).get("state") == "MERGED" for i in items), len(items)
     rows = group["members"] + ([group["leadRow"]] if group.get("leadRow") else [])  # a commander's pushed branches
     seen = {n: s for x in rows for n, s in x.get("prStates", {}).items() if s in ("OPEN", "MERGED")}
     return sum(s == "MERGED" for s in seen.values()), len(seen)
+
+
+def counted(group):
+    """What a group's progress counts: its plan's deliverables when it has one, else its members past not started."""
+    return group["batch"]["items"] if group.get("batch") else [x for x in group["members"] if x["stage"]]
 
 
 def dist(stages):
@@ -202,6 +227,13 @@ def closing(x, locks, groups, now, cfg, T):
     if x["status"] == "waiting":
         return "keep", T["waiting"]
     held = sorted(n for n, who in locks.items() if who == x["name"] or who.startswith(x["name"] + " "))
+    pr = x["pr"]
+    if pr and pr["state"] == "OPEN":  # a commander's own PR too
+        return "keep", T["pr_open"]
+    if x["prUnknown"]:
+        return "keep", T["pr_unknown"]
+    if x["isCommander"] and pr and pr["state"] == "CLOSED":
+        return "confirm", T["pr_closed"]
     if x["isCommander"]:
         g = next((g for g in groups if g["lead"] == x["name"]), None)
         members = (g or {}).get("members") or []
@@ -213,6 +245,9 @@ def closing(x, locks, groups, now, cfg, T):
         items = (g or {}).get("batch", {}).get("items", []) if g else []
         if any(i["stage"] != 5 for i in items):
             return "keep", T["plan_open"]
+        reported = sum(i["reportedDone"] for i in items)
+        if reported:
+            return "confirm", T["plan_reported"].format(n=reported)
         if items:
             return "wrapup", T["plan_done"]
         if held:
@@ -223,12 +258,11 @@ def closing(x, locks, groups, now, cfg, T):
             return "close", T["members_done"].format(n=len(members))
         # no members is not the same as done: a commander may be planning, or deferred until others finish
         return "confirm", T["no_members"]
-    pr = x["pr"]
-    if pr and pr["state"] == "OPEN":
-        return "keep", T["pr_open"]
     if x["done"]:
         left = ([T["worktree"]] if x["worktree"] and not x["worktreeGone"] else []) + \
                ([T["holds"].format(n=len(held))] if held else []) + ([T["registered"]] if x["registered"] else [])
+        if x["reportedDone"]:  # its own word is all there is: the person decides whether the work is over
+            return "confirm", T["reported_only"] + (T["left"].format(what=", ".join(left)) if left else "")
         if left and left != [T["registered"]]:
             return "wrapup", T["merged_left"].format(what=", ".join(left))
         if not x["registered"]:
@@ -257,7 +291,8 @@ def remember(cfg, convs):
         r = c["reg"]
         if r:
             fresh[c["sessionId"]] = {"who": r["who"], "branches": c["branches"], "worktree": first(r.get("worktree")),
-                                     "lead": r.get("lead", ""), "phase": r.get("phase")}
+                                     "lead": r.get("lead", ""), "phase": r.get("phase"),
+                                     "registered": branches_of(r.get("branch"))}
         elif c["sessionId"] in memory:
             fresh[c["sessionId"]] = memory[c["sessionId"]]
     registry.write_json(cfg.sub("reg-memory.json"), fresh)
@@ -325,6 +360,7 @@ def build(cfg, use_gh=True, now=None, starts=sessions.proc_starts, fetch=github.
         prs, mine, reused = github.prs_paced(cfg, in_use, quiet, now, fetch, fetch_mine)
         gh_ok = prs is not None and mine is not None
         prs = prs or {}
+    unknown = gh_ok is False  # GitHub failed: a branch with no PR found may still have one
     for c in convs:
         new = [b for b in guessed.get(c["sessionId"], []) if (prs.get(b) or {}).get("state") == "OPEN"]
         c["branches"] = c["branches"] + new
@@ -357,11 +393,13 @@ def build(cfg, use_gh=True, now=None, starts=sessions.proc_starts, fetch=github.
         own = [b for b in bs if b not in c["guessed"]
                or (not c["isCommander"] and (prs.get(b) or {}).get("state") == "OPEN")]
         pr, lead, finished = github.pick(own, prs), (r or {}).get("lead", ""), False
-        st = stage(r, pr)
         mem = memory.get(c["sessionId"]) if not r else None
-        if mem:  # deregistered since: finished if what it last worked on merged (or it reported done)
+        # any branch it has, registered, taken, pushed or last registered, may have a PR GitHub did not report
+        pr_unknown = unknown and bool(bs or (work.get(c["sessionId"]) or {}).get("pushed") or (mem or {}).get("branches"))
+        st = stage(r, pr, pr_unknown)
+        if mem:  # deregistered since: finished if what it last worked on reached the last milestone, as above
             mpr = github.pick(mem.get("branches", []), prs)
-            if mem.get("phase") == "done" or (mpr and mpr["state"] == "MERGED"):
+            if stage_of(mem.get("phase"), mpr, pr_unknown) == 5:
                 finished, bs, pr, st, wt, lead = True, mem.get("branches", []), mpr, 5, mem.get("worktree", ""), mem.get("lead", "")
         ci_text, ci_level = github.ci(pr, cfg.summary_checks)
         lc = commits(wt) if wt else None
@@ -370,7 +408,8 @@ def build(cfg, use_gh=True, now=None, starts=sessions.proc_starts, fetch=github.
             "name": c["name"], "sessionId": c["sessionId"], "tty": c["tty"], "isCommander": c["isCommander"],
             "lead": lead or ("" if c["isCommander"] else inferred.get(c["sessionId"], "")),
             "leadFrom": "registered" if lead else ("message" if inferred.get(c["sessionId"]) else ""),
-            "stage": st, "done": st == 5, "finished": finished,
+            "stage": st, "done": st == 5, "reportedDone": st == 5 and not merged(pr), "finished": finished,
+            "prUnknown": pr_unknown and not finished,
             "status": status, "claudeStatus": c["status"], "waitKind": c["waitKind"],
             "run": W["run"].get(status, status), "statusSince": c["statusSince"],
             "waitingFor": c["ask"] or c["waitingFor"], "registered": bool(r),
@@ -397,6 +436,11 @@ def build(cfg, use_gh=True, now=None, starts=sessions.proc_starts, fetch=github.
     unassigned = [x for x in rows if not x["isCommander"] and not x["lead"]]
 
     reg_by_who = {r["who"]: r for r in regs}
+    mem_by_who = {}  # owners that deregistered since, by the name each registered under and its session's name now
+    for c in convs:
+        m = memory.get(c["sessionId"])
+        for n in ({m.get("who"), c["name"]} if m else set()) - {None, ""}:
+            mem_by_who.setdefault(n, []).append(m)
     for p in plans:
         lead = alias.get(p["lead"], p["lead"])
         g = next((g for g in groups if g["lead"] == lead), None)
@@ -407,16 +451,21 @@ def build(cfg, use_gh=True, now=None, starts=sessions.proc_starts, fetch=github.
         for it in p["items"]:
             pr = prs.get(it["branch"])
             ci_text, ci_level = github.ci(pr, cfg.summary_checks)
+            owner = it.get("owner", "")
+            # an owner's last registration speaks only for the branches it named
+            mem = next((m for m in mem_by_who.get(owner, []) if it["branch"] in m.get("registered", m.get("branches", []))), None)
+            st = item_stage(reg_by_who.get(owner) or mem, pr, unknown)
             items.append({"branch": it["branch"], "title": it.get("title", ""), "owner": it.get("owner", ""),
-                          "stage": item_stage(reg_by_who.get(it.get("owner", "")), pr),
+                          "stage": st, "reportedDone": st == 5 and not merged(pr),
                           "pr": github.pr_label(pr, cfg.language), "ci": ci_text, "ciLevel": ci_level})
         g["batch"] = {"items": items}
 
     for g in groups:
-        m, bt = g["members"], g.get("batch")
-        d = dist([i["stage"] for i in bt["items"]] if bt else [x["stage"] for x in m if x["stage"]])
+        m, bt, counts = g["members"], g.get("batch"), counted(g)
+        d = dist([x["stage"] for x in counts])
         merged_prs, all_prs = pr_count(g)
         g["summary"] = {"total": len(m), "done": sum(x["done"] for x in m), "dist": d, "pct": pct(d, cfg.weights),
+                        "reported": sum(x["reportedDone"] for x in counts),
                         "items": len(bt["items"]) if bt else 0, "prsMerged": merged_prs, "prs": all_prs,
                         "itemsDone": sum(i["stage"] == 5 for i in bt["items"]) if bt else 0,
                         "busy": sum(x["status"] in ("busy", "shell") for x in m),
@@ -481,16 +530,14 @@ def build(cfg, use_gh=True, now=None, starts=sessions.proc_starts, fetch=github.
             and not any(c["reg"] and c["reg"].get("lead") for c in workers):
         health.append(T["x_no_messages"])
 
-    overall = []
-    for g in groups:
-        overall += [i["stage"] for i in g["batch"]["items"]] if g.get("batch") else [x["stage"] for x in g["members"] if x["stage"]]
-    overall += [x["stage"] for x in unassigned if x["stage"]]
-    total = dist(overall)
+    overall = [x for g in groups for x in counted(g)] + [x for x in unassigned if x["stage"]]
+    total = dist([x["stage"] for x in overall])
     solo = pr_count({"members": unassigned})
     return {"generated": now, "gh": gh_ok, "ghReused": reused, "count": len(rows), "language": cfg.language,
             "commanderPrefix": cfg.commander_prefix, "playbookReminder": cfg.playbook_remind,
             "words": W, "weights": cfg.weights, "green": {"faint": [52, 84, 64], "full": [63, 185, 80]},
-            "dist": total, "pct": pct(total, cfg.weights), "waiting": [x for x in rows if x["status"] == "waiting"],
+            "dist": total, "pct": pct(total, cfg.weights), "reported": sum(x["reportedDone"] for x in overall),
+            "waiting": [x for x in rows if x["status"] == "waiting"],
             "prsMerged": sum(g["summary"]["prsMerged"] for g in groups) + solo[0],
             "prs": sum(g["summary"]["prs"] for g in groups) + solo[1],
             "mine": {"open": len(mine["open"]), "mergedToday": len(mine["mergedToday"])} if mine else None,
@@ -501,8 +548,20 @@ def cell(s):
     return str(s).replace("|", "/").replace("\n", " ")
 
 
-def spread(d, stages):
-    return " · ".join(f"{stages[i]} {n}" for i, n in reversed(list(enumerate(d))) if n)
+def spread(d, W, reported=0):
+    """How many at each milestone, the furthest first; of the last, those there only by their own report apart."""
+    out = []
+    for i, n in reversed(list(enumerate(d))):
+        if i == len(d) - 1 and reported:
+            out += [f"{W['stages'][i]} {n - reported}"] if n > reported else []
+            out.append(f"{W['reported_done']} {reported}")
+        elif n:
+            out.append(f"{W['stages'][i]} {n}")
+    return " · ".join(out)
+
+
+def stage_word(x, W):
+    return W["reported_done"] if x.get("reportedDone") else W["stages"][x["stage"]]
 
 
 def markdown(b, live=False):
@@ -514,12 +573,14 @@ def markdown(b, live=False):
     def table(rows):
         out = [T["cols"], "|---|---|---|---|---|---|---|"]
         for x in rows:
-            if not x["registered"]:
+            if x["finished"]:  # deregistered after finishing: its last registration says how
+                ph = stage_word(x, W)
+            elif not x["registered"]:
                 ph = T["unreg"]
             elif x["phase"]:
-                ph = f"{S[x['stage']]} · {W['phases'].get(x['phase'], x['phase'])} {x['note']}".rstrip()
+                ph = f"{stage_word(x, W)} · {W['phases'].get(x['phase'], x['phase'])} {x['note']}".rstrip()
             else:
-                ph = f"{S[x['stage']]} · {T['nophase']}"
+                ph = f"{stage_word(x, W)} · {T['nophase']}"
             commit = T["dir_gone"] if x["worktreeGone"] else (
                 T["ago"].format(age=ago(now - x["lastCommit"], lang)) if x["lastCommit"] else "-")
             out.append("| " + " | ".join(cell(v) for v in [
@@ -527,7 +588,7 @@ def markdown(b, live=False):
                 (x["pr"] or {}).get("label", "-"), x["ci"] or "-", commit]) + " |")
         return out
 
-    total = T["progress"].format(pct=b["pct"], spread=spread(b["dist"], S)) if sum(b["dist"]) else ""
+    total = T["progress"].format(pct=b["pct"], spread=spread(b["dist"], W, b["reported"])) if sum(b["dist"]) else ""
     weights = ("、" if lang == "zh" else ", ").join(f"{s} {w}%" for s, w in zip(S[1:], b["weights"][1:]))
     out = [f"# {T['title'].format(n=b['count'], total=total)}", ""]
     out += [T["x_head"].format(h=h) for h in b["health"]] + ([""] if b["health"] else [])
@@ -541,19 +602,19 @@ def markdown(b, live=False):
     for g in b["groups"]:
         s = g["summary"]
         own = f"{g['leadRow']['run']} {ago(now - g['leadRow']['statusSince'], lang)}" if g["leadRow"] else T["not_running"]
-        p = f"{s['pct']}% ({spread(s['dist'], S)})" if s["pct"] is not None else "-"
+        p = f"{s['pct']}% ({spread(s['dist'], W, s['reported'])})" if s["pct"] is not None else "-"
         out.append(T["team_line"].format(lead=g["lead"], own=own, pct=p, how="" if g.get("batch") else T["live_members"],
                                          n=s["total"], busy=s["busy"], waiting=s["waiting"], ci=s["ciFail"]))
     if not b["groups"]:
         out.append(T["none"])
     for g in b["groups"]:
         s = g["summary"]
-        how = T["how_plan"].format(done=s["itemsDone"], n=s["items"]) if g.get("batch") else T["how_live"]
+        how = T["how_plan"].format(done=s["prsMerged"], n=s["items"]) if g.get("batch") else T["how_live"]
         out += ["", T["team_head"].format(lead=g["lead"], pct=f"{s['pct']}%" if s["pct"] is not None else "-", how=how)]
         if g.get("batch"):
             out += [T["item_cols"], "|---|---|---|---|---|---|"]
             out += ["| " + " | ".join(cell(v) for v in [it["title"] or "-", it["branch"], it["owner"] or "-",
-                                                         S[it["stage"]], (it["pr"] or {}).get("label", "-"),
+                                                         stage_word(it, W), (it["pr"] or {}).get("label", "-"),
                                                          it["ci"] or "-"]) + " |" for it in g["batch"]["items"]]
             out.append("")
         out += table(g["members"]) if g["members"] else [T["no_member_rows"]]

@@ -21,16 +21,18 @@ const board = {
   }],
 }
 
-test('a planned PR is led by its owner, and a click brings the owner forward', async ($, on) => {
+// Mounts the sidebar on a board; the engine's answers beneath the plugin come from here, and every process it runs is
+// recorded.
+async function mount($: any, on: any, b: unknown) {
   const runs: string[][] = []
-  on('session.start', async (_$, e: any) => ({ cwd: e.cwd }) as any)
+  on('session.start', async (_$: any, e: any) => ({ cwd: e.cwd }) as any)
   on('fs.stat', async () => ({ value: { realPath: '/opt/admiral-cache/plugin', isFile: false, isDirectory: true, size: 0, mtimeMs: 0 } }) as any)
   on('fs.exists', async () => ({ value: false }) as any)
-  on('process.run', async (_$, e: any) => {
+  on('process.run', async (_$: any, e: any) => {
     runs.push(e)
     return { value: { exitCode: 0, stdout: '/state\n', stderr: '' } } as any
   })
-  on('fs.read', async () => ({ value: JSON.stringify(board) }) as any)
+  on('fs.read', async () => ({ value: JSON.stringify(b) }) as any)
   on('command.register', async () => ({ value: undefined }) as any)
   on('clock.every', async () => ({ value: undefined }) as any)
   on('ui.open', async () => ({ value: { isPlaced: true } }) as any)
@@ -39,10 +41,30 @@ test('a planned PR is led by its owner, and a click brings the owner forward', a
   await $.session.start({ cwd: '/w', surface: 'terminal', isInteractive: true } as any)
   const ui = await $.ui.mount({ plugin: 'admiral', surface: 'terminal', component: 'Pane', requestId: 'admiral',
     props: { title: 'Admiral', isFocused: true, bodyColumns: 50, placement: 'dock' } as any })
-  const shown = JSON.stringify(await (ui as any).findAll({}))
+  return { ui: ui as any, runs, shown: JSON.stringify(await (ui as any).findAll({})) }
+}
+
+test('a planned PR is led by its owner, and a click brings the owner forward', async ($, on) => {
+  const { ui, runs, shown } = await mount($, on, board)
   expect(shown).toContain('Fix-Mail')
   expect(shown).toContain('Send mail with CRLF')
   expect(shown).toContain('A PR whose session closed')
-  await (ui as any).press({ key: 'fo-fix/mail' })
+  await ui.press({ key: 'fo-fix/mail' })
   expect(JSON.stringify(runs.at(-1))).toContain('ttys042')
+})
+
+test('a deliverable only reported done says so, and is not drawn as merged', async ($, on) => {
+  const reported = { ...owner, stage: 5, done: true, reportedDone: true, status: 'idle', run: 'idle' }
+  const g = board.groups[0]
+  const b = {
+    ...board, words: { reported_done: 'reported done', prs_merged: 'PRs merged {done}/{n}' },
+    groups: [{ ...g, members: [reported], batch: { items: [
+      { branch: 'fix/mail', title: 'Send mail with CRLF line endings', owner: 'Fix-Mail', stage: 5, reportedDone: true,
+        pr: null, ci: '', ciLevel: 'none' }] },
+      summary: { ...g.summary, dist: [0, 0, 0, 0, 0, 1], pct: 100, reported: 1, prs: 1, prsMerged: 0 } }],
+  }
+  const { shown } = await mount($, on, b)
+  expect(shown).toContain('reported done')
+  expect(shown).toContain('PRs merged 0/1')
+  expect(shown).toContain('{"type":"Text","props":{"dimColor":true},"children":["▰"]}')  // the last milestone dim
 })
