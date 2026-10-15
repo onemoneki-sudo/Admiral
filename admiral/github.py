@@ -51,7 +51,14 @@ def my_prs(cfg, now):
     # GitHub reads a bare date as a UTC day: asked instead from the moment the person's day began, in UTC, which holds
     # on a day the clocks change too
     t = time.localtime(now)
-    began = time.mktime((t.tm_year, t.tm_mon, t.tm_mday, 0, 0, 0, 0, 0, -1))
+    for hour in range(24):  # a day whose clocks jumped past midnight began at the first hour it had
+        try:
+            began = time.mktime((t.tm_year, t.tm_mon, t.tm_mday, hour, 0, 0, 0, 0, -1))
+            break
+        except (OverflowError, ValueError):
+            continue
+    else:
+        began = now
     since = time.strftime("%Y-%m-%dT%H:%M:%S+00:00", time.gmtime(began))
     calls = [["--state", "open"], ["--state", "merged", "--search", f"merged:>={since}"]]
     out = []
@@ -74,8 +81,9 @@ def prs_paced(cfg, branches, quiet, now, fetch=prs_by_branch, fetch_mine=my_prs)
     prs = fetch(cfg, branches)
     mine = fetch_mine(cfg, now) if prs is not None else None
     if prs is not None:  # what GitHub answers now wins; a merge seen before fills in what it no longer lists
-        seen = {**{b: p for b, p in (cache.get("prs") or {}).items() if p.get("state") == "MERGED"},
-                **(cache.get("merged") or {})}  # the last answer's merges count too: a cache from before has no memory
+        # a cache written before the memory existed has none yet: its last answer's merges start it, once
+        seen = cache["merged"] if "merged" in cache else \
+            {b: p for b, p in (cache.get("prs") or {}).items() if p.get("state") == "MERGED"}
         prs = {**{b: p for b, p in seen.items() if b in branches}, **prs}
         kept = sorted(((b, p) for b, p in prs.items() if p["state"] == "MERGED"), key=lambda bp: -bp[1]["number"])
         write_json(path, {"at": now, "branches": sorted(branches), "prs": prs, "mine": mine,

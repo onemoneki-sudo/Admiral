@@ -83,6 +83,13 @@ class MergedToday(FakeGitHub):
         self.assertEqual(self.in_zone("Asia/Kolkata", "2026-10-15 01:00"), "merged:>=2026-10-14T18:30:00+00:00")
         self.assertEqual(self.in_zone("UTC", "2026-10-15 12:00"), "merged:>=2026-10-15T00:00:00+00:00")
 
+    def test_a_day_whose_midnight_never_came_begins_at_its_first_hour(self):
+        # Casey, 2016-10-22: 23:59:59 at +08:00, then 03:00 at +11:00, both 16:00 UTC. macOS refuses the midnight
+        # that never came; elsewhere the C library places it on its own, so there it only must not fail.
+        since = self.in_zone("Antarctica/Casey", "2016-10-22 12:00")
+        if sys.platform == "darwin":
+            self.assertEqual(since, "merged:>=2016-10-21T16:00:00+00:00")
+
     def test_a_day_the_clocks_change_begins_at_its_own_midnight(self):
         # the day began before the change, in the offset it had then
         self.assertEqual(self.in_zone("America/Los_Angeles", "2026-03-08 12:00"), "merged:>=2026-03-08T08:00:00+00:00")
@@ -136,6 +143,16 @@ class Limits(FakeGitHub):
                          fetch_mine=lambda cfg, now: None)  # the person's own PRs failed this time
         later = self.paced({"feat/a"}, 120, {})  # #9 fell out of the recent list too
         self.assertNotIn("feat/a", later)  # the merge #9 replaced does not come back
+
+    def test_the_cap_holds_over_refreshes(self):
+        def merged(numbers):
+            return {f"b{n}": {"number": n, "headRefName": f"b{n}", "state": "MERGED", "isDraft": False} for n in numbers}
+        branches = set(merged(range(1, 502)))
+        self.paced(branches, 0, merged(range(1, 301)))
+        self.paced(branches, 60, merged(range(301, 502)))
+        for now in (120, 180):  # all of them fell out of the recent list
+            prs = self.paced(branches, now, {})
+        self.assertEqual((len(prs), "b1" in prs), (github.MERGED_KEPT, False))  # the oldest stays forgotten
 
     def test_a_cache_written_before_the_memory_keeps_its_merges(self):
         registry.write_json(self.cfg.sub("pr-cache.json"), {"at": 0, "branches": ["feat/a"], "mine": {},
