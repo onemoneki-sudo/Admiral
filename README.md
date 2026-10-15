@@ -1,0 +1,373 @@
+<p align="center">
+  <img src="docs/media/hero.png" alt="Admiral: a fleet of 54 Claude Code sessions under 7 commanders, on a radar chart" width="100%">
+</p>
+
+<p align="center">
+  <b>Command a fleet of Claude Code sessions.</b><br>
+  See who needs you, keep them out of each other's way, and drive every PR to merge.
+</p>
+
+<h3 align="center">The limit is no longer you. It's your tokens.</h3>
+
+<p align="center">
+  <a href="https://github.com/onemoneki-sudo/Admiral/actions/workflows/test.yml"><img src="https://github.com/onemoneki-sudo/Admiral/actions/workflows/test.yml/badge.svg" alt="tests"></a>
+  <img src="https://img.shields.io/badge/license-MIT-c9a35b" alt="MIT license">
+  <img src="https://img.shields.io/badge/python-3.11%2B-3fb950" alt="Python 3.11+">
+  <img src="https://img.shields.io/badge/model%20tokens-0-3fb950" alt="no model tokens">
+</p>
+
+<p align="center"><a href="https://github.com/onemoneki-sudo/Admiral/releases/download/v0.2.0/admiral.mp4"><b>▶ Watch the film</b></a> · <a href="https://github.com/onemoneki-sudo/Admiral/releases/download/v0.2.0/admiral.zh.mp4">中文版</a></p>
+
+<p align="center">English · <a href="README.zh-CN.md">中文</a></p>
+
+---
+
+**One person is becoming a whole team.** Admiral grew out of daily work, not a design exercise: one person running
+**close to fifty Claude Code sessions at once** on one product, in parallel, with commanders that split each batch of
+work and direct the sessions under them. That is where building software is going, and at that scale three things
+decide whether it works:
+
+- **Big work in parallel.** Many large, hard tasks at the same time, each in a session of its own, grouped under
+  commanders, batch by batch. This is what Admiral is for; small jobs do not need a fleet.
+- **No chaos.** Past a dozen sessions you lose the thread: which one waits for your approval, which batch is stuck,
+  which PR is red, which are done. Admiral answers those at a glance in every session, and its playbook keeps each
+  session to its own worktree, branch and locks.
+- **No drop in quality.** The playbook has every change reviewed by a different model and tested where it matters,
+  and Admiral counts progress by real delivery only: reviewed, accepted, CI, merged.
+
+All of it inside Claude Code, without asking any session anything and without spending a single model token.
+
+## Who it's for
+
+- **Heavy Claude Code users.** You build with Claude Code all day and keep many sessions going at once, from half a
+  dozen to fifty, on work big enough to split: an indie developer shipping a product alone, a tech lead driving a
+  project through a fleet of sessions. This is who Admiral is built for: you see who waits for you and why, where every
+  batch stands against real delivery, which CI is red and what you can close, from any session, for no model tokens.
+- **Your team works that way too.** Each person runs Admiral for their own fleet, and the playbook gives everyone's
+  sessions the same rules: one worktree per task, locks on what they share, review by a different model, one push
+  straight to ready. PRs then arrive the same way, whoever's sessions made them. Each board shows one machine's
+  sessions; it is not a shared team dashboard.
+- **Not for you** if you run one or two sessions at a time: Claude Code on its own is enough.
+
+## What you get
+
+### A status line for the whole fleet
+
+<img src="docs/media/statusline.png" alt="Admiral's lines under claude-hud's in a Claude Code session" width="100%">
+
+Every session shows the fleet under the status line you already have (above: [claude-hud](https://github.com/jarrodwatts/claude-hud),
+which Admiral runs first and leaves as it is).
+
+- **Fleet progress**: one bar, by delivery milestone, its cells deepening from faint to full green as it fills.
+- **Your PRs, as GitHub has them**: open, and merged today.
+- **Sessions**: waiting for you, working, idle, and the names of those waiting.
+- **CI failing** and **safe to close**, counted.
+- **One line per commander**, those that need you first: its batch's progress, PRs merged, members, CI. The session
+  reading it sees its own batch marked `▸`; a session that is not a commander gets a line of its own: its milestone,
+  its PR, its commander.
+- Too narrow a terminal drops the waiting names before anything else, so the counts stay.
+
+### A sidebar with every detail
+
+<img src="docs/media/sidebar.png" alt="The sidebar's waiting box, with the three ways a session waits for you" width="100%">
+
+`/admiral` (or the button above the prompt) opens it on the right. It refreshes every ten seconds from the same
+snapshot.
+
+- **Waiting for you**, with what each one wants. A session waits for you in three ways, and Admiral catches all three:
+  - **blocked**: Claude Code is asking your permission (the command is shown);
+  - **reported**: the session said what it needs from you (`admiral state --phase needs_you --note "…"`);
+  - **asked**: its last turn ended on a question, and you have not answered.
+- **Every batch**, under its commander: progress, PRs merged, and each deliverable of its plan with its owner, PR,
+  five-step milestone, failing CI and last activity. A deliverable nobody has started shows as such.
+
+  <img src="docs/media/batch.png" alt="A commander's batch: its plan, each deliverable's milestone, owner and PR" width="100%">
+
+- **Independent sessions**, the ones no commander runs.
+- **Wrap-up**: which sessions can close, which must wrap up first, which are yours to decide.
+- **To tidy**: sessions not registered, renamed, idle for days, or still registered after their PR merged.
+
+### One click to the session that needs you
+
+<img src="docs/media/click.gif" alt="A click on a name in the sidebar brings that session's terminal tab to the front" width="100%">
+
+With fifty-four sessions open, finding the one that waits is the hard part. Click any name in the sidebar and its
+terminal tab comes to the front (macOS: Terminal and iTerm2).
+
+### Progress you can trust
+
+<img src="docs/media/milestones.png" alt="Five milestones: develop 25%, review 50%, accept 70%, CI 80%, merged 100%" width="100%">
+
+Progress follows real delivery, never a guess: a session or deliverable is at **develop**, **review** (by a different
+model), **accept** (yours), **CI** (its PR is open) or **merged**, each worth a set share. A batch takes the mean of its
+deliverables; one planned but not started counts as zero, and a merged one keeps counting after its session closes.
+
+### PRs find their owner
+
+<img src="docs/media/push.png" alt="A git push output, and the PR counted for the session that pushed it" width="100%">
+
+A session's PRs are those of the branches it registered and the one its worktree has checked out. When a session moved
+on without registering the new branch, Admiral still finds whose PR it is: the session whose `git push` output updated
+it, else the one that clearly did the work in its worktree, else the batch of the commander that pushed it. The PR then
+counts, and the board asks the owner to register it.
+
+### Know what you can close
+
+<img src="docs/media/close.png" alt="Can close, wrap up first, and for you to confirm, each with its reason" width="100%">
+
+Every session gets a verdict with its reason: **can close** (its PR merged and it wrapped up), **wrap up first**
+(merged, but its worktree or a lock is left), **for you to confirm** (a commander with nothing running, a session idle
+for a day with no PR), or keep. Closing is always yours.
+
+### A playbook, and locks
+
+<img src="docs/media/playbook.png" alt="Six skills, and a lock queue where a short job goes ahead of a full gate" width="100%">
+
+Six skills Claude Code loads when they apply, so dozens of sessions stay out of each other's way:
+
+| Skill | What it settles |
+|---|---|
+| principles | judge every finding by the goal; a quality floor; evidence for every claim; when to stop |
+| roles | commanders plan, decide and accept; executors build; how to size a batch |
+| workspace | one worktree per task; registration; what never to touch (others' branches, shared git state, processes by name) |
+| resources | locks and queues for heavy tests, databases, browsers, ports and model quota |
+| pipeline | from task brief to merge: affected tests, review by a different model, the full gate only when needed, one push to ready |
+| wrapup | after the merge: clean up safely, then close |
+
+`admiral lock` guards what the sessions share: one full test run at a time, a few database slots, model quota, ports.
+Short jobs go first; a full gate waiting an hour is raised; a session that crashed never holds a lock for good, the
+next in line takes it over. Where your project's own rules differ, they win.
+
+## Try it in a minute
+
+```sh
+admiral demo
+```
+
+Builds a made-up fleet of 54 sessions under 7 commanders with Admiral's real board code, and prints how to open a
+Claude Code session on it. Nothing of yours is touched.
+
+## How it works
+
+```
+Claude Code's session registry ─┐
+Session transcripts ────────────┤                                   ┌─ status line (every session)
+Registrations and plans ────────┼─▶ admiral board --write ─▶ board ─┼─ sidebar (one click away)
+GitHub (gh: PRs, checks) ───────┤      every minute                 └─ board.md (commanders read it)
+Locks ──────────────────────────┘
+```
+
+One background job builds the board once a minute; every session reads the same snapshot. Each refresh asks GitHub
+four times (up to about six API requests) while any session works; once all have been idle for 30 minutes, every 15
+minutes; with no session running, not at all. That stays under a tenth of GitHub's hourly allowance.
+
+Transcripts are read from where the last refresh stopped, and every cache is bounded, so fifty sessions running for
+days stay fast. When Claude Code's internal files stop looking as expected, the board says so in red, rather than
+showing wrong numbers quietly.
+
+## Install
+
+Requirements: macOS for the background job and the click-to-focus (elsewhere, run `scripts/refresh.sh` every minute
+from cron or a systemd timer; everything else works the same); Python 3.11 or newer; the GitHub CLI `gh`, signed in;
+for the sidebar, a Claude Code with plugin function hooks (early access, developed against 2.1.299).
+
+```sh
+git clone https://github.com/onemoneki-sudo/Admiral.git ~/admiral
+~/admiral/scripts/install.sh       # config template, background job, `admiral` on your PATH; --dry-run shows what it would do
+```
+
+Then two steps that are yours, since Admiral never edits Claude Code's settings itself:
+
+1. **Status line**: in `~/.claude/settings.json` set the line the install script prints:
+   ```json
+   "statusLine": {"type": "command", "command": "'/Users/you/admiral/bin/admiral' statusline", "refreshInterval": 20}
+   ```
+   The status line you had before (claude-hud, say) is kept in Admiral's config and still runs first.
+2. **Sidebar and playbook**:
+   ```sh
+   claude plugin marketplace add ~/admiral
+   claude plugin install admiral@admiral
+   ```
+
+Last, set `project_dirs` and `[github] repo_dir` in `~/.config/admiral/config.toml`. `scripts/install.sh --uninstall`
+removes the background job and the link.
+
+**Update** with `git -C ~/admiral pull`, then `/reload-plugins` in open sessions: everything runs from the clone. What
+changed is in [CHANGELOG.md](CHANGELOG.md).
+
+## Config
+
+`~/.config/admiral/config.toml` (or `$ADMIRAL_CONFIG`). Every key is optional.
+
+```toml
+language = "en"                        # or "zh"
+
+[sessions]
+project_dirs = ["~/code/myapp"]        # show only sessions working here; empty shows every session
+commander_prefix = "Commander"         # a session named Commander-... is a commander
+
+[github]
+repo_dir = "~/code/myapp"              # where gh reads PRs and checks
+summary_checks = []                    # CI jobs that only sum up the others: named only when nothing else failed
+
+[statusline]
+base = ""                              # a status line command to run first
+
+[progress]                             # what each milestone is worth
+develop = 25
+review = 50
+accept = 70
+ci = 80
+merged = 100
+```
+
+## Working with it
+
+**Commanders and members.** A session whose name starts with the commander prefix is a commander. Another session
+belongs to the commander its registration names; without one, to the commander whose message it received last.
+
+**Registration.** A session says what it works on and where it stands; the playbook has every session do this:
+
+```sh
+admiral register --who "<session name>" --task "<task>" --branch <branch> --worktree <path> --lead "<commander>"
+admiral state    --who "<session name>" --phase review        # working, waiting, needs_you, review, accepting, paused, done
+admiral done     --who "<session name>"
+```
+
+**Plans.** A commander records the PRs its batch will deliver, so progress counts every one of them:
+
+```sh
+admiral plan add   --lead "<commander>" --branch <branch> --title "<deliverable>" --owner "<session>"
+admiral plan close --lead "<commander>"
+```
+
+**Commands.**
+
+```
+admiral register | state | done | list          registrations
+admiral plan add | rm | list | close            commanders' plans
+admiral board [--now | --write] [--no-github]   the latest board as Markdown (--now builds it afresh)
+admiral statusline                              the status line (reads Claude Code's JSON on stdin)
+admiral lock acquire | release | status | port  shared-resource locks
+admiral focus <tty>                             bring a session's tab to the front (macOS: Terminal, iTerm2)
+admiral demo                                    a made-up fleet, to see Admiral without one
+admiral where                                   the state directory
+```
+
+## What it reads, and where data goes
+
+- **Reads**, on your machine only: Claude Code's session registry and transcripts (`~/.claude`); `ps`, for each
+  session's start time and terminal; `git`, read-only, in your repository and the registered worktrees; the lock
+  owners; `~/.claude/settings.json` once, at install, to keep your status line.
+- **Writes**: its state directory (`~/.local/state/admiral`) and the locks you take; at install, its config, the
+  background job, the `~/.local/bin/admiral` link and `.python-path` in the clone.
+- **Sends**: only the `gh` calls to GitHub, as you, listing PRs and checks. No model is called and nothing is uploaded.
+
+## Why sessions, not subagents
+
+Subagents are good at a bounded job inside one session: search the code, review a diff, report back. A deliverable
+that takes hours or days wants a session of its own:
+
+- **Its whole task in one context, for as long as it lasts.** A subagent works for its parent and hands back a
+  summary; a session keeps its own task, decisions and history, and carries them for days.
+- **You can talk to it.** Every session is a terminal you can switch to, answer, redirect or stop, and Admiral tells
+  you which one needs you. A subagent is reached through the session that started it.
+- **One owner per PR.** Each session works in its own worktree and branch and carries its PRs from the first commit to
+  the merge, so ownership, review and progress stay clear.
+- **No single context to fill.** Every subagent's report lands in its parent's context, so one parent can only take in
+  so many. Fifty sessions report to you through Admiral's board instead, and none of them has to hold the others.
+
+Sessions still use subagents for small jobs inside them. Admiral is for keeping the sessions themselves in hand.
+
+## How it differs from an orchestration platform
+
+Platforms such as Google's [Scion](https://github.com/GoogleCloudPlatform/scion) run agents for you: each in its own
+container, scaling out to a cluster, coordinating among themselves. Admiral runs nothing. It sits on top of the
+Claude Code sessions you already run in your terminals, where you can talk to any of them at any moment, and it adds
+what one person needs to keep dozens of them in hand: who needs you, where each batch stands against real delivery,
+what you can close, and a playbook that keeps them out of each other's way. No containers, no cluster, no tokens.
+
+## Limits
+
+- Claude Code's session registry and transcripts are internal files, not an API. Admiral says so when they stop
+  looking as expected, rather than showing wrong numbers quietly; a Claude Code update can still need an Admiral one.
+- The sidebar uses Claude Code's early-access plugin API, which moves between releases.
+- It sees the sessions on this machine only, and Claude Code ones only.
+- Progress is milestone-based: it cannot see how far along development itself is.
+
+Status: early, maintained on a best-effort basis.
+
+## FAQ
+
+**Does it cost anything?** No. Admiral is free (MIT) and calls no model, so it spends none of your tokens. Its only
+traffic is `gh` asking GitHub for your PRs and checks, under a tenth of GitHub's hourly allowance.
+
+**Does my code or data leave my machine?** No. It reads Claude Code's files, `ps` and `git` locally, and sends nothing
+but those `gh` calls, as you. See [What it reads](#what-it-reads-and-where-data-goes).
+
+**Does it slow Claude Code down?** No. The status line reads a snapshot the background job already built, in about
+70 ms on top of the status line you had; the job runs once a minute. No session is asked anything or interrupted.
+
+**Does it start, stop or steer sessions?** No. It runs nothing and types into nothing: you and your commanders steer.
+A click in the sidebar only brings a session's terminal tab to the front.
+
+**Do I have to change how I work?** A little. Commanders are named with a prefix, and sessions register what they work
+on; the playbook has them do that themselves. Without it Admiral still shows every session and who waits for you, and
+finds a PR's owner from its push; registrations and plans are what make progress exact rather than estimated.
+
+**Is it worth it with two or three sessions?** No: Claude Code on its own is enough. Admiral pays off from about half
+a dozen sessions, on work big enough to split.
+
+**Linux? Windows?** Everything runs on macOS. On Linux all but click-to-focus works, and for now you schedule the
+once-a-minute job yourself (cron or a systemd timer). Windows is untested.
+
+**Can my team share one board?** Not yet. Each person runs Admiral for their own fleet, and the playbook gives everyone
+the same rules; a team view is on the roadmap below.
+
+**Why sessions and not subagents?** See [Why sessions, not subagents](#why-sessions-not-subagents).
+
+## Where it is going
+
+Admiral is used every day and developed in the open. These are plans, not promises; ideas and help are welcome in the
+issues.
+
+Next:
+- **Registration without discipline**: sessions registered as they push a branch or create a worktree, so the board
+  never depends on a session remembering to.
+- **A notification when a session starts waiting for you**, optional, for when you are not looking at the status line.
+- **Linux in full**: the background job set up by the install script, and click-to-focus for common terminals (tmux
+  among them).
+- **More than Claude Code**: sessions of other coding agents, such as Codex, on the same board.
+
+Later:
+- **A team view**: boards from several machines brought together, by choice.
+- **History**: how long each batch spends at each milestone, and where work stalls.
+- **A published interface**: moving off Claude Code's internal files as soon as Claude Code offers one.
+
+## Develop
+
+```sh
+python3 -m unittest discover -s tests      # also run by GitHub Actions on every push and PR (Linux and macOS)
+claude plugin validate plugin
+claude --plugin-dir plugin                 # a session with the sidebar loaded from the working tree
+```
+
+How to contribute, and what to leave out of an issue: [CONTRIBUTING.md](CONTRIBUTING.md). Security reports:
+[SECURITY.md](SECURITY.md).
+
+The film and the pictures above are drawn from Admiral's real output on its demo fleet: `docs/film/build_assets.py`,
+then `docs/film/render.py` (needs Playwright and ffmpeg).
+
+To release: raise `__version__` in `admiral/__init__.py` and the version in `plugin/.claude-plugin/plugin.json`
+together, move the `Unreleased` notes in `CHANGELOG.md` under the new version, and tag the commit `v<version>`.
+
+## Acknowledgements
+
+Admiral's status line is made to sit under [claude-hud](https://github.com/jarrodwatts/claude-hud) by Jarrod Watts
+(MIT): it runs your claude-hud first, unchanged, and adds its own lines below, with progress bars drawn in claude-hud's
+style. Admiral includes none of claude-hud's code. Thank you to its author for an open source status line worth
+building on.
+
+## License
+
+MIT

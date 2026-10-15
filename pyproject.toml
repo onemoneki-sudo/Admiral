@@ -1,0 +1,23 @@
+[project]
+name = "admiral"
+dynamic = ["version"]
+description = "Command a fleet of AI coding sessions from one terminal."
+readme = "README.md"
+license = "MIT"
+requires-python = ">=3.11"
+
+[project.scripts]
+admiral = "admiral.cli:main"
+
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[tool.setuptools]
+packages = ["admiral"]
+
+[tool.setuptools.dynamic]
+version = {attr = "admiral.__version__"}
+
+[tool.setuptools.package-data]
+admiral = ["lock.sh"]

@@ -1,0 +1,113 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Admiral Film</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Big+Shoulders+Display:wght@600;800;900&family=IBM+Plex+Sans:wght@400;500;600&family=JetBrains+Mono:wght@400;700&family=Noto+Sans+SC:wght@400;500;700;900&display=swap">
+<style>
+/* A naval chart at night: deep ink water, faint grid and depth contours, brass for instruments, the product's own
+   signal greens for progress. Every frame is drawn from the time t (render(t)), so the film renders frame by frame. */
+:root {
+  --ink: #0a1521;          /* water at night */
+  --ink-2: #0f1e2d;        /* chart panels */
+  --grid: rgba(120, 160, 200, .07);
+  --fg: #e8eef4;
+  --muted: #8193a8;
+  --brass: #cfa75a;        /* instruments, labels */
+  --amber: #e9b949;        /* waiting for you */
+  --coral: #f2706a;        /* CI failing */
+  --green: rgb(63, 185, 80);
+  --green-faint: rgb(52, 84, 64);
+  --claude: #d97757;
+  --term: #1b222b;         /* terminal background */
+  --term-chrome: #252e39;
+  --display: "Big Shoulders Display", "Avenir Next Condensed", "Arial Narrow", sans-serif;
+  --body: "IBM Plex Sans", "Helvetica Neue", Arial, sans-serif;
+  --mono: "JetBrains Mono", "SF Mono", Menlo, monospace;
+}
+/* Chinese: the same faces for Latin, Noto Sans SC for the characters (?lang=zh). Uppercase and wide tracking are for Latin. */
+:root[data-lang="zh"] {
+  --display: "Big Shoulders Display", "Noto Sans SC", "PingFang SC", sans-serif;
+  --body: "IBM Plex Sans", "Noto Sans SC", "PingFang SC", sans-serif;
+  --mono: "JetBrains Mono", "Noto Sans SC", "PingFang SC", monospace;
+}
+:root[data-lang="zh"] .headline { font-family: "Noto Sans SC", "PingFang SC", sans-serif; font-weight: 900; line-height: 1.15; letter-spacing: .04em; text-transform: none; }
+/* a terminal gives a Chinese character two cells; build_assets.py wraps each one so columns stay aligned */
+.w2 { display: inline-block; width: 2ch; text-align: center; }
+* { box-sizing: border-box; }
+html, body { margin: 0; background: #000; }
+#stage { position: relative; width: 1920px; height: 1080px; overflow: hidden; background: var(--ink); color: var(--fg);
+  font-family: var(--body); }
+canvas#chart { position: absolute; inset: 0; }
+.layer { position: absolute; inset: 0; }
+.abs { position: absolute; }
+
+/* type */
+.eyebrow { font-family: var(--mono); font-size: 22px; letter-spacing: .28em; text-transform: uppercase; color: var(--brass); }
+.headline { font-family: var(--display); font-weight: 800; letter-spacing: .01em; line-height: .95; text-transform: uppercase; }
+.caption { font-family: var(--body); font-size: 44px; font-weight: 500; line-height: 1.2; text-wrap: balance; }
+.caption em { font-style: normal; color: var(--brass); }
+
+/* terminal windows */
+.win { position: absolute; background: var(--term); border-radius: 12px; overflow: hidden;
+  box-shadow: 0 30px 80px rgba(0, 0, 0, .55), 0 0 0 1px rgba(255, 255, 255, .06); }
+.win .bar { height: 34px; background: var(--term-chrome); display: flex; align-items: center; gap: 8px; padding: 0 14px;
+  font-family: var(--body); font-size: 15px; color: #aeb9c6; }
+.win .bar i { width: 12px; height: 12px; border-radius: 50%; display: inline-block; }
+.win .bar i:nth-child(1) { background: #ff5f57; } .win .bar i:nth-child(2) { background: #febc2e; } .win .bar i:nth-child(3) { background: #28c840; }
+.win .bar span { margin-left: 10px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.win .body { font-family: var(--mono); font-size: 14px; line-height: 1.5; color: #c9d3de; padding: 12px 16px; white-space: pre; }
+.mono { font-family: var(--mono); white-space: pre; }
+.toast { position: absolute; padding: 14px 20px; border-radius: 10px; background: rgba(20, 30, 42, .95);
+  border: 1px solid rgba(233, 185, 73, .5); font-family: var(--body); font-size: 22px; color: var(--fg);
+  box-shadow: 0 10px 30px rgba(0, 0, 0, .5); white-space: nowrap; }
+.toast b { color: var(--amber); font-weight: 600; }
+.toast.red { border-color: rgba(242, 112, 106, .6); } .toast.red b { color: var(--coral); }
+
+/* Claude Code, as the terminal shows it (dark theme) */
+.cc { font-family: var(--mono); font-size: 16px; line-height: 1.5; color: #d6dde6; }
+.cc .dim, .pane .dim { color: #7c8795; }
+.c-ok { color: #4eba65; } .c-warn { color: #e5b84a; } .c-err { color: #ff6b80; } .c-in { color: #858e99; }
+.c-claude { color: #d77757; }
+.main-area { position: absolute; top: 34px; left: 0; bottom: 0; display: flex; flex-direction: column; padding: 18px 24px 16px; }
+.conv { flex: 1; white-space: pre-wrap; }
+.conv .you { color: #8f9aa7; }
+.inputbox { border-top: 1px solid #3a4553; border-bottom: 1px solid #3a4553; padding: 6px 0; margin: 14px 0 10px; }
+.sl { white-space: pre; overflow: hidden; }
+.pane { position: absolute; top: 34px; right: 0; bottom: 0; width: 660px; background: var(--term); border-left: 1px solid #36414e;
+  padding: 14px 20px; font-family: var(--mono); font-size: 15px; line-height: 1.42; color: #d6dde6; overflow: hidden; }
+.pane .row { display: flex; align-items: baseline; white-space: pre; }
+.pane .grow { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: pre; }
+.pane .sub { padding-left: 2ch; color: #7c8795; white-space: pre; overflow: hidden; text-overflow: ellipsis; }
+.pane .wbox { border: 1px solid #e5b84a; border-radius: 10px; padding: 2px 1ch; margin: 6px 0 4px; }
+.pane .rule { color: #36414e; white-space: pre; overflow: hidden; }
+.pane .team { margin-top: 15px; }
+.pane .btn { color: #8fb4e8; }
+.name { border-radius: 4px; }
+/* callouts */
+.ring { position: absolute; border: 2px solid var(--brass); border-radius: 8px; box-shadow: 0 0 0 6px rgba(207,167,90,.14); }
+.tag { position: absolute; font-family: var(--body); font-size: 26px; font-weight: 600; padding: 7px 16px; border-radius: 8px;
+  background: var(--brass); color: #11171e; white-space: nowrap; }
+.tag.amber { background: var(--amber); } .tag.coral { background: var(--coral); } .tag.green { background: #58c46d; }
+#cursor { position: absolute; width: 34px; height: 34px; z-index: 50; filter: drop-shadow(0 4px 8px rgba(0,0,0,.5)); }
+.ripple { position: absolute; width: 80px; height: 80px; border-radius: 50%; border: 3px solid var(--amber); z-index: 49; }
+</style>
+</head>
+<body>
+<div id="stage">
+  <canvas id="chart" width="1920" height="1080"></canvas>
+  <div id="chaos" class="layer"></div>
+  <div id="fleet" class="layer"></div>
+  <div id="ui" class="layer"></div>
+  <div id="milestones" class="layer"></div>
+  <div id="push" class="layer"></div>
+  <div id="close" class="layer"></div>
+  <div id="playbook" class="layer"></div>
+  <div id="outro" class="layer"></div>
+  <div id="captions" class="layer"></div>
+</div>
+<script src="assets.js"></script>
+<script src="film.js"></script>
+</body>
+</html>

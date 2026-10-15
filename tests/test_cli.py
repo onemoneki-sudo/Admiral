@@ -1,0 +1,160 @@
+"""The `admiral` command end to end, on a temporary state directory."""
+
+import os
+import shutil
+import subprocess
+import sys
+import tempfile
+import unittest
+
+ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+sys.path.insert(0, ROOT)
+
+
+class Cli(unittest.TestCase):
+    def setUp(self):
+        self.dir = tempfile.mkdtemp()
+        cfg = os.path.join(self.dir, "config.toml")
+        with open(cfg, "w") as fh:
+            fh.write(f'state_dir = "{self.dir}/state"\n[sessions]\ndir = "{self.dir}/none"\n')
+        self.env = dict(os.environ, ADMIRAL_CONFIG=cfg, PYTHONPATH=ROOT)
+
+    def tearDown(self):
+        shutil.rmtree(self.dir)
+
+    def run_cli(self, *argv):
+        return subprocess.run([sys.executable, "-m", "admiral", *argv], capture_output=True, text=True, env=self.env)
+
+    def test_register_phase_list_done(self):
+        self.assertEqual(self.run_cli("register", "--who", "worker", "--branch", "feat/a", "--lead", "Commander-A").returncode, 0)
+        self.assertEqual(self.run_cli("state", "--who", "worker", "--phase", "review").returncode, 0)
+        listed = self.run_cli("list").stdout
+        self.assertIn("| worker | - | feat/a | - | - | Commander-A | in review | - |", listed)
+        self.assertEqual(self.run_cli("done", "--who", "worker").returncode, 0)
+        self.assertNotIn("worker", self.run_cli("list").stdout)
+
+    def test_phases_are_checked(self):
+        self.run_cli("register", "--who", "worker")
+        self.assertNotEqual(self.run_cli("state", "--who", "worker", "--phase", "pending").returncode, 0)
+        self.assertNotEqual(self.run_cli("state", "--who", "worker", "--phase", "waiting").returncode, 0)
+        self.assertEqual(self.run_cli("state", "--who", "worker", "--phase", "waiting", "--note", "on #1").returncode, 0)
+        self.assertEqual(self.run_cli("state", "--who", "worker", "--phase", "验收中").returncode, 0)
+        self.assertNotEqual(self.run_cli("state", "--who", "worker", "--phase", "needs_you").returncode, 0)
+        self.assertEqual(self.run_cli("state", "--who", "worker", "--phase", "等你", "--note", "approve").returncode, 0)
+        self.assertNotEqual(self.run_cli("state", "--who", "nobody", "--phase", "working").returncode, 0)
+
+    def test_a_re_registration_keeps_the_reported_phase(self):
+        self.run_cli("register", "--who", "worker")
+        self.run_cli("state", "--who", "worker", "--phase", "accepting")
+        self.run_cli("register", "--who", "worker", "--branch", "feat/b")
+        self.assertIn("| accepting |", self.run_cli("list").stdout)
+
+    def test_plan_add_update_remove_close(self):
+        self.run_cli("plan", "add", "--lead", "Commander-A", "--branch", "feat/a", "--title", "first")
+        self.run_cli("plan", "add", "--lead", "Commander-A", "--branch", "feat/a", "--title", "renamed", "--owner", "worker")
+        self.run_cli("plan", "add", "--lead", "Commander-A", "--branch", "feat/b", "--title", "second")
+        listed = self.run_cli("plan", "list").stdout
+        self.assertIn("feat/a  renamed  · worker", listed)
+        self.assertIn("(2 deliverables)", listed)
+        self.assertNotEqual(self.run_cli("plan", "rm", "--lead", "Commander-A", "--branch", "nope").returncode, 0)
+        self.assertEqual(self.run_cli("plan", "close", "--lead", "Commander-A").returncode, 0)
+        self.assertEqual(self.run_cli("plan", "list").stdout, "no plans\n")
+
+    def test_the_board_prints_the_latest_snapshot_without_building(self):
+        os.makedirs(os.path.join(self.dir, "state"))
+        with open(os.path.join(self.dir, "state", "board.md"), "w") as fh:
+            fh.write("the snapshot\n")
+        self.assertEqual(self.run_cli("board").stdout, "the snapshot\n")
+        self.assertIn("Admiral board", self.run_cli("board", "--now", "--no-github").stdout)
+        os.utime(os.path.join(self.dir, "state", "board.md"), (0, 0))  # stale: built afresh
+        self.assertNotEqual(self.run_cli("board").stdout, "the snapshot\n")
+
+    def test_admiral_runs_through_a_symlink_and_lock_reads_the_configured_commanders(self):
+        link = os.path.join(self.dir, "admiral")
+        os.symlink(os.path.join(ROOT, "bin", "admiral"), link)
+        commanders = os.path.join(self.dir, "commanders.txt")
+        with open(commanders, "w") as fh:
+            fh.write("Commander-A\n")
+        with open(self.env["ADMIRAL_CONFIG"], "a") as fh:
+            fh.write(f'[locks]\ndir = "{self.dir}/locks"\ncommanders = "{commanders}"\n')
+        run = lambda *a: subprocess.run([link, *a], capture_output=True, text=True, env=self.env)
+        self.assertEqual(run("where").stdout.strip(), os.path.join(self.dir, "state"))
+        self.assertEqual(run("lock", "queue", "heavy", "--who", "w1").returncode, 0)
+        self.assertNotEqual(run("lock", "prio", "heavy", "--who", "w1", "--priority", "5", "--by", "Other").returncode, 0)
+        self.assertEqual(run("lock", "prio", "heavy", "--who", "w1", "--priority", "5", "--by", "Commander-A").returncode, 0)
+        for n in range(30):
+            run("lock", "acquire", f"lock-{n}", "--who", "w1")
+        cut = subprocess.run(f"'{link}' lock status | head -1", shell=True, capture_output=True, text=True, env=self.env)
+        self.assertEqual(cut.stderr, "")  # a reader that stops early ends the tool quietly
+
+    def test_one_version_everywhere(self):
+        import json
+        from admiral import __version__
+        self.assertEqual(self.run_cli("--version").stdout.strip(), f"admiral {__version__}")
+        with open(os.path.join(ROOT, "plugin", ".claude-plugin", "plugin.json")) as fh:
+            self.assertEqual(json.load(fh)["version"], __version__)  # the plugin updates only when its version moves
+        with open(os.path.join(ROOT, "CHANGELOG.md")) as fh:
+            self.assertIn(f"## {__version__} ", fh.read())  # every version says what changed
+
+    @unittest.skipUnless(os.path.exists("/usr/bin/python3") and subprocess.run(
+        ["/usr/bin/python3", "-c", "import sys; sys.exit(sys.version_info >= (3, 11))"]).returncode == 0,
+        "no Python older than 3.11 at /usr/bin/python3")
+    def test_an_old_python_is_named_plainly(self):
+        env = dict(self.env, ADMIRAL_PYTHON="/usr/bin/python3")
+        r = subprocess.run([os.path.join(ROOT, "bin", "admiral"), "where"], capture_output=True, text=True, env=env)
+        self.assertNotEqual(r.returncode, 0)
+        self.assertIn("Admiral needs Python 3.11 or newer", r.stderr)
+        self.assertNotIn("Traceback", r.stderr)
+
+    def test_the_demo_fleet_shows_every_part_of_the_board(self):
+        import json
+        for _ in range(2):  # a second run starts afresh
+            r = self.run_cli("demo", "--once")
+            self.assertEqual(r.returncode, 0, r.stderr)
+        demo = os.path.join(self.dir, "state", "demo")
+        self.assertIn(os.path.join(demo, "config.toml"), r.stdout)
+        with open(os.path.join(demo, "state", "board.json")) as fh:
+            b = json.load(fh)
+        self.assertEqual(b["count"], 54)
+        self.assertEqual(len(b["groups"]), 7)
+        self.assertEqual(sorted(x["waitKind"] for x in b["waiting"]), ["blocked"] * 2 + ["maybe"] * 2 + ["reported"] * 2)
+        self.assertEqual({k: len(v) for k, v in b["closable"].items()}, {"close": 4, "wrapup": 2, "confirm": 2})
+        self.assertEqual(sum(x["ciLevel"] == "fail" for g in b["groups"] for x in g["members"])
+                         + sum(x["ciLevel"] == "fail" for x in b["unassigned"]), 4)
+        self.assertFalse(b["health"])
+        self.assertFalse([h for h in b["hints"] if "worktree" in h])  # every worktree that should be there is
+        env = dict(self.env, ADMIRAL_CONFIG=os.path.join(demo, "config.toml"), COLUMNS="170")
+        line = subprocess.run([sys.executable, "-m", "admiral", "statusline"], input="{}", capture_output=True,
+                              text=True, env=env).stdout
+        self.assertIn("54 sessions", line)
+        self.assertIn("1 more commander: /admiral shows all", line)
+
+    def test_the_demo_fleet_speaks_chinese(self):
+        import json
+        r = self.run_cli("demo", "--once", "--lang", "zh")
+        self.assertEqual(r.returncode, 0, r.stderr)
+        demo = os.path.join(self.dir, "state", "demo")
+        with open(os.path.join(demo, "state", "board.json"), encoding="utf-8") as fh:
+            b = json.load(fh)
+        self.assertEqual((b["count"], len(b["groups"]), b["language"]), (54, 7, "zh"))
+        self.assertIn("总指挥-结账", [g["lead"] for g in b["groups"]])
+        self.assertEqual(sorted(x["waitKind"] for x in b["waiting"]), ["blocked"] * 2 + ["maybe"] * 2 + ["reported"] * 2)
+        env = dict(self.env, ADMIRAL_CONFIG=os.path.join(demo, "config.toml"), COLUMNS="170")
+        line = subprocess.run([sys.executable, "-m", "admiral", "statusline"], input="{}", capture_output=True,
+                              text=True, env=env).stdout
+        self.assertIn("共 54 对话", line)
+        self.assertIn("  结账  ", line)  # the commander prefix is left off its line
+
+    def test_a_board_without_github_is_never_published(self):
+        self.assertNotEqual(self.run_cli("board", "--write", "--no-github").returncode, 0)
+
+    def test_the_board_prints_with_no_session_and_no_config_file(self):
+        env = dict(self.env, ADMIRAL_CONFIG=os.path.join(self.dir, "missing.toml"), HOME=self.dir)
+        r = subprocess.run([sys.executable, "-m", "admiral", "board", "--no-github"], capture_output=True, text=True, env=env)
+        self.assertEqual(r.returncode, 0, r.stderr)
+        self.assertIn("Admiral board (0 running)", r.stdout)
+        self.assertIn("Built just now", r.stdout)  # built for this command, not the background job's snapshot
+
+
+if __name__ == "__main__":
+    unittest.main()

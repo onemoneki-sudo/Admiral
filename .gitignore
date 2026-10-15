@@ -1,0 +1,10 @@
+.DS_Store
+__pycache__/
+*.pyc
+plugin/.claude-plugin/types/
+plugin/tsconfig.json
+.python-path
+*.silent.mp4
+# the films are attached to each release, not kept in the repository
+docs/media/*.mp4
+docs/media/*.cover.png

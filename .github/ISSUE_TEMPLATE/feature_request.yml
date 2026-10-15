@@ -1,0 +1,22 @@
+name: Idea or feature
+description: Something Admiral could do for someone running many sessions
+labels: [enhancement]
+body:
+  - type: textarea
+    id: problem
+    attributes:
+      label: The problem
+      description: What gets in your way when you run many Claude Code sessions, and how often.
+    validations:
+      required: true
+  - type: textarea
+    id: idea
+    attributes:
+      label: What you would like
+      description: How Admiral could help. A sketch of the status line or sidebar is welcome.
+    validations:
+      required: true
+  - type: textarea
+    id: today
+    attributes:
+      label: How you handle it today

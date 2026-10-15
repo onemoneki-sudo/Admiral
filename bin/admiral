@@ -1,0 +1,16 @@
+#!/bin/sh
+# Run Admiral from a clone without installing it; works through a symlink (install.sh links ~/.local/bin/admiral).
+# The Python: $ADMIRAL_PYTHON when set; else the one install.sh checked and recorded in .python-path beside this
+# clone (so the background job, the status line and every session agree, whatever the PATH); else python3.
+self="$0"
+while [ -L "$self" ]; do
+  link="$(readlink "$self")"
+  case "$link" in /*) self="$link";; *) self="$(dirname "$self")/$link";; esac
+done
+here="$(cd "$(dirname "$self")/.." && pwd)"
+py="${ADMIRAL_PYTHON:-}"
+if [ -z "$py" ] && [ -f "$here/.python-path" ]; then
+  read -r py < "$here/.python-path"
+  [ -x "$py" ] || py=""  # that Python was removed since (an upgrade, say): fall back
+fi
+PYTHONPATH="$here${PYTHONPATH:+:$PYTHONPATH}" exec "${py:-python3}" -m admiral "$@"

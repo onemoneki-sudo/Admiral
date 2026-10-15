@@ -1,0 +1,62 @@
+name: Bug report
+description: Something Admiral shows or does is wrong
+labels: [bug]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Thank you for reporting. Please leave out anything private: real session names, task notes, repository,
+        branch or PR names from your own work. If you can, show the problem on the demo fleet (`admiral demo`).
+  - type: textarea
+    id: what
+    attributes:
+      label: What happened
+      description: What Admiral showed or did.
+    validations:
+      required: true
+  - type: textarea
+    id: expected
+    attributes:
+      label: What you expected
+    validations:
+      required: true
+  - type: textarea
+    id: steps
+    attributes:
+      label: How to reproduce
+      description: The commands or steps, on the demo fleet if you can.
+  - type: input
+    id: admiral
+    attributes:
+      label: Admiral version
+      description: "`admiral --version`"
+    validations:
+      required: true
+  - type: input
+    id: claude
+    attributes:
+      label: Claude Code version
+      description: "`claude --version`. Admiral reads Claude Code's internal files, so this matters."
+    validations:
+      required: true
+  - type: dropdown
+    id: os
+    attributes:
+      label: System
+      options:
+        - macOS
+        - Linux
+        - Other
+    validations:
+      required: true
+  - type: input
+    id: terminal
+    attributes:
+      label: Terminal
+      description: Terminal, iTerm2, tmux... (for anything about click-to-focus)
+  - type: textarea
+    id: board
+    attributes:
+      label: Board output, redacted
+      description: "`admiral board --now --no-github`, with every private name replaced. Leave it out if unsure."
+      render: text
