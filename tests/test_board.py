@@ -418,7 +418,27 @@ class PutAway(World):
         self.assertEqual(self.kept(b), ["worker"])
 
     def test_a_branch_not_merged_keeps_it(self):
-        self.assertEqual(self.kept(self.ended_with(states=("MERGED", "OPEN"))), ["worker"])
+        b = self.ended_with(states=("MERGED", "OPEN"))
+        self.assertTrue([h for h in b["hints"] if "has ended: worker" in h], b["hints"])
+
+    def test_a_session_with_no_name_keeps_them_all(self):
+        with open(os.path.join(self.root, "sessions", "7.json"), "w") as fh:
+            json.dump({"pid": 7, "sessionId": "s7", "status": "busy", "cwd": "/w/app", "procStart": START}, fh)
+        b = self.ended_with()
+        self.assertTrue([h for h in b["hints"] if "has ended: worker" in h], b["hints"])
+
+    def test_one_made_by_hand_for_a_running_session_known_by_another_registration_stays(self):
+        self.register_as_session("task-name", "s9", branch="feat/new")
+        self.session(9, "worker")  # runs; its own registration is under its task's name
+        b = self.ended_with(branch="feat/a", states=("MERGED",))  # and worker, by hand, for its merged branch
+        self.assertTrue([h for h in b["hints"] if "still registered: worker" in h], b["hints"])  # to wrap up, not hidden
+
+    def register_as_session(self, who, sid, **kw):
+        from admiral import registry
+        self.register(who, **kw)
+        reg = registry.read_json(registry.reg_path(self.cfg, who))
+        os.remove(registry.reg_path(self.cfg, who))
+        registry.write_json(registry.session_path(self.cfg, sid), dict(reg, sessionId=sid))
 
     def test_a_lock_still_held_keeps_it(self):
         self.lock("heavy", "worker")

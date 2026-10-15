@@ -584,10 +584,12 @@ def build(cfg, use_gh=True, now=None, starts=sessions.proc_starts, fetch=github.
     hints += [T["h_twice"].format(name=name, n=n, where=", ".join(where)) for name, n, where in open_twice]
     hints += [T["h_plan_finished"].format(lead=lead) for lead in finished]
     live_ids = {s.get("sessionId") for s in live + elsewhere}
+    running_here = {n for c in convs for n in [c["name"]] + c["former"]}  # every name a session here has or had
+    nameless = any(not s.get("name") for s in live + elsewhere)  # by name, whether one ended cannot then be told
     for r in regs:
         # its session has ended: by its session when it records one, else by its name, wherever sessions run
         ended = r["sessionId"] not in live_ids if r.get("sessionId") else \
-            r["who"] not in matched and r["who"] not in running_elsewhere
+            r["who"] not in matched and r["who"] not in running_here and r["who"] not in running_elsewhere
         if ended:
             # nothing to say once its work is over and wrapped up: every branch merged on GitHub, its worktree gone
             # and no lock held; else the person decides. The registration stays where it is, so a session that comes
@@ -596,7 +598,7 @@ def build(cfg, use_gh=True, now=None, starts=sessions.proc_starts, fetch=github.
             # worktree, as written whole or as the list it may be
             bs, names = branches_of(r.get("branch")), registry.names_of(r)
             wts = [r.get("worktree") or ""] + [w.strip() for w in (r.get("worktree") or "").split(",")]
-            if gh_ok and not broken and not shapeless and bs and all((prs.get(b) or {}).get("state") == "MERGED" for b in bs) \
+            if gh_ok and not broken and not shapeless and not nameless and bs and all((prs.get(b) or {}).get("state") == "MERGED" for b in bs) \
                     and not any(w and os.path.isdir(w) for w in wts) \
                     and not any(who == n or who.startswith(n + " ") for who in locks.values() for n in names):
                 continue
