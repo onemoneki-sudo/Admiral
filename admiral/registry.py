@@ -89,9 +89,10 @@ def itself(cfg, who, sid, names):
     session is not registered as itself already."""
     if names and names[0].startswith(cfg.commander_prefix):
         return False
-    if who in running_names(cfg) - set(names):
-        return False
-    return read_json(session_path(cfg, sid)) is None
+    own = read_json(session_path(cfg, sid))
+    if own:  # registered as itself already: under that name again it is itself, under another it is someone else
+        return who in names_of(own)
+    return who not in running_names(cfg) - set(names)
 
 
 def resolve(cfg, who):
@@ -105,6 +106,8 @@ def resolve(cfg, who):
     reg = read_json(reg_path(cfg, who))
     if reg:
         return reg
+    if who in names:  # its own name, and no registration of its own: not another session's of that name
+        return None
     others = [r for r in registrations(cfg) if r.get("sessionId") and r["who"] == who]
     return others[0] if len(others) == 1 else None
 
@@ -124,13 +127,17 @@ def register(cfg, who, task="", branch="", worktree="", files="", lead=""):
     fields = {"task": task, "branch": branch, "worktree": worktree, "files": files, "lead": lead, "since": time.time()}
     if sid and (who in names or itself(cfg, who, sid, names)):
         own = read_json(session_path(cfg, sid))
-        by_name = read_json(reg_path(cfg, who))  # made for it under this name before it registered itself
-        old = own or (by_name if by_name and not by_name.get("sessionId") else None) or {}
+        # made for it under a name it has or had, before it registered itself: taken over, its phase with it
+        taken = [r for r in (read_json(reg_path(cfg, n)) for n in dict.fromkeys([who] + names)) if r and not r.get("sessionId")]
+        old = own or (taken[0] if taken else {})
         reg = dict(renamed(old, who) if old.get("who") else {"who": who}, **fields, sessionId=sid,
                    phase=old.get("phase"), note=old.get("note", ""), phaseAt=old.get("phaseAt"))
         write_json(session_path(cfg, sid), reg)
-        if by_name and not own:
-            os.remove(reg_path(cfg, who))  # after the write, so nothing is lost if it fails
+        for r in taken:  # after the write, so nothing is lost if it fails; done again on the next registration if not
+            try:
+                os.remove(reg_path(cfg, r["who"]))
+            except FileNotFoundError:
+                pass
         return reg
     old = read_json(reg_path(cfg, who)) or {}
     reg = dict({"who": who}, **fields, phase=old.get("phase"), note=old.get("note", ""), phaseAt=old.get("phaseAt"))

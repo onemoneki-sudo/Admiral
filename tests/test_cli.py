@@ -149,6 +149,45 @@ class Cli(unittest.TestCase):
         r = self.run_cli("register", "--who", "the task")
         self.assertEqual((r.returncode, r.stdout.strip()), (0, "registered the task, for this session (sid-46ab)"))
 
+    def test_registering_again_under_its_task_name_updates_its_one_registration(self):
+        self.in_session(45, "sid-45", "dev-45")
+        self.run_cli("register", "--who", "task-a", "--branch", "feat/a")
+        self.run_cli("state", "--who", "task-a", "--phase", "review")
+        self.run_cli("register", "--who", "task-a", "--branch", "feat/b")
+        self.assertEqual([(r["who"], r.get("sessionId"), r["branch"], r["phase"]) for r in self.regs()],
+                         [("task-a", "sid-45", "feat/b", "review")])
+        self.run_cli("done", "--who", "task-a")
+        self.assertEqual(self.regs(), [])
+
+    def test_a_new_session_reporting_under_an_ended_ones_name_touches_nothing(self):
+        self.in_session(41, "sid-old", "worker")
+        self.run_cli("register", "--who", "worker", "--branch", "feat/old")
+        self.in_session(43, "sid-new", "worker")  # not registered yet
+        r = self.run_cli("state", "--who", "worker", "--phase", "review")
+        self.assertNotEqual(r.returncode, 0)
+        self.assertIn("not registered", r.stderr)
+        self.assertEqual(self.run_cli("done", "--who", "worker").stdout.strip(), "no registration for worker")
+        self.assertEqual([(r["sessionId"], r["phase"]) for r in self.regs()], [("sid-old", None)])
+
+    def test_a_registration_made_for_it_under_a_former_name_is_taken_over(self):
+        self.run_cli("register", "--who", "old", "--branch", "feat/a")
+        self.run_cli("state", "--who", "old", "--phase", "review")
+        self.in_session(41, "sid-41", "new", former=("old",))
+        self.run_cli("register", "--who", "new", "--branch", "feat/a")
+        self.assertEqual([(r["who"], r.get("sessionId"), r["phase"]) for r in self.regs()], [("new", "sid-41", "review")])
+
+    def test_a_take_over_left_half_done_is_finished_by_the_next_registration(self):
+        from admiral import registry
+        self.run_cli("register", "--who", "worker", "--branch", "feat/a")  # made for it by name
+        self.in_session(41, "sid-41", "worker")
+        self.run_cli("register", "--who", "worker", "--branch", "feat/a")
+        cfg = os.path.join(self.dir, "state", "registry")
+        name_file = os.path.join(cfg, registry.key("worker") + ".json")
+        with open(name_file, "w") as fh:  # as if removing it had failed
+            json.dump({"who": "worker", "branch": "feat/a"}, fh)
+        self.run_cli("register", "--who", "worker", "--branch", "feat/a")
+        self.assertEqual([(r["who"], r.get("sessionId")) for r in self.regs()], [("worker", "sid-41")])
+
     def test_phases_are_checked(self):
         self.run_cli("register", "--who", "worker")
         self.assertNotEqual(self.run_cli("state", "--who", "worker", "--phase", "pending").returncode, 0)

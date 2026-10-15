@@ -225,6 +225,19 @@ class KnownBySession(World):
         item = self.group(self.build(use_gh=False), "Commander-A")["batch"]["items"][0]
         self.assertEqual(item["stage"], 3)
 
+    def test_a_plan_finds_each_owner_by_its_branch_when_two_answer_to_one_name(self):
+        self.register_as("alpha", "s3", branch="feat/a", phase="review")
+        self.register_as("beta", "s4", branch="feat/b", phase="done")
+        from admiral import registry
+        reg = registry.read_json(registry.session_path(self.cfg, "s3"))
+        registry.write_json(registry.session_path(self.cfg, "s3"), dict(reg, who="beta", aka=["alpha"]))  # renamed
+        self.session(3, "beta", former=("alpha",))
+        self.session(4, "beta")
+        self.session(1, "Commander-A")
+        self.plan("Commander-A", ("feat/a", "a", "alpha"), ("feat/b", "b", "beta"))
+        items = self.group(self.build(use_gh=False), "Commander-A")["batch"]["items"]
+        self.assertEqual([(i["branch"], i["stage"]) for i in items], [("feat/a", 2), ("feat/b", 5)])
+
     def test_a_registration_that_records_its_session_ends_with_that_session(self):
         self.register_as("old", "s9", branch="feat/a")  # s9 runs, outside the projects, under another name
         self.session(9, "renamed", cwd="/w/other")
