@@ -962,16 +962,45 @@ class OneConversation(World):
         self.assertEqual(len(groups), 1)
         self.assertEqual([m["name"] for m in groups[0]["members"]], ["worker"])
 
-    def test_two_sessions_sharing_a_commanders_name_are_one_batch_and_flagged(self):
-        self.session(1, "Commander-A", status="busy")
-        self.session(2, "Commander-A", status="idle")  # another conversation, given the same name
+    def test_a_message_from_any_process_of_a_commander_finds_it(self):
+        self.session(1, "Commander-New", status="waiting")
+        self.session(2, "Commander-New", status="idle", sessionId="s1")  # the same commander; it wrote to the member
         self.session(3, "worker")
-        self.register("worker", lead="Commander-A")
+        self.transcript(3, (2, "Commander-Old"))  # under a name no session keeps: only its process tells who it was
+        g = next(g for g in self.build(use_gh=False)["groups"] if g["lead"] == "Commander-New")
+        self.assertEqual([m["name"] for m in g["members"]], ["worker"])
+
+    def test_a_name_only_one_process_remembers_still_finds_the_session(self):
+        self.session(1, "Commander-New", status="waiting")
+        self.session(2, "Commander-New", status="idle", sessionId="s1", former=("Commander-Old",))
+        self.session(3, "worker")
+        self.register("worker", lead="Commander-Old")
         b = self.build(use_gh=False)
-        groups = [g for g in b["groups"] if g["lead"] == "Commander-A"]
-        self.assertEqual((len(groups), [m["name"] for m in groups[0]["members"]]), (1, ["worker"]))
-        self.assertEqual(groups[0]["leadRow"]["status"], "busy")
-        self.assertTrue(any("Commander-A" in h and "2" in h for h in b["hints"]), b["hints"])
+        self.assertEqual([[m["name"] for m in g["members"]] for g in b["groups"]], [["worker"]])
+        self.assertFalse([h for h in b["hints"] if "not running" in h])
+
+    def test_a_member_open_twice_is_one_member(self):
+        self.session(1, "Commander-A")
+        self.session(3, "worker", status="idle")
+        self.session(4, "worker", status="busy", sessionId="s3")
+        self.register("worker", lead="Commander-A")
+        g = self.group(self.build(use_gh=False), "Commander-A")
+        self.assertEqual(([m["name"] for m in g["members"]], g["summary"]["busy"]), (["worker"], 1))
+
+    def test_two_processes_in_one_terminal_are_named_once(self):
+        self.session(3, "worker", status="busy")
+        self.session(4, "worker", status="idle", sessionId="s3")
+        b2 = board.build(self.cfg, use_gh=False, now=NOW, starts=lambda pids: {p: (START, "ttys001") for p in pids})
+        hint = next(h for h in b2["hints"] if "open 2 times" in h)
+        self.assertIn("(ttys001)", hint)
+
+    def test_two_sessions_sharing_a_commanders_name_both_stay_shown_and_are_flagged(self):
+        self.session(1, "Commander-A", status="busy")
+        self.session(2, "Commander-A", status="waiting")  # another conversation, given the same name
+        b = self.build(use_gh=False)
+        self.assertEqual(sorted(g["leadRow"]["sessionId"] for g in b["groups"]), ["s1", "s2"])  # neither is dropped
+        self.assertIn("2 sessions share the name Commander-A: rename all but one, as registrations and messages find "
+                      "sessions by name", b["hints"])
 
     def test_different_conversations_with_different_names_stay_apart(self):
         self.session(3, "one", status="busy")

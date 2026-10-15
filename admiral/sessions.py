@@ -82,7 +82,7 @@ def infer_leads(cfg, convs):
     path = cfg.sub("lead-cache.json")
     cache = read_json(path) or {}
     commanders = [c for c in convs if c["isCommander"]]
-    by_pid = {c["pid"]: c["name"] for c in commanders}
+    by_pid = {pid: c["name"] for c in commanders for pid in c.get("pids") or [c["pid"]]}  # every process of one
     by_name = {n: c["name"] for c in commanders for n in [c["name"]] + c["former"]}
     fresh, out = {}, {}
     stats = {"missing": 0, "read": 0, "found": False, "heard": {}}
