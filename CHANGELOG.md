@@ -6,6 +6,8 @@ its cache, one copy per version, so a change to the sidebar or the playbook reac
 
 ## Unreleased
 
+## 0.2.6 (2026-10-15)
+
 **Board**
 - A registration a session makes for itself records that session, and follows it: renamed, it stays registered with
   its task, branch and phase, with no hint to register again, and reports under its new name move the registration
