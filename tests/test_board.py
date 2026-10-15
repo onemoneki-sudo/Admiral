@@ -292,6 +292,47 @@ class OnlyWhoShouldRegister(World):
         self.session(3, "worker")
         self.assertIn("running but not registered: worker", self.build(use_gh=False)["hints"])
 
+    def test_a_status_changed_half_a_minute_after_its_start_is_a_session_at_work(self):
+        from admiral import sessions
+        for after, flagged in ((29, False), (31, True)):
+            with self.subTest(after=after):
+                self.tearDown()
+                self.setUp()
+                self.session(3, "worker", since=NOW - 300 + after, startedAt=(NOW - 300) * 1000)
+                os.remove(sessions.transcript(self.cfg, "/w/app", "s3"))
+                hints = self.build(use_gh=False)["hints"]
+                self.assertEqual("running but not registered: worker" in hints, flagged, hints)
+
+    def test_running_a_command_or_waiting_is_being_at_work(self):
+        from admiral import sessions
+        for status in ("shell", "waiting"):
+            with self.subTest(status=status):
+                self.tearDown()
+                self.setUp()
+                self.session(3, "worker", status=status, since=NOW - 60, startedAt=(NOW - 60) * 1000)
+                os.remove(sessions.transcript(self.cfg, "/w/app", "s3"))
+                self.assertIn("running but not registered: worker", self.build(use_gh=False)["hints"])
+
+    def test_times_that_do_not_read_as_numbers_do_not_stop_the_board(self):
+        self.session(3, "worker", startedAt="soon")
+        self.assertIn("running but not registered: worker", self.build(use_gh=False)["hints"])
+
+    def test_a_resumed_conversation_has_begun_whichever_process_shows(self):
+        from admiral import sessions
+        self.session(3, "worker", since=NOW - 300, startedAt=(NOW - 3600) * 1000)  # at work an hour ago
+        self.session(4, "worker", sessionId="s3", since=NOW - 30, startedAt=(NOW - 30) * 1000)  # resumed just now
+        os.remove(sessions.transcript(self.cfg, "/w/app", "s3"))
+        b = self.build(use_gh=False)
+        self.assertIn("running but not registered: worker", b["hints"])
+        self.assertTrue([h for h in b["health"] if "no transcript" in h])
+
+    def test_one_worker_with_a_transcript_shows_they_are_where_expected(self):
+        from admiral import sessions
+        self.session(3, "quiet", since=NOW - 60, startedAt=(NOW - 60) * 1000)  # nothing since it opened, yet a transcript
+        self.session(4, "busy-one", status="busy", startedAt=(NOW - 3600) * 1000)
+        os.remove(sessions.transcript(self.cfg, "/w/app", "s4"))
+        self.assertFalse([h for h in self.build(use_gh=False)["health"] if "no transcript" in h])
+
     def test_a_session_at_work_with_no_transcript_still_tells_transcripts_moved(self):
         from admiral import sessions
         self.session(3, "worker", status="busy", since=NOW - 30, startedAt=(NOW - 3600) * 1000)

@@ -285,10 +285,14 @@ def closing(x, locks, groups, now, cfg, T):
 
 def began(s):
     """Whether a session has done anything since it started: its status changed half a minute or more after its
-    start, or it works or waits now. One with no start recorded is taken to have."""
-    if s.get("status") in ("busy", "shell", "waiting") or not s.get("startedAt"):
+    start, or it works or waits now. One with no start recorded, or times that do not read as numbers, is taken to
+    have."""
+    if s.get("status") in ("busy", "shell", "waiting"):
         return True
-    return (s.get("statusUpdatedAt") or 0) - s["startedAt"] >= 30_000
+    try:
+        return float(s.get("statusUpdatedAt") or 0) - float(s["startedAt"]) >= 30_000
+    except (KeyError, TypeError, ValueError):
+        return True
 
 
 def branches_of(cell):
@@ -341,7 +345,8 @@ def build(cfg, use_gh=True, now=None, starts=sessions.proc_starts, fetch=github.
         for p in procs:
             alike.setdefault((p.get("name"), p.get("cwd")), []).append(p)
         for same in alike.values():
-            one = dict(same[0], _pids=[p["pid"] for p in same])  # a message may come from any of them
+            one = dict(same[0], _pids=[p["pid"] for p in same],  # a message may come from any of them
+                       _began=any(began(p) for p in same))  # as the work may have begun in any of them
             one["formerNames"] = [f for p in same for f in p.get("formerNames") or []]  # as may an old registration
             live.append(one)
     # A registration its session made follows that session, whatever it is called now; one made without a session
@@ -364,7 +369,7 @@ def build(cfg, use_gh=True, now=None, starts=sessions.proc_starts, fetch=github.
                       "cwd": s.get("cwd", ""),
                       "tty": s.get("_tty", ""), "former": former, "status": s.get("status") or "?",
                       "statusSince": (s.get("statusUpdatedAt") or 0) / 1000, "waitingFor": s.get("waitingFor") or "",
-                      "begun": began(s), "hasTranscript": os.path.exists(sessions.transcript(cfg, s.get("cwd", ""),
+                      "begun": s.get("_began", began(s)), "hasTranscript": os.path.exists(sessions.transcript(cfg, s.get("cwd", ""),
                                                                                         s.get("sessionId", ""))),
                       "reg": reg, "isCommander": name.startswith(cfg.commander_prefix)})
 
@@ -602,7 +607,7 @@ def build(cfg, use_gh=True, now=None, starts=sessions.proc_starts, fetch=github.
         health.append(T["x_shape"].format(n=shapeless, fields="/".join(sessions.FIELDS)))
     workers = [c for c in convs if not c["isCommander"]]
     begun = [c for c in workers if c["begun"]]  # one just opened has no transcript yet, and that is no sign
-    if begun and not any(c["hasTranscript"] for c in begun):
+    if begun and not any(c["hasTranscript"] for c in workers):
         health.append(T["x_no_transcripts"])
     elif commanders and workers and read["read"] and not read["found"] \
             and not any(c["reg"] and c["reg"].get("lead") for c in workers):
