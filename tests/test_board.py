@@ -185,6 +185,39 @@ class PastTheLists(World):
         self.assertEqual((row["stage"], row["reportedDone"]), (3, False))
 
 
+class KnownBySession(World):
+    """A registration made by its session follows that session, whatever it is called; one made without a session
+    is found by name, as before."""
+
+    def register_as(self, who, sid, **kw):
+        from admiral import registry
+        self.register(who, **kw)
+        reg = registry.read_json(registry.reg_path(self.cfg, who))
+        registry.write_json(registry.reg_path(self.cfg, who), dict(reg, sessionId=sid))
+
+    def test_a_renamed_session_keeps_its_registration_with_no_hint(self):
+        self.register_as("worker", "s3", branch="feat/a", phase="review")
+        self.session(3, "worker-renamed", former=("worker",))
+        b = self.build(use_gh=False)
+        row = next(x for x in b["unassigned"] if x["sessionId"] == "s3")
+        self.assertEqual((row["name"], row["registered"], row["branches"], row["stage"]), ("worker-renamed", True, ["feat/a"], 2))
+        self.assertFalse([h for h in b["hints"] if "old name" in h or "has ended" in h], b["hints"])
+
+    def test_a_session_taking_an_ended_ones_name_does_not_inherit_its_registration(self):
+        self.register_as("worker", "s9", branch="feat/old", phase="review")  # s9 has ended
+        self.session(3, "worker")
+        b = self.build(use_gh=False)
+        row = next(x for x in b["unassigned"] if x["sessionId"] == "s3")
+        self.assertEqual((row["registered"], row["branches"]), (False, []))
+        self.assertTrue([h for h in b["hints"] if "has ended: worker" in h], b["hints"])
+
+    def test_a_registration_without_a_session_is_found_by_name(self):
+        self.register("worker", branch="feat/a")
+        self.session(3, "worker")
+        row = next(x for x in self.build(use_gh=False)["unassigned"] if x["sessionId"] == "s3")
+        self.assertEqual((row["registered"], row["branches"]), (True, ["feat/a"]))
+
+
 class OutsideTheProjects(World):
     """Sessions outside the configured projects are not shown, but a name running there is never taken for one that
     ended, nor its batch for one with nobody running."""

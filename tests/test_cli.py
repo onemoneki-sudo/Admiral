@@ -1,5 +1,6 @@
 """The `admiral` command end to end, on a temporary state directory."""
 
+import json
 import os
 import shutil
 import subprocess
@@ -16,8 +17,22 @@ class Cli(unittest.TestCase):
         self.dir = tempfile.mkdtemp()
         cfg = os.path.join(self.dir, "config.toml")
         with open(cfg, "w") as fh:
-            fh.write(f'state_dir = "{self.dir}/state"\n[sessions]\ndir = "{self.dir}/none"\n')
-        self.env = dict(os.environ, ADMIRAL_CONFIG=cfg, PYTHONPATH=ROOT)
+            fh.write(f'state_dir = "{self.dir}/state"\n[sessions]\ndir = "{self.dir}/sessions"\n')
+        os.makedirs(os.path.join(self.dir, "sessions"))
+        # not run from a session unless a test says so, wherever the tests themselves run
+        self.env = {k: v for k, v in os.environ.items() if not k.startswith("CLAUDE")}
+        self.env.update(ADMIRAL_CONFIG=cfg, PYTHONPATH=ROOT)
+
+    def in_session(self, pid, sid, name, former=()):
+        """Run what follows from inside a Claude Code session, as Claude Code hands its commands who they run for."""
+        with open(os.path.join(self.dir, "sessions", f"{pid}.json"), "w") as fh:
+            json.dump({"pid": pid, "sessionId": sid, "name": name, "formerNames": [{"name": f} for f in former]}, fh)
+        self.env.update(CLAUDE_CODE_SESSION_ID=sid, CLAUDE_PID=str(pid))
+
+    def reg(self, who):
+        from admiral import registry
+        path = os.path.join(self.dir, "state", "registry", registry.key(who) + ".json")
+        return json.load(open(path)) if os.path.exists(path) else None
 
     def tearDown(self):
         shutil.rmtree(self.dir)
@@ -32,6 +47,37 @@ class Cli(unittest.TestCase):
         self.assertIn("| worker | - | feat/a | - | - | Commander-A | in review | - |", listed)
         self.assertEqual(self.run_cli("done", "--who", "worker").returncode, 0)
         self.assertNotIn("worker", self.run_cli("list").stdout)
+
+    def test_a_session_registering_itself_is_known_by_its_session(self):
+        self.in_session(41, "sid-41", "worker")
+        self.assertEqual(self.run_cli("register", "--who", "worker", "--branch", "feat/a").returncode, 0)
+        self.assertEqual(self.reg("worker")["sessionId"], "sid-41")
+
+    def test_registering_another_session_records_no_session(self):
+        self.in_session(40, "sid-40", "Commander-A")  # a commander registering its member
+        self.run_cli("register", "--who", "worker", "--lead", "Commander-A")
+        self.assertNotIn("sessionId", self.reg("worker"))
+
+    def test_a_renamed_session_reports_under_its_new_name_and_keeps_its_registration(self):
+        self.in_session(41, "sid-41", "worker")
+        self.run_cli("register", "--who", "worker", "--branch", "feat/a", "--task", "the task")
+        self.in_session(41, "sid-41", "worker-renamed", former=("worker",))
+        r = self.run_cli("state", "--who", "worker-renamed", "--phase", "review")
+        self.assertEqual(r.returncode, 0, r.stderr)
+        self.assertIsNone(self.reg("worker"))  # one registration per session, under the name it has now
+        moved = self.reg("worker-renamed")
+        self.assertEqual((moved["branch"], moved["task"], moved["phase"]), ("feat/a", "the task", "review"))
+        self.assertEqual(self.run_cli("done", "--who", "worker-renamed").returncode, 0)
+        self.assertEqual(os.listdir(os.path.join(self.dir, "state", "registry")), [])
+
+    def test_registering_again_after_a_rename_replaces_the_old_registration(self):
+        self.in_session(41, "sid-41", "worker")
+        self.run_cli("register", "--who", "worker", "--branch", "feat/a")
+        self.run_cli("state", "--who", "worker", "--phase", "review")
+        self.in_session(41, "sid-41", "worker-renamed", former=("worker",))
+        self.run_cli("register", "--who", "worker-renamed", "--branch", "feat/a")
+        self.assertIsNone(self.reg("worker"))
+        self.assertEqual(self.reg("worker-renamed")["phase"], "review")  # what it reported is kept
 
     def test_phases_are_checked(self):
         self.run_cli("register", "--who", "worker")

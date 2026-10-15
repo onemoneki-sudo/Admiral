@@ -335,15 +335,20 @@ def build(cfg, use_gh=True, now=None, starts=sessions.proc_starts, fetch=github.
             one = dict(same[0], _pids=[p["pid"] for p in same])  # a message may come from any of them
             one["formerNames"] = [f for p in same for f in p.get("formerNames") or []]  # as may an old registration
             live.append(one)
+    # A registration its session made follows that session, whatever it is called now; one made without a session
+    # (by hand, or for another session) is found by name, as before.
+    by_session = {r["sessionId"]: r for r in regs if r.get("sessionId")}
     by_name = {}
     for r in regs:
-        by_name.setdefault(r["who"], r)
+        if not r.get("sessionId"):
+            by_name.setdefault(r["who"], r)
 
     convs, matched = [], set()
     for s in live:
         name = s.get("name") or s.get("sessionId", "?")[:8]
         former = [f.get("name", "") for f in s.get("formerNames") or []]
-        reg = next((by_name[n] for n in [s.get("name") or ""] + former if n in by_name), None)
+        reg = by_session.get(s.get("sessionId")) or next((by_name[n] for n in [s.get("name") or ""] + former
+                                                          if n in by_name), None)
         if reg:
             matched.add(reg["who"])
         convs.append({"name": name, "sessionId": s.get("sessionId", ""), "pid": s["pid"], "pids": s.get("_pids", [s["pid"]]),
@@ -535,7 +540,7 @@ def build(cfg, use_gh=True, now=None, starts=sessions.proc_starts, fetch=github.
                     n=prs[b]["number"], branch=b, name=x["name"]))
     for c in convs:
         r = c["reg"]
-        if r and r["who"] != c["name"]:
+        if r and r["who"] != c["name"] and not r.get("sessionId"):  # one that follows its session needs nothing
             hints.append(T["h_renamed"].format(old=r["who"], new=c["name"]))
         if c["status"] == "idle" and c["statusSince"] and now - c["statusSince"] > cfg.idle_flag_s:
             hints.append(T["h_idle"].format(days=cfg.idle_flag_s // 86400, name=c["name"]))

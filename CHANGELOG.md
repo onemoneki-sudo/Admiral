@@ -7,6 +7,10 @@ its cache, one copy per version, so a change to the sidebar or the playbook reac
 ## Unreleased
 
 **Board**
+- A registration a session makes for itself records that session, and follows it: renamed, it stays registered with
+  its task, branch and phase, with no hint to register again, and reports under its new name move the registration
+  along; a new session taking an ended one's name no longer inherits its registration. One made by hand, or for
+  another session, is found by name as before. The commands are unchanged.
 - Not seen among the projects' sessions is no proof a session has ended. A registered session running outside
   `project_dirs` is not shown, as before, but no longer reads as ended, and a batch with anyone of it working there
   (an owner, its commander, a member) is not taken for one that is over.

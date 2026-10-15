@@ -54,11 +54,41 @@ def reg_path(cfg, who):
     return cfg.sub("registry", key(who) + ".json")
 
 
+def caller(cfg):
+    """(session ID, names) of the Claude Code session running this command, as Claude Code hands its commands
+    (CLAUDE_CODE_SESSION_ID, CLAUDE_PID): its name now first, then its former ones. ("", []) outside a session."""
+    sid, pid = os.environ.get("CLAUDE_CODE_SESSION_ID", ""), os.environ.get("CLAUDE_PID", "")
+    d = read_json(os.path.join(cfg.sessions_dir, pid + ".json")) if pid.isdigit() else None
+    if not sid or not d or d.get("sessionId") != sid:
+        return "", []
+    return sid, [n for n in [d.get("name")] + [f.get("name") for f in d.get("formerNames") or []] if n]
+
+
+def own(cfg, who):
+    """The registration of the session running this command, when `who` is that session's name now or before;
+    re-keyed under `who` when the session was renamed since it registered. None otherwise."""
+    sid, names = caller(cfg)
+    if not sid or who not in names:
+        return None
+    for reg in registrations(cfg):
+        if reg.get("sessionId") == sid:
+            if reg["who"] != who:
+                os.remove(reg_path(cfg, reg["who"]))
+                reg = dict(reg, who=who)
+                write_json(reg_path(cfg, who), reg)
+            return reg
+    return None
+
+
 def register(cfg, who, task="", branch="", worktree="", files="", lead=""):
-    """Create or replace a registration; a phase already reported is kept."""
-    old = read_json(reg_path(cfg, who)) or {}
+    """Create or replace a registration; a phase already reported is kept. Made by the session it names, it records
+    that session, so it follows the session through renames; one made for another session records none."""
+    old = own(cfg, who) or read_json(reg_path(cfg, who)) or {}
+    sid, names = caller(cfg)
     reg = {"who": who, "task": task, "branch": branch, "worktree": worktree, "files": files, "lead": lead,
            "since": time.time(), "phase": old.get("phase"), "note": old.get("note", ""), "phaseAt": old.get("phaseAt")}
+    if sid and who in names:
+        reg["sessionId"] = sid
     write_json(reg_path(cfg, who), reg)
     return reg
 
@@ -72,7 +102,7 @@ def set_phase(cfg, who, phase, note=""):
         return False, "the waiting phase needs a note saying on whom or what it waits"
     if k == "needs_you" and not note:
         return False, "the needs_you phase needs a note saying what the person must do"
-    reg = read_json(reg_path(cfg, who))
+    reg = read_json(reg_path(cfg, who)) or own(cfg, who)
     if reg is None:
         return False, f"{who} is not registered; register first"
     reg.update(phase=k, note=note.replace("\n", " "), phaseAt=time.time())
@@ -81,6 +111,8 @@ def set_phase(cfg, who, phase, note=""):
 
 
 def done(cfg, who):
+    if not os.path.exists(reg_path(cfg, who)):
+        own(cfg, who)  # registered under a name the session had before
     try:
         os.remove(reg_path(cfg, who))
         return True
