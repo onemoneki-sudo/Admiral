@@ -310,7 +310,18 @@ def build(cfg, use_gh=True, now=None, starts=sessions.proc_starts, fetch=github.
           worktrees=sessions.worktrees):
     now = time.time() if now is None else now
     T, W = TEXT[cfg.language], words(cfg.language)
-    live, broken, shapeless = sessions.load(cfg, starts)
+    live, broken, shapeless, elsewhere = sessions.load(cfg, starts)
+    regs, plans = registry.registrations(cfg), registry.plans(cfg)
+    # A session outside the configured projects is shown when the fleet here names it: a session of the projects
+    # registered it as its commander, or a plan names it commander or owner. One that only registered may belong to
+    # another project and is not shown; but it runs, so it is never taken for one that ended.
+    def names(s):
+        return {s.get("name")} | {f.get("name") for f in s.get("formerNames") or []}
+    here = set().union(*map(names, live)) - {None, ""}
+    named = ({r.get("lead") for r in regs if r["who"] in here} | {p["lead"] for p in plans}
+             | {it.get("owner") for p in plans for it in p["items"]}) - {None, ""}
+    live += [s for s in elsewhere if names(s) & named]
+    running_elsewhere = set().union(*map(names, elsewhere)) - {None, ""}
     # One conversation resumed in another terminal runs as another process, named in a hint. Processes alike in all
     # but their terminal are one session, shown as its most pressing process (waiting before working before idle, then
     # the latest change); those that differ in name or directory are rare and stay apart, so nothing of them is lost.
@@ -330,7 +341,6 @@ def build(cfg, use_gh=True, now=None, starts=sessions.proc_starts, fetch=github.
             one = dict(same[0], _pids=[p["pid"] for p in same])  # a message may come from any of them
             one["formerNames"] = [f for p in same for f in p.get("formerNames") or []]  # as may an old registration
             live.append(one)
-    regs = registry.registrations(cfg)
     by_name = {}
     for r in regs:
         by_name.setdefault(r["who"], r)
@@ -353,7 +363,6 @@ def build(cfg, use_gh=True, now=None, starts=sessions.proc_starts, fetch=github.
         bs = branches_of(r.get("branch")) if r else []
         now_on = checked_out(first(r.get("worktree"))) if r else ""
         c["branches"] = bs + ([now_on] if now_on and now_on not in bs and now_on not in ("main", "master") else [])
-    plans = registry.plans(cfg)
     kept = registry.read_json(cfg.sub("guessed.json")) or {}  # branches attached by work on earlier runs
     for c in convs:
         c["kept"] = [b for b in kept.get(c["sessionId"], []) if b not in c["branches"]]
@@ -537,7 +546,7 @@ def build(cfg, use_gh=True, now=None, starts=sessions.proc_starts, fetch=github.
     hints += [T["h_twice"].format(name=name, n=n, where=", ".join(where)) for name, n, where in open_twice]
     hints += [T["h_plan_finished"].format(lead=lead) for lead in finished]
     for r in regs:
-        if r["who"] not in matched:
+        if r["who"] not in matched and r["who"] not in running_elsewhere:
             hints.append(T["h_gone"].format(who=r["who"]))
             continue
         wt = first(r.get("worktree"))

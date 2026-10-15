@@ -19,12 +19,24 @@ sys.path.insert(0, ROOT)
 from admiral import config, github, registry  # noqa: E402
 
 # Answers `gh pr list` from <dir>/<state>.json (or mine-<state>.json with --author), cut to --limit and to the --json
-# fields as GitHub does, and logs every call's arguments to <dir>/calls.log.
+# fields as GitHub does, and `gh api graphql` asking PRs by branch name (b0, b1, ...) from <dir>/by-name.json, newest
+# first, failing when <dir>/graphql.fail exists; logs every call's arguments to <dir>/calls.log.
 FAKE_GH = """#!/usr/bin/env python3
 import json, os, sys
 d, args = os.environ["FAKE_GH"], sys.argv[1:]
 with open(os.path.join(d, "calls.log"), "a") as fh:
     fh.write(json.dumps(args) + "\\n")
+if args[:2] == ["api", "graphql"]:
+    if os.path.exists(os.path.join(d, "graphql.fail")):
+        sys.exit(1)
+    path = os.path.join(d, "by-name.json")
+    data = json.load(open(path)) if os.path.exists(path) else []
+    asked = dict(kv.split("=", 1) for kv in args[3::2])
+    keep = ("number", "headRefName", "state", "isDraft")
+    repo = {k: {"nodes": [{f: p[f] for f in keep} for p in data if p["headRefName"] == b][:5]}
+            for k, b in asked.items() if k[1:].isdigit()}
+    print(json.dumps({"data": {"repository": repo}}))
+    sys.exit(0)
 key = ("mine-" if "--author" in args else "") + args[args.index("--state") + 1]
 path = os.path.join(d, key + ".json")
 data = json.load(open(path)) if os.path.exists(path) else []
@@ -105,6 +117,44 @@ class Limits(FakeGitHub):
         prs = github.prs_by_branch(self.cfg, {"b200", "b100"})
         self.assertEqual((prs["b200"]["isDraft"], prs["b200"].get("checksUnknown")), (True, None))
         self.assertEqual((prs["b100"]["isDraft"], prs["b100"]["checksUnknown"]), (True, True))  # the 101st open PR
+
+    def full_lists(self):
+        """100 open PRs and 300 PRs in all, every one newer than any asked for below."""
+        self.answer("open", [{"number": 1000 - i, "headRefName": f"o{i}", "state": "OPEN", "isDraft": False,
+                              "reviewDecision": "", "statusCheckRollup": []} for i in range(100)])
+        self.answer("all", [{"number": 1000 - i, "headRefName": f"a{i}", "state": "MERGED", "isDraft": False}
+                            for i in range(300)])
+
+    def test_a_pr_past_both_lists_is_asked_for_by_its_branch(self):
+        self.full_lists()
+        self.answer("by-name", [{"number": 7, "headRefName": "old", "state": "OPEN", "isDraft": True},
+                                {"number": 5, "headRefName": "gone", "state": "CLOSED", "isDraft": False}])
+        prs = github.prs_by_branch(self.cfg, {"old", "gone", "never"})
+        self.assertEqual((prs["old"]["state"], prs["old"]["isDraft"], prs["old"]["checksUnknown"]), ("OPEN", True, True))
+        self.assertEqual(prs["gone"]["state"], "CLOSED")
+        self.assertNotIn("never", prs)  # asked, and GitHub has no PR for it
+        asked = [c for c in self.calls() if c[:2] == ["api", "graphql"]]
+        self.assertEqual(len(asked), 1)
+        self.assertEqual(sorted(kv.split("=", 1)[1] for kv in asked[0][3::2] if kv[:1] == "b"), ["gone", "never", "old"])
+
+    def test_when_the_lookup_fails_no_pr_is_unknown_not_none(self):
+        self.full_lists()
+        open(os.path.join(self.dir, "graphql.fail"), "w").close()
+        self.assertIsNone(github.prs_by_branch(self.cfg, {"old"}))  # as when GitHub does not answer at all
+
+    def test_lists_with_room_left_hold_every_pr_so_nothing_more_is_asked(self):
+        self.answer("open", [{"number": 3, "headRefName": "feat/a", "state": "OPEN", "isDraft": False,
+                              "reviewDecision": "", "statusCheckRollup": []}])
+        self.answer("all", [{"number": 3, "headRefName": "feat/a", "state": "OPEN", "isDraft": False}])
+        prs = github.prs_by_branch(self.cfg, {"feat/a", "feat/b"})
+        self.assertEqual(sorted(prs), ["feat/a"])
+        self.assertFalse([c for c in self.calls() if c[:1] == ["api"]])
+
+    def test_many_branches_left_out_are_asked_for_in_bounded_calls(self):
+        self.full_lists()
+        missing = {f"m{i}" for i in range(github.LOOKUP_CHUNK + 1)}
+        self.assertEqual(github.prs_by_branch(self.cfg, missing), {})
+        self.assertEqual(len([c for c in self.calls() if c[:2] == ["api", "graphql"]]), 2)
 
     def test_a_pr_opened_between_the_two_calls_is_not_taken_for_one_past_the_limit(self):
         self.answer("open", [])  # asked first: not open yet

@@ -175,6 +175,56 @@ class Grouping(World):
         self.assertEqual(self.build(use_gh=False)["count"], 1)
 
 
+class PastTheLists(World):
+    def test_a_draft_found_by_its_branch_past_the_lists_keeps_a_done_session_at_accept(self):
+        self.session(3, "worker")
+        self.register("worker", branch="old", phase="done")
+        # what the query answers for a draft PR past both lists, asked for by its branch
+        self.prs = {"old": {"number": 7, "headRefName": "old", "state": "OPEN", "isDraft": True, "checksUnknown": True}}
+        row = next(x for x in self.build()["unassigned"] if x["name"] == "worker")
+        self.assertEqual((row["stage"], row["reportedDone"]), (3, False))
+
+
+class OutsideTheProjects(World):
+    """A session outside the configured projects is the fleet's when the fleet names it, rather than taken for one
+    that ended; one the fleet does not name stays out."""
+
+    def test_a_session_outside_the_projects_that_only_registered_is_not_shown_nor_taken_for_ended(self):
+        self.session(3, "worker")
+        self.session(9, "helper", cwd="/w/other")  # registrations are shared: it may belong to another project
+        self.register("helper")
+        b = self.build(use_gh=False)
+        self.assertEqual([x["name"] for x in b["unassigned"]], ["worker"])
+        self.assertFalse([h for h in b["hints"] if "has ended" in h], b["hints"])
+
+    def test_a_commander_outside_the_projects_named_by_its_member_leads_it(self):
+        self.session(1, "Commander-A", cwd="/w/batch")  # sits in its batch folder
+        self.session(3, "worker")
+        self.register("worker", lead="Commander-A")
+        b = self.build(use_gh=False)
+        g = self.group(b, "Commander-A")
+        self.assertEqual((g["leadRow"] or {}).get("sessionId"), "s1")
+        self.assertEqual([m["name"] for m in g["members"]], ["worker"])
+        self.assertFalse([h for h in b["hints"] if "not running" in h], b["hints"])
+
+    def test_a_planned_owner_running_outside_the_projects_keeps_its_batch_on_the_board(self):
+        self.session(3, "worker")  # keeps the board refreshing
+        self.session(9, "owner", cwd="/w/other")
+        self.plan("Commander-A", ("feat/a", "merged one", "owner"))
+        self.prs = {"feat/a": pr(1, "MERGED")}
+        b = self.build()
+        self.assertEqual([g["lead"] for g in b["groups"]], ["Commander-A"])  # its owner still runs: not over
+        self.assertFalse([h for h in b["hints"] if "all merged" in h], b["hints"])
+
+    def test_a_session_outside_the_projects_the_fleet_does_not_name_stays_out(self):
+        self.session(1, "Commander-A")
+        self.session(9, "elsewhere", cwd="/w/other")
+        self.session(8, "Commander-Other", cwd="/w/other")  # another project's commander, named only there
+        self.session(7, "other-worker", cwd="/w/other")
+        self.register("other-worker", lead="Commander-Other")
+        self.assertEqual(self.build(use_gh=False)["count"], 1)
+
+
 class Progress(World):
     def test_a_plan_counts_every_deliverable_including_closed_sessions(self):
         self.session(1, "Commander-A")

@@ -6,6 +6,17 @@ its cache, one copy per version, so a change to the sidebar or the playbook reac
 
 ## Unreleased
 
+**Board**
+- Not seen among the projects' sessions is no proof a session has ended. One outside `project_dirs` that a session
+  there names as its commander, or a plan names as commander or owner, is on the board: a commander sitting in its
+  batch folder no longer reads as not running, and a batch whose owner works elsewhere is not taken for one that is
+  over. One elsewhere that only registered may belong to another project: it is not shown, and no longer reads as
+  ended.
+- A PR list that comes back full may leave a branch's PR out: the branches it left out are asked for by name, one
+  more call, so an old PR past both lists is found rather than taken for none, and a session that reported done with
+  its draft still open stays at accept. If that call fails too, the PRs read as unknown, as when GitHub does not
+  answer.
+
 ## 0.2.5 (2026-10-15)
 
 **Board**
