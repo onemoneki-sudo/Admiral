@@ -6,7 +6,12 @@ folder is read from it, but one installed from a repository is updated by Claude
 
 ## Unreleased
 
+**Playbook**
+- A session given work that spans several areas proposes splitting it and being named a commander, rather than doing
+  it all alone; a commander given a requirement proposes the batch without being asked.
+
 **Docs**
+- The README plays the film, and walks through your first batch, from a new project to a running fleet.
 - The README says why the board spends no model tokens, and what in your sessions does.
 
 ## 0.2.1 (2026-10-15)

@@ -1,6 +1,4 @@
-<p align="center">
-  <img src="docs/media/hero.png" alt="Admiral: a fleet of 54 Claude Code sessions under 7 commanders, on a radar chart" width="100%">
-</p>
+https://github.com/user-attachments/assets/45d323e5-d813-40b3-8f96-10a7cf6d5188
 
 <p align="center">
   <b>Command a fleet of Claude Code sessions.</b><br>
@@ -16,7 +14,7 @@
   <img src="https://img.shields.io/badge/model%20tokens-0-3fb950" alt="no model tokens">
 </p>
 
-<p align="center"><a href="https://github.com/onemoneki-sudo/Admiral/releases/latest/download/admiral.mp4"><b>▶ Watch the film</b></a> · <a href="https://github.com/onemoneki-sudo/Admiral/releases/latest/download/admiral.zh.mp4">中文版</a></p>
+<p align="center">The film in 1080p: <a href="https://github.com/onemoneki-sudo/Admiral/releases/latest/download/admiral.mp4">English</a> · <a href="https://github.com/onemoneki-sudo/Admiral/releases/latest/download/admiral.zh.mp4">中文</a></p>
 
 <p align="center">English · <a href="README.zh-CN.md">中文</a></p>
 
@@ -225,6 +223,26 @@ accept = 70
 ci = 80
 merged = 100
 ```
+
+## Your first batch
+
+From a new project to a running fleet, once Admiral is installed:
+
+1. **Name a commander.** Open a session in the repository and give it a name with the commander prefix: start it with
+   `claude -n Commander-Checkout`, or type `/rename Commander-Checkout` in one already open. The name is what makes
+   it a commander; a session named otherwise works alone. Describe a big requirement to an ordinary session and the
+   playbook has it suggest this step first.
+2. **Describe the work.** Tell the commander what you want built. It writes the task brief, splits the work into PRs
+   by areas that do not overlap, and proposes the batch: one session per area, plus an acceptance session when PRs
+   are accepted together, each with a name, its duty, model, reasoning effort and a start command to paste.
+3. **Open the sessions.** Paste each start command into a new terminal tab. Admiral never starts a session; you do,
+   and after that you type nothing in them: the commander finds them, sends each its brief and has it register under
+   the commander.
+4. **Watch the board.** The status line and the sidebar show the batch: who works, who waits for you and why, every
+   deliverable's stage, and CI. Decisions the commander can make, it makes and logs; the ones only you can make, it
+   brings to you together.
+5. **Accept and close.** You accept what the brief asks you to; as PRs merge, the board tells you which sessions you
+   can close.
 
 ## Working with it
 

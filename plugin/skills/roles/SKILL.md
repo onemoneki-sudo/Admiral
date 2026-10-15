@@ -1,6 +1,6 @@
 ---
 name: roles
-description: Roles when one person runs several AI sessions on one repository - independent session, commander, executor, acceptance executor - and how a commander plans, dispatches and tracks work. Read when the person names this session a commander, when dispatching work to other sessions, when asked how many sessions a batch needs, or when receiving work from a commander.
+description: Roles when one person runs several AI sessions on one repository - independent session, commander, executor, acceptance executor - and how a commander plans, dispatches and tracks work. Read when the person names this session a commander, when given work large enough to split across sessions, when dispatching work to other sessions, when asked how many sessions a batch needs, or when receiving work from a commander.
 ---
 
 # Roles
@@ -9,8 +9,8 @@ Where the project's own rules differ from this playbook, the project's rules win
 
 ## Who does what
 
-- **Independent session**: carries its own task from start to finish, takes its own locks, makes its own calls, and asks the person directly when a decision is theirs.
-- **Commander** (only when the person names it so; by default its name starts with the project's commander prefix, `Commander-` unless configured otherwise): splits the work, writes the task briefs, dispatches and answers by cross-session messages, makes technical and product decisions within the person's authorisation and writes each into the batch's decision log, gathers the decisions only the person can make and brings them together, each with options and a recommendation, rather than one at a time, sets re-test lists, judges acceptance results, writes the pre-ready report and leads the person's acceptance. **It does not write product code** nor do execution work (merging, running tests, browser re-tests), so its context stays free for decisions. Centralised pushing is the exception, where the project has it.
+- **Independent session**: carries its own task from start to finish, takes its own locks, makes its own calls, and asks the person directly when a decision is theirs. When the work it is given spans several areas that could go ahead in parallel, each worth its own PR, it says so before starting: it proposes the split and that the person name it a commander, and leaves the choice to the person. Small or tightly coupled work it simply does.
+- **Commander** (only when the person names it so: its name starts with the project's commander prefix, `Commander-` unless configured otherwise, given at start with `claude -n` or later with `/rename`): splits the work, writes the task briefs, dispatches and answers by cross-session messages, makes technical and product decisions within the person's authorisation and writes each into the batch's decision log, gathers the decisions only the person can make and brings them together, each with options and a recommendation, rather than one at a time, sets re-test lists, judges acceptance results, writes the pre-ready report and leads the person's acceptance. **It does not write product code** nor do execution work (merging, running tests, browser re-tests), so its context stays free for decisions. Centralised pushing is the exception, where the project has it.
 - **Executor**: works from its task brief; sends decisions it cannot make to its commander (question, options, recommendation, impact) and follows the answer; writes its progress and the facts the pre-ready report needs into its status note in the batch folder (see pipeline).
 - **Acceptance executor**: works from the acceptance brief its commander gives; builds and maintains the merged version and the acceptance environment, merges each PR's fixes, resolves conflicts, runs tests, re-tests in the browser by the list; writes results into its status note and messages its commander; does not write product code. Problems go back to the session that owns the PR.
 
@@ -22,7 +22,7 @@ Where the project's own rules differ from this playbook, the project's rules win
 
 ## Sizing a batch
 
-When the person asks how many sessions are needed:
+When the person asks how many sessions are needed, or gives this commander a requirement, propose the batch before dispatching:
 - One development session per non-overlapping area of change, each owning one or two related PRs. Add one acceptance executor when two or more PRs are accepted together or a standing acceptance environment is needed.
 - For each session give a name by role, its duty, model, reasoning effort and a start command to paste. Once the person has opened them, the commander finds them and sends the start instructions; the person types nothing in the executors.
 - Configure for quality without rework: the commander at a high effort, as the project sets it; executors judged one by one by difficulty and cost of error. Concurrency, state, data consistency, security gates and the product's core logic get the project's main model at a high effort. Downgrade only for simple, fully verifiable work (pure mechanical steps), and say why.

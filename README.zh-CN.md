@@ -1,6 +1,4 @@
-<p align="center">
-  <img src="docs/media/hero.png" alt="Admiral：7 个总指挥麾下的 54 个 Claude Code 对话，画在一张雷达海图上" width="100%">
-</p>
+https://github.com/user-attachments/assets/f2a28dd0-1353-4555-ba79-480e19440ad8
 
 <p align="center">
   <b>指挥一整支 Claude Code 舰队。</b><br>
@@ -16,7 +14,7 @@
   <img src="https://img.shields.io/badge/model%20tokens-0-3fb950" alt="no model tokens">
 </p>
 
-<p align="center"><a href="https://github.com/onemoneki-sudo/Admiral/releases/latest/download/admiral.zh.mp4"><b>▶ 观看宣传片</b></a> · <a href="https://github.com/onemoneki-sudo/Admiral/releases/latest/download/admiral.mp4">English</a></p>
+<p align="center">1080p 高清版：<a href="https://github.com/onemoneki-sudo/Admiral/releases/latest/download/admiral.zh.mp4">中文</a> · <a href="https://github.com/onemoneki-sudo/Admiral/releases/latest/download/admiral.mp4">English</a></p>
 
 <p align="center"><a href="https://github.com/onemoneki-sudo/Admiral">English</a> · 中文</p>
 
@@ -212,6 +210,21 @@ accept = 70
 ci = 80
 merged = 100
 ```
+
+## 第一个批次
+
+装好 Admiral 之后，从一个新项目到开起整支舰队：
+
+1. **指定总指挥。** 在仓库里开一个对话，用总指挥前缀给它起名（前缀默认是 `Commander`，这里的例子在配置里
+   改成了 `总指挥`）：启动时用 `claude -n 总指挥-结账`，或在已经开着的对话里输入 `/rename 总指挥-结账`。名字决定它是总指挥；
+   名字不带前缀的对话自己干活。把大需求直接交给普通对话，协作规则会让它先提议走这一步。
+2. **描述需求。** 告诉总指挥你要做什么。它写任务书，按互不重叠的修改范围把工作拆成 PR，并给出批次方案：每块一个
+   开发对话，PR 要一起验收时再加一个验收对话；每个对话写明名字、职责、模型、推理强度和一条可以直接粘贴的启动命令。
+3. **开对话。** 把每条启动命令粘贴到一个新的终端标签页。Admiral 从不替你开对话；开起来之后你什么都不用打：总指挥会
+   找到它们，给每个发任务书，并让它们登记到自己名下。
+4. **看总览。** 状态栏和侧边栏显示整个批次：谁在干活、谁在等你和为什么、每个交付物到了哪一步、CI。总指挥能定的
+   自己定并记下来；必须你定的，汇总后一起带给你。
+5. **验收和收尾。** 你按任务书的要求验收；PR 合并后，总览会告诉你哪些对话可以关。
 
 ## 日常使用
 
