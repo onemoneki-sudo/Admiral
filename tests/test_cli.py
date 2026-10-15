@@ -304,6 +304,13 @@ class Cli(unittest.TestCase):
         line = subprocess.run(["/bin/sh", "-c", command], input="{}", capture_output=True, text=True, env=env).stdout
         self.assertIn("54 sessions", line)
 
+    def test_the_demo_config_reads_back_whatever_the_path(self):
+        from admiral import config, demo
+        root = os.path.join(self.dir, "home-🚢 \"q\" \\ \x7f é")
+        os.makedirs(root)
+        cfg = config.load(demo.write_config(root, "en", "base \t🚢"))
+        self.assertEqual((cfg.state_dir, cfg.statusline_base), (os.path.join(root, "state"), "base \t🚢"))
+
     def test_without_a_clone_the_demo_says_what_the_session_needs(self):
         from admiral import demo
         self.assertEqual(demo.try_command("/x/config.toml", root=self.dir), ("ADMIRAL_CONFIG=/x/config.toml claude", False))

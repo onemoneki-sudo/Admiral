@@ -206,13 +206,19 @@ def paths(root):
     return {k: os.path.join(root, k) for k in ("sessions", "projects", "state", "locks", "repo")}
 
 
+def toml(s):
+    """A TOML string: quoted as JSON does, but a character beyond the Basic Multilingual Plane (an emoji in a path, say)
+    kept as it is, since JSON writes it as two escapes TOML refuses, and DEL escaped, as TOML requires."""
+    return json.dumps(s, ensure_ascii=False).replace("\x7f", "\\u007f")
+
+
 def write_config(root, language, base, prefix="Commander"):
     p = paths(root)
-    text = (f'state_dir = {json.dumps(p["state"])}\nlanguage = "{language}"\n\n[sessions]\n'
-            f'dir = {json.dumps(p["sessions"])}\nprojects_dir = {json.dumps(p["projects"])}\n'
-            f'project_dirs = [{json.dumps(p["repo"])}]\ncommander_prefix = {json.dumps(prefix)}\n\n'
-            f'[github]\nrepo_dir = {json.dumps(p["repo"])}\n\n[locks]\ndir = {json.dumps(p["locks"])}\n\n'
-            f'[statusline]\nbase = {json.dumps(base)}\n')
+    text = (f'state_dir = {toml(p["state"])}\nlanguage = "{language}"\n\n[sessions]\n'
+            f'dir = {toml(p["sessions"])}\nprojects_dir = {toml(p["projects"])}\n'
+            f'project_dirs = [{toml(p["repo"])}]\ncommander_prefix = {toml(prefix)}\n\n'
+            f'[github]\nrepo_dir = {toml(p["repo"])}\n\n[locks]\ndir = {toml(p["locks"])}\n\n'
+            f'[statusline]\nbase = {toml(base)}\n')
     with open(os.path.join(root, "config.toml"), "w", encoding="utf-8") as fh:
         fh.write(text)
     return os.path.join(root, "config.toml")
