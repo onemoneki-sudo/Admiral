@@ -337,22 +337,29 @@ def build(cfg, use_gh=True, now=None, starts=sessions.proc_starts, fetch=github.
     if not cfg.projects:
         return build_one(cfg, **kw)
     views = [cfg.for_project(p) for p in cfg.projects]
-    regs, plans = owned(cfg, views, starts)
-    return combine(cfg, views, [build_one(v, regs=regs[v.project], plans=plans[v.project], **kw) for v in views])
+    regs, plans, anyone = owned(cfg, views, starts)
+    # while any project has a session running, the board is read: every project's GitHub is asked as always
+    return combine(cfg, views, [build_one(v, regs=regs[v.project], plans=plans[v.project], read=anyone, **kw)
+                                for v in views])
 
 
 def owned(cfg, views, starts):
-    """(project -> its registrations, project -> its plans). A registration is its session's project, where that
-    session runs (found by the session it records, else by name), else its worktree's; a plan, its commander's, else
-    its owners'. One that says nothing goes to the first project."""
+    """(project -> its registrations, project -> its plans, whether any project's session runs). A registration is
+    its session's project, where that session runs (found by the session it records, else by name: a name a session
+    has now before one another had), else its worktree's; a plan, its commander's, else its owners'. One that says
+    nothing goes to the first project."""
     every = copy.copy(cfg)
     every.project_dirs = []  # every running session, wherever it runs
     live = sessions.load(every, starts)[0]
     by_sid = {s.get("sessionId"): s for s in live}
-    by_name = {n: s for s in live for n in [s.get("name")] + [f.get("name") for f in s.get("formerNames") or []] if n}
+    by_name = {s["name"]: s for s in live if s.get("name")}
+    for s in live:
+        for f in s.get("formerNames") or []:
+            if f.get("name"):
+                by_name.setdefault(f["name"], s)
 
     def project_of(path):
-        hits = [(len(d), v.project) for v in views for d in v.project_dirs if path and str(path).startswith(d)]
+        hits = [(len(d), name) for d, name in cfg.claims if path and str(path).startswith(d)]
         return max(hits)[1] if hits else None
 
     def of_reg(r):
@@ -370,23 +377,31 @@ def owned(cfg, views, starts):
     plans = {v.project: [] for v in views}
     for pl in registry.plans(cfg):
         lead = by_name.get(pl["lead"])
-        p = project_of(lead and lead.get("cwd")) or next((home[it.get("owner")] for it in pl["items"]
-                                                         if it.get("owner") in home), None) or home.get(pl["lead"])
+        owners = [it.get("owner") for it in pl["items"] if it.get("owner")]
+        p = project_of(lead and lead.get("cwd")) \
+            or next((project_of(by_name[o].get("cwd")) for o in owners if o in by_name), None) \
+            or next((home[o] for o in owners if o in home), None) or home.get(pl["lead"])
         plans[p or views[0].project].append(pl)
-    return regs, plans
+    anyone = any(project_of(s.get("cwd")) for s in live)
+    return regs, plans, anyone
 
 
 def combine(cfg, views, boards):
     """One board of each project's: counts summed, progress over all, every row and batch saying its project, and
     each project's notes and source problems led by its name."""
     out = dict(boards[0])
+
+    def named(name, project):  # every name says its project, so two of one name in two projects are told apart
+        return f"{name} [{project}]" if name else name
     for v, b in zip(views, boards):
+        rows = b["unassigned"] + [x for g in b["groups"] for x in ([g["leadRow"]] if g["leadRow"] else []) + g["members"]]
+        for x in rows:
+            x["project"], x["name"], x["lead"] = v.project, named(x["name"], v.project), named(x["lead"], v.project)
         for g in b["groups"]:
-            g["project"] = v.project
-            for x in ([g["leadRow"]] if g["leadRow"] else []) + g["members"]:
-                x["project"] = v.project
-        for x in b["unassigned"]:
-            x["project"] = v.project
+            g["project"], g["lead"] = v.project, named(g["lead"], v.project)
+        for xs in b["closable"].values():
+            for x in xs:
+                x["project"], x["name"], x["lead"] = v.project, named(x["name"], v.project), named(x["lead"], v.project)
     dist = [sum(b["dist"][i] for b in boards) for i in range(len(boards[0]["dist"]))]
     gh = [b["gh"] for b in boards]
     mine = [b["mine"] for b in boards if b["mine"]]
@@ -406,7 +421,7 @@ def combine(cfg, views, boards):
 
 def build_one(cfg, use_gh=True, now=None, starts=sessions.proc_starts, fetch=github.prs_by_branch,
               commits=sessions.last_commit, fetch_mine=github.my_prs, checked_out=sessions.worktree_branch,
-              worktrees=sessions.worktrees, regs=None, plans=None):
+              worktrees=sessions.worktrees, regs=None, plans=None, read=None):
     now = time.time() if now is None else now
     T, W = TEXT[cfg.language], words(cfg.language)
     live, broken, shapeless, elsewhere = sessions.load(cfg, starts)
@@ -491,10 +506,14 @@ def build_one(cfg, use_gh=True, now=None, starts=sessions.proc_starts, fetch=git
     branches = claimed | {b for bs in guessed.values() for b in bs}
     prs, gh_ok, reused, mine = {}, None, False, None
     quiet = all(c["status"] not in ("busy", "shell", "waiting") and now - c["statusSince"] > cfg.quiet_s for c in convs)
-    if use_gh and live and cfg.repo_dir:  # with no session running nothing reads the board, so GitHub is left alone
+    # with no session running nothing reads the board, so GitHub is left alone; `read` says so for several projects
+    if use_gh and (live if read is None else read) and cfg.repo_dir:
         # a registration whose session is not running keeps its branches in use, so their merges stay remembered
         in_use = branches | {b for r in regs for b in branches_of(r.get("branch"))}
-        prs, mine, reused = github.prs_paced(cfg, in_use, quiet, now, fetch, fetch_mine)
+        try:
+            prs, mine, reused = github.prs_paced(cfg, in_use, quiet, now, fetch, fetch_mine)
+        except (FileNotFoundError, NotADirectoryError):  # a repository that is not there: as GitHub not answering,
+            prs, mine, reused = None, None, False  # rather than stopping the whole board
         gh_ok = prs is not None and mine is not None
         prs = prs or {}
     unknown = gh_ok is False  # GitHub failed: a branch with no PR found may still have one
@@ -753,9 +772,6 @@ def markdown(b, live=False):
     T, W, S = TEXT[lang], b["words"], b["words"]["stages"]
     now = b["generated"]
 
-    def named(name, x):  # with several projects, each name says its project
-        return f"{name} [{x['project']}]" if x.get("project") else name
-
     def table(rows):
         out = [T["cols"], "|---|---|---|---|---|---|---|"]
         for x in rows:
@@ -770,7 +786,7 @@ def markdown(b, live=False):
             commit = T["dir_gone"] if x["worktreeGone"] else (
                 T["ago"].format(age=ago(now - x["lastCommit"], lang)) if x["lastCommit"] else "-")
             out.append("| " + " | ".join(cell(v) for v in [
-                named(x["name"], x), f"{x['run']} {ago(now - x['statusSince'], lang)}", ph, x["branch"] or "-",
+                x["name"], f"{x['run']} {ago(now - x['statusSince'], lang)}", ph, x["branch"] or "-",
                 (x["pr"] or {}).get("label", "-"), x["ci"] or "-", commit]) + " |")
         return out
 
@@ -789,14 +805,14 @@ def markdown(b, live=False):
         s = g["summary"]
         own = f"{g['leadRow']['run']} {ago(now - g['leadRow']['statusSince'], lang)}" if g["leadRow"] else T["not_running"]
         p = f"{s['pct']}% ({spread(s['dist'], W, s['reported'])})" if s["pct"] is not None else "-"
-        out.append(T["team_line"].format(lead=named(g["lead"], g), own=own, pct=p, how="" if g.get("batch") else T["live_members"],
+        out.append(T["team_line"].format(lead=g["lead"], own=own, pct=p, how="" if g.get("batch") else T["live_members"],
                                          n=s["total"], busy=s["busy"], waiting=s["waiting"], ci=s["ciFail"]))
     if not b["groups"]:
         out.append(T["none"])
     for g in b["groups"]:
         s = g["summary"]
         how = T["how_plan"].format(done=s["prsMerged"], n=s["items"]) if g.get("batch") else T["how_live"]
-        out += ["", T["team_head"].format(lead=named(g["lead"], g), pct=f"{s['pct']}%" if s["pct"] is not None else "-", how=how)]
+        out += ["", T["team_head"].format(lead=g["lead"], pct=f"{s['pct']}%" if s["pct"] is not None else "-", how=how)]
         if g.get("batch"):
             out += [T["item_cols"], "|---|---|---|---|---|---|"]
             out += ["| " + " | ".join(cell(v) for v in [it["title"] or "-", it["branch"], it["owner"] or "-",

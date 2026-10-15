@@ -481,8 +481,8 @@ class SeveralProjects(World):
         b = self.build(use_gh=False)
         self.assertEqual(b["count"], 2)
         self.assertEqual(sorted((x["name"], x["project"]) for x in b["unassigned"]),
-                         [("shop-worker", "Shop"), ("tool-worker", "Tool")])
-        self.assertEqual([x["name"] for x in b["waiting"]], ["tool-worker"])
+                         [("shop-worker [Shop]", "Shop"), ("tool-worker [Tool]", "Tool")])
+        self.assertEqual([x["name"] for x in b["waiting"]], ["tool-worker [Tool]"])
         self.assertIn("Tool: running but not registered: tool-worker", b["hints"])
 
     def test_each_project_asks_its_own_repository_for_its_own_branches(self):
@@ -499,7 +499,7 @@ class SeveralProjects(World):
         self.session(3, "shop-worker")
         self.register("tool-worker", branch="feat/tool")
         b = self.build(use_gh=False)
-        x = next(x for x in b["unassigned"] if x["name"] == "tool-worker")
+        x = next(x for x in b["unassigned"] if x["name"] == "tool-worker [Tool]")
         self.assertEqual((x["project"], x["registered"]), ("Tool", True))
         self.assertFalse([h for h in b["hints"] if "has ended" in h], b["hints"])
 
@@ -508,7 +508,8 @@ class SeveralProjects(World):
         self.session(3, "shop-worker")
         self.plan("Commander-T", ("feat/t", "a tool deliverable", ""))
         b = self.build(use_gh=False)
-        self.assertEqual([(g["lead"], g["project"], bool(g["leadRow"])) for g in b["groups"]], [("Commander-T", "Tool", True)])
+        self.assertEqual([(g["lead"], g["project"], bool(g["leadRow"])) for g in b["groups"]],
+                         [("Commander-T [Tool]", "Tool", True)])
 
     def test_the_markdown_board_says_each_ones_project(self):
         self.session(8, "Commander-T", cwd="/w/tool")
@@ -522,7 +523,77 @@ class SeveralProjects(World):
             {"name": "Shop", "dirs": ["/w/app"], "repo_dir": "/w/app"}, {"name": "Empty", "repo_dir": "/w/x"}]}))
         self.session(3, "shop-worker")
         b = self.build(use_gh=False)
-        self.assertEqual([(x["name"], x["project"]) for x in b["unassigned"]], [("shop-worker", "Shop")])
+        self.assertEqual([(x["name"], x["project"]) for x in b["unassigned"]], [("shop-worker [Shop]", "Shop")])
+
+    def test_a_name_given_twice_is_told_apart_and_each_keeps_its_own_repository(self):
+        self.cfg = config.Config(config.merge(self.cfg.data, {"projects": [
+            {"name": "Same", "dirs": ["/w/app"], "repo_dir": "/w/app"},
+            {"name": "Same", "dirs": ["/w/tool"], "repo_dir": "/w/tool"}]}))
+        self.session(3, "a")
+        self.session(5, "b", cwd="/w/tool")
+        self.register("a", branch="feat/shared")
+        self.register("b", branch="feat/shared")
+        b = self.build()
+        self.assertEqual(sorted(x["project"] for x in b["unassigned"]), ["Same", "Same (2)"])
+        self.assertEqual(sorted(r for r, _ in self.asked), ["/w/app", "/w/tool"])
+
+    def test_a_plan_goes_where_its_owner_works_when_its_commander_is_away(self):
+        self.session(3, "shop-worker")
+        self.session(5, "owner", cwd="/w/tool")  # not registered
+        self.plan("Commander-T", ("feat/t", "a tool deliverable", "owner"))
+        b = self.build()
+        self.assertEqual([(g["lead"], g["project"]) for g in b["groups"]], [("Commander-T [Tool]", "Tool")])
+        self.assertIn(("/w/tool", {"feat/t"}), [(r, bs) for r, bs in self.asked if "feat/t" in bs])
+
+    def test_a_project_with_no_session_running_is_still_asked_while_the_board_is_read(self):
+        self.session(3, "shop-worker")
+        self.register("tool-worker", branch="feat/tool", worktree="/w/tool/wt")  # its session has exited
+        self.build()
+        self.assertIn("/w/tool", [r for r, _ in self.asked])
+
+    def test_nested_directories_give_a_session_to_the_closer_project_only(self):
+        self.cfg = config.Config(config.merge(self.cfg.data, {"projects": [
+            {"name": "Parent", "dirs": ["/w"], "repo_dir": "/w/app"},
+            {"name": "Child", "dirs": ["/w/tool"], "repo_dir": "/w/tool"}]}))
+        self.session(5, "tool-worker", cwd="/w/tool", status="waiting")
+        b = self.build(use_gh=False)
+        self.assertEqual([(x["name"], x["project"]) for x in b["unassigned"]], [("tool-worker [Child]", "Child")])
+        self.assertEqual(b["count"], 1)
+
+    def test_a_current_name_wins_over_another_sessions_former_one(self):
+        self.session(3, "Worker")
+        self.session(5, "Renamed", cwd="/w/tool", former=("Worker",))
+        self.register("Worker", branch="feat/shop")
+        b = self.build()
+        x = next(x for x in b["unassigned"] if x["sessionId"] == "s3")
+        self.assertEqual((x["project"], x["registered"]), ("Shop", True))
+        self.assertIn(("/w/app", {"feat/shop"}), self.asked)
+
+    def test_two_sessions_of_one_name_in_two_projects_are_told_apart_everywhere(self):
+        self.session(3, "same", status="waiting")
+        self.session(5, "same", cwd="/w/tool", status="waiting")
+        b = self.build(use_gh=False)
+        self.assertEqual(sorted(x["name"] for x in b["waiting"]), ["same [Shop]", "same [Tool]"])
+        md = board.markdown(b)
+        self.assertIn("same [Shop]", md)
+        self.assertIn("same [Tool]", md)
+
+    def test_a_repository_that_is_not_there_stops_only_its_project(self):
+        self.cfg = config.Config(config.merge(self.cfg.data, {"projects": [
+            {"name": "Shop", "dirs": ["/w/app"], "repo_dir": self.root},
+            {"name": "Gone", "dirs": ["/w/tool"], "repo_dir": "/no/such/dir"}]}))
+        self.session(3, "shop-worker")
+        self.session(5, "tool-worker", cwd="/w/tool")
+        self.register("tool-worker", branch="feat/t")
+        def fetch(cfg, branches):  # as the real query does: gh run in a directory that is not there
+            if not os.path.isdir(cfg.repo_dir):
+                raise FileNotFoundError(cfg.repo_dir)
+            return {}
+        b = board.build(self.cfg, now=NOW, starts=lambda pids: {p: (START, f"ttys{p:03d}") for p in pids},
+                        fetch=fetch, commits=lambda wt: None, checked_out=lambda wt: "", worktrees=lambda cfg: {},
+                        fetch_mine=lambda cfg, now: {"open": [], "mergedToday": []})
+        self.assertEqual(b["count"], 2)
+        self.assertTrue([h for h in b["health"] if h.startswith("Gone: ")], b["health"])
 
     def test_each_project_keeps_its_own_caches(self):
         self.session(3, "shop-worker")

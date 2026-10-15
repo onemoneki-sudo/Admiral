@@ -49,6 +49,8 @@ TEXT = phrases({
         "project_no_dirs": "the project has no dirs: none of its sessions shows",
         "project_no_repo": "the project has no repo_dir: no PR or CI for it on the board",
         "fix_project": "set dirs and repo_dir of the project \"{name}\" in {path}",
+        "project_twice": "two projects are named \"{given}\": the second reads as \"{name}\"",
+        "fix_project_name": "give each project in {path} a name of its own",
         "repo_missing": "[github] repo_dir {d} does not exist", "repo_not_git": "[github] repo_dir {d} is not a git repository",
         "gh_skipped": "gh not checked: no repository set", "gh_missing": "gh (the GitHub CLI) is not installed",
         "fix_gh": "install it from https://cli.github.com, then sign in",
@@ -109,6 +111,8 @@ TEXT = phrases({
         "project_no_dirs": "这个项目没写 dirs：它的对话都不会显示",
         "project_no_repo": "这个项目没写 repo_dir：看板上没有它的 PR 和 CI",
         "fix_project": "在 {path} 里给项目「{name}」写上 dirs 和 repo_dir",
+        "project_twice": "有两个项目都叫「{given}」：第二个显示为「{name}」",
+        "fix_project_name": "在 {path} 里给每个项目起不同的名字",
         "repo_missing": "[github] repo_dir {d} 不存在", "repo_not_git": "[github] repo_dir {d} 不是 git 仓库",
         "gh_skipped": "没有设置仓库，跳过 gh 检查", "gh_missing": "没有安装 gh（GitHub CLI）",
         "fix_gh": "从 https://cli.github.com 安装，再登录",
@@ -382,6 +386,8 @@ def check_config(m, T, ctx):
     ctx["cfg"] = cfg
     if not cfg.projects:
         return out + where(m, T, cfg, path)
+    out += [result(WARN, T["project_twice"].format(given=given, name=name), T["fix_project_name"].format(path=path))
+            for given, name in cfg.renamed]
     for p in cfg.projects:  # each project its directories and its repository, its name before what is said of it
         view = cfg.for_project(p)
         found = where(m, T, view, path, T["fix_project"].format(name=p["name"], path=path))
