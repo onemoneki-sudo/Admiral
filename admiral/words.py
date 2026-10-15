@@ -33,6 +33,7 @@ PHASE_KEYS = ["working", "waiting", "needs_you", "review", "accepting", "paused"
 WORDS = {
     "en": {
         "stages": ["not started", "develop", "review", "accept", "CI", "merged"],
+        "reported_done": "reported done",  # the last milestone by the session's own word, with no merged PR
         "phases": {"working": "working", "waiting": "waiting", "needs_you": "needs you", "review": "in review",
                    "accepting": "accepting", "paused": "paused", "done": "done"},
         "maybe_waiting": "may be waiting for you: ", "reported_waiting": "needs you: ",
@@ -59,6 +60,7 @@ WORDS = {
     },
     "zh": {
         "stages": ["未开始", "开发", "审查", "验收", "CI", "合并"],
+        "reported_done": "已报告完成",
         "phases": {"working": "进行中", "waiting": "等待", "needs_you": "等你", "review": "审查中",
                    "accepting": "验收中", "paused": "暂停", "done": "完成"},
         "maybe_waiting": "可能在等你：", "reported_waiting": "等你：",
