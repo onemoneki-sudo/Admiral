@@ -267,6 +267,96 @@ class KnownBySession(World):
         self.assertEqual((row["registered"], row["branches"]), (True, ["feat/a"]))
 
 
+class OnlyWhoShouldRegister(World):
+    """Running but not registered is said of a session at work that ought to register: not of a commander, listed as
+    one by its name, nor of one just opened that has had no message yet."""
+
+    def fresh(self, pid, name):
+        """A session opened a moment ago: no message yet, so no transcript, and its status unchanged since it began."""
+        from admiral import sessions
+        self.session(pid, name, since=NOW - 60, startedAt=(NOW - 60) * 1000)
+        os.remove(sessions.transcript(self.cfg, "/w/app", f"s{pid}"))
+
+    def test_a_commander_is_not_said_to_be_unregistered(self):
+        self.session(1, "Commander-A")
+        self.assertFalse([h for h in self.build(use_gh=False)["hints"] if "not registered: Commander-A" in h])
+
+    def test_a_session_just_opened_is_neither_unregistered_nor_a_sign_transcripts_moved(self):
+        self.session(1, "Commander-A")
+        self.fresh(3, "worker")
+        b = self.build(use_gh=False)
+        self.assertFalse([h for h in b["hints"] if "not registered: worker" in h], b["hints"])
+        self.assertFalse([h for h in b["health"] if "no transcript" in h], b["health"])
+
+    def test_once_it_works_unregistered_it_is_said_so(self):
+        self.session(3, "worker")
+        self.assertIn("running but not registered: worker", self.build(use_gh=False)["hints"])
+
+    def test_a_status_changed_half_a_minute_after_its_start_is_a_session_at_work(self):
+        from admiral import sessions
+        for after, flagged in ((29, False), (31, True)):
+            with self.subTest(after=after):
+                self.tearDown()
+                self.setUp()
+                self.session(3, "worker", since=NOW - 300 + after, startedAt=(NOW - 300) * 1000)
+                os.remove(sessions.transcript(self.cfg, "/w/app", "s3"))
+                hints = self.build(use_gh=False)["hints"]
+                self.assertEqual("running but not registered: worker" in hints, flagged, hints)
+
+    def test_running_a_command_or_waiting_is_being_at_work(self):
+        from admiral import sessions
+        for status in ("shell", "waiting"):
+            with self.subTest(status=status):
+                self.tearDown()
+                self.setUp()
+                self.session(3, "worker", status=status, since=NOW - 60, startedAt=(NOW - 60) * 1000)
+                os.remove(sessions.transcript(self.cfg, "/w/app", "s3"))
+                self.assertIn("running but not registered: worker", self.build(use_gh=False)["hints"])
+
+    def test_times_that_do_not_read_as_numbers_are_taken_as_begun(self):
+        from admiral import sessions
+        for start, changed in (("soon", None), ("NaN", None), ("Infinity", None), (10 ** 400, None), (True, None),
+                               (10 ** 400, int((NOW - 60) * 1000)), (-5, None)):
+            with self.subTest(start=start, changed=changed):
+                self.tearDown()
+                self.setUp()
+                extra = {"statusUpdatedAt": changed} if changed is not None else {}
+                self.session(3, "worker", since=NOW - 60, startedAt=start, **extra)
+                os.remove(sessions.transcript(self.cfg, "/w/app", "s3"))
+                b = self.build(use_gh=False)
+                self.assertIn("running but not registered: worker", b["hints"])
+                self.assertTrue([h for h in b["health"] if "no transcript" in h])
+
+    def test_a_conversation_resumed_under_another_name_has_begun_all_the_same(self):
+        from admiral import sessions
+        self.session(3, "Commander-old", since=NOW - 300, startedAt=(NOW - 3600) * 1000)
+        self.session(4, "worker", sessionId="s3", since=NOW - 30, startedAt=(NOW - 30) * 1000)
+        os.remove(sessions.transcript(self.cfg, "/w/app", "s3"))
+        self.assertTrue([h for h in self.build(use_gh=False)["health"] if "no transcript" in h])
+
+    def test_a_resumed_conversation_has_begun_whichever_process_shows(self):
+        from admiral import sessions
+        self.session(3, "worker", since=NOW - 300, startedAt=(NOW - 3600) * 1000)  # at work an hour ago
+        self.session(4, "worker", sessionId="s3", since=NOW - 30, startedAt=(NOW - 30) * 1000)  # resumed just now
+        os.remove(sessions.transcript(self.cfg, "/w/app", "s3"))
+        b = self.build(use_gh=False)
+        self.assertIn("running but not registered: worker", b["hints"])
+        self.assertTrue([h for h in b["health"] if "no transcript" in h])
+
+    def test_one_worker_with_a_transcript_shows_they_are_where_expected(self):
+        from admiral import sessions
+        self.session(3, "quiet", since=NOW - 60, startedAt=(NOW - 60) * 1000)  # nothing since it opened, yet a transcript
+        self.session(4, "busy-one", status="busy", startedAt=(NOW - 3600) * 1000)
+        os.remove(sessions.transcript(self.cfg, "/w/app", "s4"))
+        self.assertFalse([h for h in self.build(use_gh=False)["health"] if "no transcript" in h])
+
+    def test_a_session_at_work_with_no_transcript_still_tells_transcripts_moved(self):
+        from admiral import sessions
+        self.session(3, "worker", status="busy", since=NOW - 30, startedAt=(NOW - 3600) * 1000)
+        os.remove(sessions.transcript(self.cfg, "/w/app", "s3"))
+        self.assertTrue([h for h in self.build(use_gh=False)["health"] if "no transcript" in h])
+
+
 class OutsideTheProjects(World):
     """Sessions outside the configured projects are not shown, but a name running there is never taken for one that
     ended, nor its batch for one with nobody running."""

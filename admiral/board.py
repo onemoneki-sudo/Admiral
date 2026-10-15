@@ -18,6 +18,7 @@ live members. Grouping: a registered `--lead` wins; otherwise the commander whos
 received last.
 """
 
+import math
 import os
 import time
 
@@ -283,6 +284,24 @@ def closing(x, locks, groups, now, cfg, T):
     return "keep", T["developing"]
 
 
+def began(s):
+    """Whether a session has done anything since it started: its status changed half a minute or more after its
+    start, or it works or waits now. One with no start recorded, or times that do not read as numbers, is taken to
+    have."""
+    if s.get("status") in ("busy", "shell", "waiting"):
+        return True
+    start, changed = s.get("startedAt"), s.get("statusUpdatedAt") or 0
+    def number(t):  # a time a clock could show, in milliseconds: an integer or finite float, never a flag or a string
+        ok = (isinstance(t, int) and not isinstance(t, bool)) or (isinstance(t, float) and math.isfinite(t))
+        return ok and 0 < t < 10 ** 14
+    if not (number(start) and number(changed)):
+        return True
+    try:
+        return changed - start >= 30_000
+    except OverflowError:  # an integer past any float
+        return True
+
+
 def branches_of(cell):
     """Every branch a registration names (a session may own several, comma-separated)."""
     return [b.strip() for b in (cell or "").split(",") if b.strip() not in ("", "-", "(detached)")]
@@ -325,6 +344,7 @@ def build(cfg, use_gh=True, now=None, starts=sessions.proc_starts, fetch=github.
         by_sid.setdefault(s.get("sessionId") or f"pid {s['pid']}", []).append(s)
     live, open_twice = [], []
     for procs in by_sid.values():
+        begun = any(began(p) for p in procs)  # the work may have begun in any process of the conversation
         procs.sort(key=lambda s: (ORDER.get(s.get("status"), 9), -(s.get("statusUpdatedAt") or 0)))
         if len(procs) > 1:
             where = list(dict.fromkeys(p.get("_tty") or f"pid {p['pid']}" for p in procs))
@@ -333,7 +353,7 @@ def build(cfg, use_gh=True, now=None, starts=sessions.proc_starts, fetch=github.
         for p in procs:
             alike.setdefault((p.get("name"), p.get("cwd")), []).append(p)
         for same in alike.values():
-            one = dict(same[0], _pids=[p["pid"] for p in same])  # a message may come from any of them
+            one = dict(same[0], _pids=[p["pid"] for p in same], _began=begun)  # a message may come from any of them
             one["formerNames"] = [f for p in same for f in p.get("formerNames") or []]  # as may an old registration
             live.append(one)
     # A registration its session made follows that session, whatever it is called now; one made without a session
@@ -356,6 +376,8 @@ def build(cfg, use_gh=True, now=None, starts=sessions.proc_starts, fetch=github.
                       "cwd": s.get("cwd", ""),
                       "tty": s.get("_tty", ""), "former": former, "status": s.get("status") or "?",
                       "statusSince": (s.get("statusUpdatedAt") or 0) / 1000, "waitingFor": s.get("waitingFor") or "",
+                      "begun": s.get("_began", began(s)), "hasTranscript": os.path.exists(sessions.transcript(cfg, s.get("cwd", ""),
+                                                                                        s.get("sessionId", ""))),
                       "reg": reg, "isCommander": name.startswith(cfg.commander_prefix)})
 
     for c in convs:  # registered branches, plus whatever the registered worktree has checked out now
@@ -536,7 +558,10 @@ def build(cfg, use_gh=True, now=None, starts=sessions.proc_starts, fetch=github.
     closable = {v: [{"name": x["name"], "lead": x["lead"], "tty": x["tty"], "why": x["closeWhy"]}
                     for x in rows if x["close"] == v] for v in ("close", "wrapup", "confirm")}
 
-    hints = [T["h_unregistered"].format(name=x["name"]) for x in rows if not x["registered"] and not x["finished"]]
+    # a commander is listed as one by its name; a session just opened has had no message, nothing to register yet
+    at_work = {c["sessionId"] for c in convs if c["hasTranscript"] or c["begun"]}
+    hints = [T["h_unregistered"].format(name=x["name"]) for x in rows
+             if not x["registered"] and not x["finished"] and not x["isCommander"] and x["sessionId"] in at_work]
     if mine:
         linked = {b for x in rows for b in x["branches"]} | {it["branch"] for p in plans for it in p["items"]}
         for p in mine["open"]:
@@ -588,7 +613,8 @@ def build(cfg, use_gh=True, now=None, starts=sessions.proc_starts, fetch=github.
     if shapeless:
         health.append(T["x_shape"].format(n=shapeless, fields="/".join(sessions.FIELDS)))
     workers = [c for c in convs if not c["isCommander"]]
-    if workers and read["missing"] == len(workers):
+    begun = [c for c in workers if c["begun"]]  # one just opened has no transcript yet, and that is no sign
+    if begun and not any(c["hasTranscript"] for c in workers):
         health.append(T["x_no_transcripts"])
     elif commanders and workers and read["read"] and not read["found"] \
             and not any(c["reg"] and c["reg"].get("lead") for c in workers):
