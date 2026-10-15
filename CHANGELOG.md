@@ -18,7 +18,8 @@ its cache, one copy per version, so a change to the sidebar or the playbook reac
   board say transcripts may have moved.
 - A registration whose session ended with its work over and wrapped up (every branch merged on GitHub, its worktree
   gone, no lock held) is no longer listed to tidy; it stays, so a session that comes back still reads as finished,
-  and past a hundred the oldest move to `registry-archive`. Any of them missing, it is listed as before.
+  and past a hundred the oldest still for a month move to `registry-archive`. Any of them missing, it is listed as
+  before.
 - Not seen among the projects' sessions is no proof a session has ended. A registered session running outside
   `project_dirs` is not shown, as before, but no longer reads as ended, and a batch with anyone of it working there
   (an owner, its commander, a member) is not taken for one that is over.
