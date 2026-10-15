@@ -3,6 +3,7 @@
 import json
 import os
 import plistlib
+import shlex
 import subprocess
 import sys
 import tempfile
@@ -64,6 +65,25 @@ class Install(unittest.TestCase):
             self.assertEqual(job["StartInterval"], 60)
 
     @unittest.skipUnless(sys.platform == "darwin", "the background job is set up on macOS only")
+    def test_a_config_path_goes_into_the_job_as_admiral_reads_it(self):
+        with tempfile.TemporaryDirectory() as d:
+            d = os.path.realpath(d)
+            home, child = os.path.join(d, "home"), os.path.join(d, "physical", "child")
+            os.makedirs(home)
+            os.makedirs(child)
+            os.symlink(child, os.path.join(d, "link"))
+            for given, where, read_as in (("../config.toml", os.path.join(d, "link"), os.path.join(d, "physical", "config.toml")),
+                                          ("~/cfg.toml", d, os.path.join(home, "cfg.toml")),
+                                          ("~fixture/cfg.toml", d, os.path.join(d, "~fixture", "cfg.toml"))):
+                with self.subTest(given=given):
+                    r = subprocess.run(["bash", os.path.join(ROOT, "scripts", "install.sh"), "--dry-run"],
+                                       capture_output=True, text=True, cwd=where,
+                                       env=dict(os.environ, HOME=home, PWD=where, ADMIRAL_CONFIG=given))
+                    plist = r.stdout.split("and load it:", 1)[1].split("</plist>", 1)[0] + "</plist>"
+                    job = plistlib.loads("\n".join(ln[4:] for ln in plist.splitlines() if ln.strip()).encode())
+                    self.assertEqual(job["EnvironmentVariables"]["ADMIRAL_CONFIG"], read_as)
+
+    @unittest.skipUnless(sys.platform == "darwin", "the background job is set up on macOS only")
     def test_a_relative_config_goes_into_the_job_as_a_full_path(self):
         with tempfile.TemporaryDirectory() as d:
             home = os.path.join(d, "home")
@@ -85,7 +105,24 @@ class Install(unittest.TestCase):
             r = subprocess.run(["bash", os.path.join(ROOT, "scripts", "install.sh"), "--dry-run"], capture_output=True,
                                text=True, env=dict(os.environ, HOME=d, ADMIRAL_CONFIG=cfg,
                                                    PATH=fake + os.pathsep + os.environ["PATH"]))
-            self.assertIn(f"run ADMIRAL_CONFIG='{cfg}' '{ROOT}/scripts/refresh.sh' every minute", r.stdout)
+            cmd = r.stdout.split("elsewhere run ", 1)[1].split(" every minute", 1)[0]
+            self.assertEqual(cmd, f"ADMIRAL_CONFIG={shlex.quote(cfg)} {shlex.quote(ROOT + '/scripts/refresh.sh')}")
+
+    def test_the_job_to_schedule_elsewhere_pastes_as_it_reads_whatever_the_path(self):
+        with tempfile.TemporaryDirectory() as d:
+            fake = os.path.join(d, "bin")
+            os.makedirs(fake)
+            with open(os.path.join(fake, "uname"), "w") as fh:
+                fh.write("#!/bin/sh\necho Linux\n")
+            os.chmod(os.path.join(fake, "uname"), 0o755)
+            cfg = os.path.join(d, "O'Brien config.toml")
+            r = subprocess.run(["bash", os.path.join(ROOT, "scripts", "install.sh"), "--dry-run"], capture_output=True,
+                               text=True, env=dict(os.environ, HOME=d, ADMIRAL_CONFIG=cfg,
+                                                   PATH=fake + os.pathsep + os.environ["PATH"]))
+            cmd = r.stdout.split("elsewhere run ", 1)[1].split(" every minute", 1)[0]
+            # the shell reads it as two words: the assignment, the path whole, then the script
+            said = subprocess.run(["/bin/sh", "-c", f'set -- {cmd}; printf "%s\\n" "$@"'], capture_output=True, text=True)
+            self.assertEqual(said.stdout.splitlines()[0], f"ADMIRAL_CONFIG={cfg}")
 
     def test_no_memory_advice_once_it_is_off(self):
         with tempfile.TemporaryDirectory() as d:

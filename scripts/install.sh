@@ -9,11 +9,6 @@ here="$(cd "$(dirname "$0")/.." && pwd)"
 label="com.admiral.board"
 plist="$HOME/Library/LaunchAgents/$label.plist"
 config="${ADMIRAL_CONFIG:-$HOME/.config/admiral/config.toml}"
-# a config of its own, as the background job will find it: from anywhere, with none of this shell's environment
-own_config=""
-if [ -n "${ADMIRAL_CONFIG:-}" ]; then
-  case "$ADMIRAL_CONFIG" in /*|"~"*) own_config="$ADMIRAL_CONFIG";; *) own_config="$PWD/$ADMIRAL_CONFIG";; esac
-fi
 dry=0; [ "${1:-}" = "--dry-run" ] && dry=1
 run() { if [ $dry -eq 1 ]; then echo "would run: $*"; else "$@"; fi; }
 
@@ -30,9 +25,15 @@ py="${ADMIRAL_PYTHON:-$(command -v python3 || true)}"
 [ -n "$py" ] && "$py" -c 'import sys; sys.exit(sys.version_info < (3, 11))' ||
   { echo "Admiral needs Python 3.11 or newer as python3 (or set ADMIRAL_PYTHON to one)" >&2; exit 1; }
 py="$("$py" -c 'import sys; print(sys.executable)')"
+quote() { "$py" -c 'import shlex, sys; print(shlex.quote(sys.argv[1]))' "$1"; }  # as doctor quotes its commands
+# A config of its own, as the background job will find it, with none of this shell's environment nor its directory:
+# the full path Admiral itself reads it as.
+own_config=""
+[ -n "${ADMIRAL_CONFIG:-}" ] && own_config="$("$py" -c 'import os, sys
+print(os.path.abspath(os.path.expanduser(sys.argv[1])))' "$ADMIRAL_CONFIG")"
 command -v gh >/dev/null || echo "note: gh (GitHub CLI) not found: the board will show no PRs or CI until it is installed and signed in"
-job_env=""; [ -n "$own_config" ] && job_env="ADMIRAL_CONFIG='$own_config' "
-[ "$(uname)" = Darwin ] || { echo "the background job is set up for macOS only; elsewhere run ${job_env}'$here/scripts/refresh.sh' every minute (cron, a systemd timer)"; }
+job_env=""; [ -n "$own_config" ] && job_env="ADMIRAL_CONFIG=$(quote "$own_config") "
+[ "$(uname)" = Darwin ] || { echo "the background job is set up for macOS only; elsewhere run ${job_env}$(quote "$here/scripts/refresh.sh") every minute (cron, a systemd timer)"; }
 
 if [ $dry -eq 1 ]; then echo "would record the Python $py in $here/.python-path"
 else printf '%s\n' "$py" > "$here/.python-path"; echo "using Python $py"; fi
