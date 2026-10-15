@@ -6,6 +6,8 @@ its cache, one copy per version, so a change to the sidebar or the playbook reac
 
 ## Unreleased
 
+## 0.2.5 (2026-10-15)
+
 **Board**
 - One conversation resumed in several terminals is one session: counted once, shown as its most pressing process
   (waiting before working before idle), and the to-tidy list names where it is open, since each process writes the
