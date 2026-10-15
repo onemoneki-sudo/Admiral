@@ -43,8 +43,8 @@ its cache, one copy per version, so a change to the sidebar or the playbook reac
 - Only what any project can use, as defaults rather than a checklist, at about half the length. Thresholds, tools and
   one team's procedures (minutes in a lock queue, when a fix is reviewed again, the fields of a pre-ready report,
   fixes after approval) are left to each project's own rules, which win wherever they differ.
-- Acceptance is the person's call: before the PR, or by using the change once merged; either way shown at its real
-  entry rather than described.
+- Acceptance is the person's call, asked before pushing: before the PR, or by using the change once merged; either
+  way shown at its real entry rather than described.
 - A fix settles the kind its defect belongs to, never a condition for the one case that broke.
 - When a batch ends, the commander writes a short summary, the one thing the next batch reads; what was deferred along
   the way is gone through once, and issues are opened only for what is risky or hurts real use.

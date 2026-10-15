@@ -48,7 +48,8 @@ Docs, copy and mechanical changes need none. What changes during acceptance goes
 ## 5. Push and PR
 
 - Before pushing, tell the person briefly: what changed, how it was verified, the review's findings and what became of
-  them, and what is unverified.
+  them, and what is unverified. For a change in behaviour, ask whether they want to accept it first or by using it once
+  merged. Report `needs_you` while you wait.
 - Pushing is the person's decision. Push once the work is final and open the PR ready, not draft, so CI runs on the
   final version. In a batch, executors commit locally and the commander pushes, so the person decides in one place.
 - Once the PR is ready, push only what it needs: a fix, a conflict, a change of base. Every push runs CI again and
