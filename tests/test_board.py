@@ -777,6 +777,53 @@ class Evidence(World):
         g = self.group(self.build(), "Commander-A")
         self.assertEqual((g["batch"]["items"][0]["stage"], g["summary"]["pct"]), (5, 100))
 
+    def test_with_github_down_from_the_start_a_pushed_branch_is_unknown_not_absent(self):
+        from tests.test_board import Linking
+        self.gh_down = True  # never answered: the push alone says there is a branch
+        self.session(1, "Commander-A")
+        self.register("Commander-A", phase="done")
+        Linking.push(self, 1, "feat/for-a-member")
+        self.session(3, "worker")
+        self.register("worker", phase="done")
+        Linking.push(self, 3, "feat/pushed")
+        b = self.build()
+        x = b["unassigned"][0]
+        self.assertEqual((x["stage"], x["reportedDone"]), (3, False))
+        self.assertEqual(self.verdicts(b), {})  # neither can close while GitHub cannot say
+
+    def test_a_commanders_own_pr_closed_unmerged_is_for_the_person_to_confirm(self):
+        self.session(1, "Commander-A")
+        self.register("Commander-A", branch="feat/a", phase="done")
+        self.prs = {"feat/a": pr(1, "CLOSED")}
+        b = self.build()
+        self.assertEqual((self.verdicts(b)["Commander-A"], self.why(b, "Commander-A")),
+                         ("confirm", "PR closed without merging"))
+
+    def test_an_owners_memory_is_only_for_the_branches_its_registration_named(self):
+        from admiral import registry
+        self.session(3, "worker")
+        self.register("worker", branch="feat/a", worktree="/w/wt/a", phase="done")
+        self.checked_out = {"/w/wt/a": "feat/b"}  # its worktree has another branch checked out
+        self.build()
+        registry.done(self.cfg, "worker")
+        self.plan("Commander-A", ("feat/b", "never registered", "worker"))
+        self.assertEqual(self.group(self.build(), "Commander-A")["batch"]["items"][0]["stage"], 0)
+
+    def test_two_owners_that_swapped_names_keep_each_their_deliverable(self):
+        from admiral import registry
+        self.session(3, "alpha")
+        self.session(4, "beta")
+        self.register("alpha", branch="feat/a", phase="done")
+        self.register("beta", branch="feat/b", phase="done")
+        self.build()
+        registry.done(self.cfg, "alpha")
+        registry.done(self.cfg, "beta")
+        self.session(3, "beta", former=("alpha",))
+        self.session(4, "alpha", former=("beta",))
+        self.plan("Commander-A", ("feat/a", "a", "alpha"), ("feat/b", "b", "beta"))
+        items = {i["branch"]: i["stage"] for i in self.group(self.build(), "Commander-A")["batch"]["items"]}
+        self.assertEqual(items, {"feat/a": 5, "feat/b": 5})
+
     def test_a_session_that_finished_and_deregistered_reads_as_finished(self):
         from admiral import registry
         self.session(3, "investigation")

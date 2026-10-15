@@ -230,6 +230,8 @@ def closing(x, locks, groups, now, cfg, T):
         return "keep", T["pr_open"]
     if x["prUnknown"]:
         return "keep", T["pr_unknown"]
+    if x["isCommander"] and pr and pr["state"] == "CLOSED":
+        return "confirm", T["pr_closed"]
     if x["isCommander"]:
         g = next((g for g in groups if g["lead"] == x["name"]), None)
         members = (g or {}).get("members") or []
@@ -287,7 +289,8 @@ def remember(cfg, convs):
         r = c["reg"]
         if r:
             fresh[c["sessionId"]] = {"who": r["who"], "branches": c["branches"], "worktree": first(r.get("worktree")),
-                                     "lead": r.get("lead", ""), "phase": r.get("phase")}
+                                     "lead": r.get("lead", ""), "phase": r.get("phase"),
+                                     "registered": branches_of(r.get("branch"))}
         elif c["sessionId"] in memory:
             fresh[c["sessionId"]] = memory[c["sessionId"]]
     registry.write_json(cfg.sub("reg-memory.json"), fresh)
@@ -386,12 +389,13 @@ def build(cfg, use_gh=True, now=None, starts=sessions.proc_starts, fetch=github.
         own = [b for b in bs if b not in c["guessed"]
                or (not c["isCommander"] and (prs.get(b) or {}).get("state") == "OPEN")]
         pr, lead, finished = github.pick(own, prs), (r or {}).get("lead", ""), False
-        pr_unknown = unknown and bool(bs)  # any branch it has, its own or taken, may have a PR GitHub did not report
-        st = stage(r, pr, pr_unknown)
         mem = memory.get(c["sessionId"]) if not r else None
+        # any branch it has, registered, taken, pushed or last registered, may have a PR GitHub did not report
+        pr_unknown = unknown and bool(bs or (work.get(c["sessionId"]) or {}).get("pushed") or (mem or {}).get("branches"))
+        st = stage(r, pr, pr_unknown)
         if mem:  # deregistered since: finished if what it last worked on reached the last milestone, as above
             mpr = github.pick(mem.get("branches", []), prs)
-            if stage_of(mem.get("phase"), mpr, unknown and bool(mem.get("branches"))) == 5:
+            if stage_of(mem.get("phase"), mpr, pr_unknown) == 5:
                 finished, bs, pr, st, wt, lead = True, mem.get("branches", []), mpr, 5, mem.get("worktree", ""), mem.get("lead", "")
         ci_text, ci_level = github.ci(pr, cfg.summary_checks)
         lc = commits(wt) if wt else None
@@ -428,11 +432,11 @@ def build(cfg, use_gh=True, now=None, starts=sessions.proc_starts, fetch=github.
     unassigned = [x for x in rows if not x["isCommander"] and not x["lead"]]
 
     reg_by_who = {r["who"]: r for r in regs}
-    mem_by_who = {}  # an owner that deregistered since, by the name it registered under and its session's name now
+    mem_by_who = {}  # owners that deregistered since, by the name each registered under and its session's name now
     for c in convs:
         m = memory.get(c["sessionId"])
         for n in ({m.get("who"), c["name"]} if m else set()) - {None, ""}:
-            mem_by_who[n] = m
+            mem_by_who.setdefault(n, []).append(m)
     for p in plans:
         lead = alias.get(p["lead"], p["lead"])
         g = next((g for g in groups if g["lead"] == lead), None)  # None: neither the commander nor a member runs
@@ -441,8 +445,8 @@ def build(cfg, use_gh=True, now=None, starts=sessions.proc_starts, fetch=github.
             pr = prs.get(it["branch"])
             ci_text, ci_level = github.ci(pr, cfg.summary_checks)
             owner = it.get("owner", "")
-            mem = mem_by_who.get(owner)
-            mem = mem if mem and it["branch"] in mem.get("branches", []) else None  # only for what it worked on
+            # an owner's last registration speaks only for the branches it named
+            mem = next((m for m in mem_by_who.get(owner, []) if it["branch"] in m.get("registered", m.get("branches", []))), None)
             st = item_stage(reg_by_who.get(owner) or mem, pr, unknown)
             items.append({"branch": it["branch"], "title": it.get("title", ""), "owner": it.get("owner", ""),
                           "stage": st, "reportedDone": st == 5 and not merged(pr),
