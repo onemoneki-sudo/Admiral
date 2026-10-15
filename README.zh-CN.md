@@ -18,7 +18,7 @@
 
 <p align="center"><a href="https://github.com/onemoneki-sudo/Admiral/releases/latest/download/admiral.zh.mp4"><b>▶ 观看宣传片</b></a> · <a href="https://github.com/onemoneki-sudo/Admiral/releases/latest/download/admiral.mp4">English</a></p>
 
-<p align="center"><a href="README.md">English</a> · 中文</p>
+<p align="center"><a href="https://github.com/onemoneki-sudo/Admiral">English</a> · 中文</p>
 
 ---
 
