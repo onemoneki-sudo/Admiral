@@ -940,6 +940,89 @@ class FinishedBatches(World):
         self.assertFalse([h for h in self.build()["hints"] if "Commander-Gone" in h])
 
 
+class OneConversation(World):
+    """One conversation resumed in several terminals is one session; two sessions sharing a name stay two."""
+
+    def test_a_conversation_open_in_two_terminals_is_one_session(self):
+        self.session(3, "worker", status="busy", since=NOW - 300)
+        self.session(4, "worker", status="waiting", since=NOW - 30, sessionId="s3")  # the same one, resumed again
+        b = self.build(use_gh=False)
+        rows = [x for x in b["unassigned"] if x["name"] == "worker"]
+        self.assertEqual((b["count"], len(rows)), (1, 1))
+        self.assertEqual((rows[0]["status"], rows[0]["tty"]), ("waiting", "ttys004"))  # the one that needs the person
+        self.assertEqual(len(b["waiting"]), 1)
+        self.assertTrue(any("worker" in h and "ttys003" in h and "ttys004" in h for h in b["hints"]), b["hints"])
+
+    def test_a_commander_open_twice_leads_one_batch(self):
+        self.session(1, "Commander-A", status="busy")
+        self.session(2, "Commander-A", status="idle", sessionId="s1")
+        self.session(3, "worker")
+        self.transcript(3, (1, "Commander-A"))
+        groups = [g for g in self.build(use_gh=False)["groups"] if g["lead"] == "Commander-A"]
+        self.assertEqual(len(groups), 1)
+        self.assertEqual([m["name"] for m in groups[0]["members"]], ["worker"])
+
+    def test_a_message_from_any_process_of_a_commander_finds_it(self):
+        self.session(1, "Commander-New", status="waiting")
+        self.session(2, "Commander-New", status="idle", sessionId="s1")  # the same commander; it wrote to the member
+        self.session(3, "worker")
+        self.transcript(3, (2, "Commander-Old"))  # under a name no session keeps: only its process tells who it was
+        g = next(g for g in self.build(use_gh=False)["groups"] if g["lead"] == "Commander-New")
+        self.assertEqual([m["name"] for m in g["members"]], ["worker"])
+
+    def test_a_name_only_one_process_remembers_still_finds_the_session(self):
+        self.session(1, "Commander-New", status="waiting")
+        self.session(2, "Commander-New", status="idle", sessionId="s1", former=("Commander-Old",))
+        self.session(3, "worker")
+        self.register("worker", lead="Commander-Old")
+        b = self.build(use_gh=False)
+        self.assertEqual([[m["name"] for m in g["members"]] for g in b["groups"]], [["worker"]])
+        self.assertFalse([h for h in b["hints"] if "not running" in h])
+
+    def test_processes_of_one_conversation_that_differ_in_name_or_directory_lose_nothing(self):
+        self.session(1, "Commander-New", status="waiting")
+        self.session(2, "Commander-Old", sessionId="s1")  # renamed in one terminal only
+        self.session(3, "worker")
+        self.session(5, "helper", cwd="/w/app/wt")
+        self.session(6, "helper", cwd="/w/app", sessionId="s5")  # resumed from another directory
+        self.transcript(5, (1, "Commander-New"), cwd="/w/app/wt")
+        self.register("worker", lead="Commander-Old")
+        b = self.build(use_gh=False)
+        self.assertFalse([h for h in b["hints"] if "not running" in h], b["hints"])
+        self.assertEqual([m["name"] for m in self.group(b, "Commander-Old")["members"]], ["worker"])
+        self.assertEqual([m["name"] for m in self.group(b, "Commander-New")["members"]], ["helper", "helper"])
+        self.assertEqual(len([h for h in b["hints"] if "open 2 times" in h]), 2)  # still told it is open twice
+
+    def test_a_member_open_twice_is_one_member(self):
+        self.session(1, "Commander-A")
+        self.session(3, "worker", status="idle")
+        self.session(4, "worker", status="busy", sessionId="s3")
+        self.register("worker", lead="Commander-A")
+        g = self.group(self.build(use_gh=False), "Commander-A")
+        self.assertEqual(([m["name"] for m in g["members"]], g["summary"]["busy"]), (["worker"], 1))
+
+    def test_two_processes_in_one_terminal_are_named_once(self):
+        self.session(3, "worker", status="busy")
+        self.session(4, "worker", status="idle", sessionId="s3")
+        b2 = board.build(self.cfg, use_gh=False, now=NOW, starts=lambda pids: {p: (START, "ttys001") for p in pids})
+        hint = next(h for h in b2["hints"] if "open 2 times" in h)
+        self.assertIn("(ttys001)", hint)
+
+    def test_two_sessions_sharing_a_commanders_name_both_stay_shown(self):
+        self.session(1, "Commander-A", status="busy")
+        self.session(2, "Commander-A", status="waiting")  # another conversation, given the same name
+        b = self.build(use_gh=False)
+        self.assertEqual(sorted(g["leadRow"]["sessionId"] for g in b["groups"]), ["s1", "s2"])  # neither is dropped
+        self.assertFalse([h for h in b["hints"] if "times (" in h])
+
+    def test_different_conversations_with_different_names_stay_apart(self):
+        self.session(3, "one", status="busy")
+        self.session(4, "two", status="waiting")
+        b = self.build(use_gh=False)
+        self.assertEqual(sorted(x["name"] for x in b["unassigned"]), ["one", "two"])
+        self.assertFalse([h for h in b["hints"] if "times (" in h])
+
+
 class Sources(World):
     def test_a_registered_branch_keeps_its_merge_while_its_session_is_away(self):
         self.session(4, "other")  # keeps the board refreshing
