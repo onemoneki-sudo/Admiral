@@ -56,8 +56,6 @@ TEXT = words_mod.phrases({
         "h_idle": "idle over {days} days: {name}; close it if its work is over",
         "h_lead_gone": "--lead names a commander that is not running: {lead}",
         "h_twice": "{name} is open {n} times ({where}): close all but one, as each writes the same conversation",
-        "h_same_name": "{n} sessions share the name {name}: rename all but one, as registrations and messages find "
-                       "sessions by name",
         "h_plan_finished": "the plan of {lead} is all merged and nobody of its batch runs: no longer shown; "
                            "admiral plan close --lead \"{lead}\" puts it away",
         "h_gone": "registered but the session has ended: {who} (`admiral done --who \"{who}\"` once confirmed)",
@@ -113,7 +111,6 @@ TEXT = words_mod.phrases({
         "h_idle": "空闲超过 {days} 天：{name}，任务已结束的请按收尾规则关闭",
         "h_lead_gone": "--lead 指定的总指挥未运行：{lead}",
         "h_twice": "{name} 同时开了 {n} 份（{where}）：只留一个，它们写的是同一份对话记录",
-        "h_same_name": "有 {n} 个对话都叫 {name}：只留一个用这个名字，登记和消息都是按名字找对话的",
         "h_plan_finished": "{lead} 的交付清单已全部合并，批次里也没有对话在运行：已不再显示；"
                            "用 admiral plan close --lead \"{lead}\" 收起它",
         "h_gone": "已登记但对话已结束：{who}（确认后 admiral done --who \"{who}\"）",
@@ -538,10 +535,6 @@ def build(cfg, use_gh=True, now=None, starts=sessions.proc_starts, fetch=github.
             hints.append(T["h_idle"].format(days=cfg.idle_flag_s // 86400, name=c["name"]))
     hints += [T["h_lead_gone"].format(lead=lead) for lead in orphans]
     hints += [T["h_twice"].format(name=name, n=n, where=", ".join(where)) for name, n, where in open_twice]
-    shared = {}
-    for x in rows:
-        shared.setdefault(x["name"], set()).add(x["sessionId"])
-    hints += [T["h_same_name"].format(name=name, n=len(ids)) for name, ids in sorted(shared.items()) if len(ids) > 1]
     hints += [T["h_plan_finished"].format(lead=lead) for lead in finished]
     for r in regs:
         if r["who"] not in matched:

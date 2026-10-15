@@ -941,7 +941,7 @@ class FinishedBatches(World):
 
 
 class OneConversation(World):
-    """One conversation resumed in several terminals is one session; two sessions sharing a name are told apart."""
+    """One conversation resumed in several terminals is one session; two sessions sharing a name stay two."""
 
     def test_a_conversation_open_in_two_terminals_is_one_session(self):
         self.session(3, "worker", status="busy", since=NOW - 300)
@@ -988,7 +988,7 @@ class OneConversation(World):
         self.transcript(5, (1, "Commander-New"), cwd="/w/app/wt")
         self.register("worker", lead="Commander-Old")
         b = self.build(use_gh=False)
-        self.assertFalse([h for h in b["hints"] if "not running" in h or "share the name" in h], b["hints"])
+        self.assertFalse([h for h in b["hints"] if "not running" in h], b["hints"])
         self.assertEqual([m["name"] for m in self.group(b, "Commander-Old")["members"]], ["worker"])
         self.assertEqual([m["name"] for m in self.group(b, "Commander-New")["members"]], ["helper", "helper"])
         self.assertEqual(len([h for h in b["hints"] if "open 2 times" in h]), 2)  # still told it is open twice
@@ -1008,20 +1008,19 @@ class OneConversation(World):
         hint = next(h for h in b2["hints"] if "open 2 times" in h)
         self.assertIn("(ttys001)", hint)
 
-    def test_two_sessions_sharing_a_commanders_name_both_stay_shown_and_are_flagged(self):
+    def test_two_sessions_sharing_a_commanders_name_both_stay_shown(self):
         self.session(1, "Commander-A", status="busy")
         self.session(2, "Commander-A", status="waiting")  # another conversation, given the same name
         b = self.build(use_gh=False)
         self.assertEqual(sorted(g["leadRow"]["sessionId"] for g in b["groups"]), ["s1", "s2"])  # neither is dropped
-        self.assertIn("2 sessions share the name Commander-A: rename all but one, as registrations and messages find "
-                      "sessions by name", b["hints"])
+        self.assertFalse([h for h in b["hints"] if "times (" in h])
 
     def test_different_conversations_with_different_names_stay_apart(self):
         self.session(3, "one", status="busy")
         self.session(4, "two", status="waiting")
         b = self.build(use_gh=False)
         self.assertEqual(sorted(x["name"] for x in b["unassigned"]), ["one", "two"])
-        self.assertFalse([h for h in b["hints"] if "terminals" in h or "share the name" in h])
+        self.assertFalse([h for h in b["hints"] if "times (" in h])
 
 
 class Sources(World):
