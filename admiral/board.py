@@ -320,7 +320,9 @@ def build(cfg, use_gh=True, now=None, starts=sessions.proc_starts, fetch=github.
     prs, gh_ok, reused, mine = {}, None, False, None
     quiet = all(c["status"] not in ("busy", "shell", "waiting") and now - c["statusSince"] > cfg.quiet_s for c in convs)
     if use_gh and live and cfg.repo_dir:  # with no session running nothing reads the board, so GitHub is left alone
-        prs, mine, reused = github.prs_paced(cfg, branches, quiet, now, fetch, fetch_mine)
+        # a registration whose session is not running keeps its branches in use, so their merges stay remembered
+        in_use = branches | {b for r in regs for b in branches_of(r.get("branch"))}
+        prs, mine, reused = github.prs_paced(cfg, in_use, quiet, now, fetch, fetch_mine)
         gh_ok = prs is not None and mine is not None
         prs = prs or {}
     for c in convs:

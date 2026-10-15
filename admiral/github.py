@@ -16,6 +16,7 @@ from .registry import read_json, write_json
 
 OPEN_LIMIT = 100  # open PRs asked with their checks
 RECENT_LIMIT = 300  # PRs of every state asked, newest first
+MERGED_KEPT = 500  # merged PRs remembered past the recent list, the newest
 
 
 def gh_prs(cfg, state, limit, fields):
@@ -33,10 +34,12 @@ def prs_by_branch(cfg, branches):
     if open_prs is None or all_prs is None:
         return None
     out = {pr["headRefName"]: pr for pr in open_prs if pr["headRefName"] in branches}
+    full = len(open_prs) >= OPEN_LIMIT
     for pr in all_prs:  # newest first
         if pr["headRefName"] in branches and pr["headRefName"] not in out:
-            # an open PR found only here is past the open list, so its checks were never asked for
-            out[pr["headRefName"]] = dict(pr, checksUnknown=True) if pr["state"] == "OPEN" else pr
+            # an open PR found only here, when the open list was full, is past it: its checks were never asked for
+            # (with room left, it opened between the two calls, and the next refresh has them)
+            out[pr["headRefName"]] = dict(pr, checksUnknown=True) if pr["state"] == "OPEN" and full else pr
     return out
 
 
@@ -45,10 +48,11 @@ def my_prs(cfg, now):
     today. None when gh failed or no repository is configured."""
     if not cfg.repo_dir:
         return None
-    # GitHub reads a bare date as a UTC day; with the offset it is the person's own day
+    # GitHub reads a bare date as a UTC day: asked instead from the moment the person's day began, in UTC, which holds
+    # on a day the clocks change too
     t = time.localtime(now)
-    zone = time.strftime("%z", t)
-    since = time.strftime("%Y-%m-%dT00:00:00", t) + zone[:3] + ":" + zone[3:]
+    began = time.mktime((t.tm_year, t.tm_mon, t.tm_mday, 0, 0, 0, 0, 0, -1))
+    since = time.strftime("%Y-%m-%dT%H:%M:%S+00:00", time.gmtime(began))
     calls = [["--state", "open"], ["--state", "merged", "--search", f"merged:>={since}"]]
     out = []
     for extra in calls:
@@ -65,15 +69,15 @@ def prs_paced(cfg, branches, quiet, now, fetch=prs_by_branch, fetch_mine=my_prs)
     path = cfg.sub("pr-cache.json")
     cache = read_json(path) or {}
     if quiet and now - cache.get("at", 0) < cfg.quiet_github_s and set(branches) <= set(cache.get("branches", [])) \
-            and "mine" in cache:
+            and cache.get("mine") is not None:
         return cache["prs"], cache["mine"], True
     prs = fetch(cfg, branches)
     mine = fetch_mine(cfg, now) if prs is not None else None
     if prs is not None:  # what GitHub answers now wins; a merge seen before fills in what it no longer lists
         prs = {**{b: p for b, p in (cache.get("merged") or {}).items() if b in branches}, **prs}
-    if prs is not None and mine is not None:
+        kept = sorted(((b, p) for b, p in prs.items() if p["state"] == "MERGED"), key=lambda bp: -bp[1]["number"])
         write_json(path, {"at": now, "branches": sorted(branches), "prs": prs, "mine": mine,
-                          "merged": {b: p for b, p in prs.items() if p["state"] == "MERGED"}})
+                          "merged": dict(kept[:MERGED_KEPT])})
     return prs, mine, False
 
 
