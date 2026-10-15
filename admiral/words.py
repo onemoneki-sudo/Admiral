@@ -78,7 +78,7 @@ WORDS = {
         "health": "数据源异常 {n}", "updated": "更新于 {t}", "independent": "独立对话",
         "idle_commanders": "另有 {n} 个总指挥暂无成员", "to_tidy": "待整理 {n} 项",
         "show": "查看", "hide": "收起", "close_head": "收尾", "can_close": "可以关闭",
-        "wrap_up": "待收尾后关闭", "confirm": "需要你确认", "deliverables": "计划中的 PR",
+        "wrap_up": "待收尾后关闭", "confirm": "需要你确认", "deliverables": "交付清单",
         "other_sessions": "其他对话", "now": "工作中", "just_now": "刚才",
         "min_ago": "{n} 分钟前", "h_ago": "{n} 小时前", "d_ago": "{n} 天前", "open_board": "Admiral 面板",
         "your_team": "本批次", "this_session": "本对话", "lead_of": "所属 {lead}",
