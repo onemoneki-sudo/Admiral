@@ -359,8 +359,7 @@ class OnlyWhoShouldRegister(World):
 
 class PutAway(World):
     """A registration whose session has ended, every branch merged on GitHub, its worktree gone and no lock held, is
-    said nothing of: its work is over. Any of them missing, the person decides. Past a hundred, the oldest of them
-    are put away."""
+    said nothing of: its work is over. Any of them missing, or any session file unread, the person decides."""
 
     def ended_with(self, branch="feat/a,feat/b", worktree="", states=("MERGED", "MERGED")):
         self.session(4, "keeper")  # keeps the board refreshing
@@ -376,21 +375,6 @@ class PutAway(World):
         b = self.ended_with(worktree=os.path.join(self.root, "gone"))
         self.assertFalse([h for h in b["hints"] if "worker" in h], b["hints"])
         self.assertEqual(self.kept(b), ["worker"])  # kept: a session that comes back still reads as finished
-
-    def test_past_the_limit_the_oldest_are_put_away(self):
-        from admiral import registry
-        from unittest import mock
-        self.session(4, "keeper")
-        import time as clock
-        for i in range(3):
-            self.register(f"w{i}", branch=f"feat/{i}")
-            old = clock.time() - registry.STILL_S - 1000 + i  # nothing has changed them for over a month
-            os.utime(registry.reg_path(self.cfg, f"w{i}"), (old, old))
-        self.prs = {f"feat/{i}": pr(i + 1, "MERGED") for i in range(3)}
-        with mock.patch.object(registry, "OVER_KEPT", 2):
-            self.build()
-        self.assertEqual(sorted(self.kept(None)), ["w1", "w2"])
-        self.assertEqual(len(os.listdir(os.path.join(self.root, "state", "registry-archive"))), 1)
 
     def test_one_its_session_made_is_said_nothing_of_once_that_session_ended(self):
         from admiral import registry
@@ -409,20 +393,15 @@ class PutAway(World):
         self.lock("heavy", "worker two")
         self.assertTrue([h for h in self.build()["hints"] if "has ended: worker two" in h])
 
-    def test_past_the_limit_one_changed_lately_stays(self):
-        from admiral import registry
-        from unittest import mock
-        self.session(4, "keeper")
-        for i in range(3):
-            self.register(f"w{i}", branch=f"feat/{i}")  # changed just now: its session may come back
-        self.prs = {f"feat/{i}": pr(i + 1, "MERGED") for i in range(3)}
-        with mock.patch.object(registry, "OVER_KEPT", 2):
-            self.build()
-        self.assertEqual(sorted(self.kept(None)), ["w0", "w1", "w2"])
-
     def test_a_session_file_that_did_not_read_keeps_it(self):
         with open(os.path.join(self.root, "sessions", "77.json"), "w") as fh:
             fh.write("{ half written")
+        b = self.ended_with(worktree=os.path.join(self.root, "gone"))
+        self.assertTrue([h for h in b["hints"] if "has ended: worker" in h], b["hints"])
+
+    def test_a_session_file_missing_a_field_keeps_it(self):
+        with open(os.path.join(self.root, "sessions", "77.json"), "w") as fh:
+            json.dump({"sessionId": "s9", "name": "worker", "status": "busy", "cwd": "/w/app"}, fh)  # no pid
         b = self.ended_with(worktree=os.path.join(self.root, "gone"))
         self.assertTrue([h for h in b["hints"] if "has ended: worker" in h], b["hints"])
 
