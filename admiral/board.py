@@ -498,8 +498,9 @@ def build(cfg, use_gh=True, now=None, starts=sessions.proc_starts, fetch=github.
             mem = next((m for m in mem_by_who.get(owner, []) if it["branch"] in m.get("registered", m.get("branches", []))), None)
             # of the registrations that answer to the owner's name, the one with this deliverable's branch
             answering = [r for r in regs if owner and owner in registry.names_of(r)]
+            # the one with this deliverable's branch, else what the owner last registered for it, else its name's
             reg = next((r for r in answering if it["branch"] in branches_of(r.get("branch"))), None) \
-                or reg_by_who.get(owner)
+                or (None if mem else reg_by_who.get(owner))
             st = item_stage(reg or mem, pr, unknown)
             items.append({"branch": it["branch"], "title": it.get("title", ""), "owner": it.get("owner", ""),
                           "stage": st, "reportedDone": st == 5 and not merged(pr),

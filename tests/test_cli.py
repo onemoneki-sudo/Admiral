@@ -169,12 +169,16 @@ class Cli(unittest.TestCase):
         self.assertEqual(self.run_cli("done", "--who", "worker").stdout.strip(), "no registration for worker")
         self.assertEqual([(r["sessionId"], r["phase"]) for r in self.regs()], [("sid-old", None)])
 
-    def test_a_registration_made_for_it_under_a_former_name_is_taken_over(self):
-        self.run_cli("register", "--who", "old", "--branch", "feat/a")
-        self.run_cli("state", "--who", "old", "--phase", "review")
-        self.in_session(41, "sid-41", "new", former=("old",))
-        self.run_cli("register", "--who", "new", "--branch", "feat/a")
-        self.assertEqual([(r["who"], r.get("sessionId"), r["phase"]) for r in self.regs()], [("new", "sid-41", "review")])
+    def test_another_sessions_registration_under_a_former_name_is_left_alone(self):
+        self.in_session(41, "sid-a", "alpha")
+        self.run_cli("register", "--who", "alpha", "--branch", "feat/a")
+        self.in_session(41, "sid-a", "beta", former=("alpha",))  # renamed; its old name passes to another
+        self.env.pop("CLAUDE_CODE_SESSION_ID")
+        self.run_cli("register", "--who", "alpha", "--branch", "feat/b")  # made by hand for the one now called alpha
+        self.in_session(41, "sid-a", "beta", former=("alpha",))
+        self.run_cli("register", "--who", "beta", "--branch", "feat/a")
+        self.assertEqual(sorted((r["who"], r.get("sessionId"), r["branch"]) for r in self.regs()),
+                         [("alpha", None, "feat/b"), ("beta", "sid-a", "feat/a")])
 
     def test_a_take_over_left_half_done_is_finished_by_the_next_registration(self):
         from admiral import registry

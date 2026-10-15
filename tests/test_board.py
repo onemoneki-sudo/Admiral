@@ -238,6 +238,19 @@ class KnownBySession(World):
         items = self.group(self.build(use_gh=False), "Commander-A")["batch"]["items"]
         self.assertEqual([(i["branch"], i["stage"]) for i in items], [("feat/a", 2), ("feat/b", 5)])
 
+    def test_an_owner_that_deregistered_keeps_its_deliverable_though_another_now_has_its_name(self):
+        self.register_as("beta", "s4", branch="feat/b", phase="done")
+        self.session(4, "beta")
+        self.session(1, "Commander-A")
+        self.plan("Commander-A", ("feat/b", "b", "beta"))
+        self.build(use_gh=False)  # the board remembers what s4 registered
+        from admiral import registry
+        os.remove(registry.session_path(self.cfg, "s4"))  # s4 deregisters
+        self.register_as("beta", "s3", branch="feat/a", phase="review")  # another, renamed to beta
+        self.session(3, "beta", former=("alpha",))
+        item = self.group(self.build(use_gh=False), "Commander-A")["batch"]["items"][0]
+        self.assertEqual(item["stage"], 5)
+
     def test_a_registration_that_records_its_session_ends_with_that_session(self):
         self.register_as("old", "s9", branch="feat/a")  # s9 runs, outside the projects, under another name
         self.session(9, "renamed", cwd="/w/other")

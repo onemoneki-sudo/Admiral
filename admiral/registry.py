@@ -127,8 +127,8 @@ def register(cfg, who, task="", branch="", worktree="", files="", lead=""):
     fields = {"task": task, "branch": branch, "worktree": worktree, "files": files, "lead": lead, "since": time.time()}
     if sid and (who in names or itself(cfg, who, sid, names)):
         own = read_json(session_path(cfg, sid))
-        # made for it under a name it has or had, before it registered itself: taken over, its phase with it
-        taken = [r for r in (read_json(reg_path(cfg, n)) for n in dict.fromkeys([who] + names)) if r and not r.get("sessionId")]
+        # made for it under this name before it registered itself: taken over, its phase with it
+        taken = [r for r in [read_json(reg_path(cfg, who))] if r and not r.get("sessionId")]
         old = own or (taken[0] if taken else {})
         reg = dict(renamed(old, who) if old.get("who") else {"who": who}, **fields, sessionId=sid,
                    phase=old.get("phase"), note=old.get("note", ""), phaseAt=old.get("phaseAt"))
