@@ -60,6 +60,7 @@ TEXT = words_mod.phrases({
         "h_pr_done": "{label}, still registered: {who}; wrap it up",
         "h_stale_phase": "phase not updated for over {hours} hours: {who} ({phase})",
         "x_gh": "gh failed: no PR or CI this time",
+        "x_open_limit": "{n} open {n:PR is|PRs are} past the newest {limit}: {n:its|their} CI is not shown",
         "x_broken": "{n} session {n:file does|files do} not parse (Claude Code's internal format may have changed, or a file was being written); skipped",
         "x_shape": "{n} session {n:file lacks|files lack} one of {fields}: Claude Code's internal format may have changed; run states may be wrong",
         "x_no_transcripts": "no transcript found (~/.claude/projects): their location may have changed; grouping by message is off",
@@ -111,6 +112,7 @@ TEXT = words_mod.phrases({
         "h_pr_done": "{label}，但仍在登记中：{who}，可以收尾",
         "h_stale_phase": "阶段超过 {hours} 小时未更新：{who}（{phase}）",
         "x_gh": "gh 调用失败，本次未获取 PR/CI",
+        "x_open_limit": "{n} 个打开的 PR 不在最新 {limit} 个之内，它们的 CI 状态无法显示",
         "x_broken": "{n} 个会话文件无法解析（可能是 Claude Code 内部格式变化或正在写入），已跳过",
         "x_shape": "{n} 个会话文件缺少 {fields} 中的字段：Claude Code 内部格式可能已变化，运行状态可能不准",
         "x_no_transcripts": "找不到任何对话记录文件（~/.claude/projects）：记录位置可能已变化，归属推断已失效",
@@ -353,7 +355,9 @@ def build(cfg, use_gh=True, now=None, starts=sessions.proc_starts, fetch=github.
     prs, gh_ok, reused, mine = {}, None, False, None
     quiet = all(c["status"] not in ("busy", "shell", "waiting") and now - c["statusSince"] > cfg.quiet_s for c in convs)
     if use_gh and live and cfg.repo_dir:  # with no session running nothing reads the board, so GitHub is left alone
-        prs, mine, reused = github.prs_paced(cfg, branches, quiet, now, fetch, fetch_mine)
+        # a registration whose session is not running keeps its branches in use, so their merges stay remembered
+        in_use = branches | {b for r in regs for b in branches_of(r.get("branch"))}
+        prs, mine, reused = github.prs_paced(cfg, in_use, quiet, now, fetch, fetch_mine)
         gh_ok = prs is not None and mine is not None
         prs = prs or {}
     unknown = gh_ok is False  # GitHub failed: a branch with no PR found may still have one
@@ -512,6 +516,9 @@ def build(cfg, use_gh=True, now=None, starts=sessions.proc_starts, fetch=github.
     health = []
     if gh_ok is False:
         health.append(T["x_gh"])
+    unknown = sum(bool(p.get("checksUnknown")) for p in prs.values())
+    if unknown:
+        health.append(T["x_open_limit"].format(n=unknown, limit=github.OPEN_LIMIT))
     if broken:
         health.append(T["x_broken"].format(n=broken))
     if shapeless:
@@ -626,7 +633,7 @@ def markdown(b, live=False):
 def write(cfg, b):
     os.makedirs(cfg.state_dir, exist_ok=True)
     for name, text in (("board.json", sessions.json_dump(b)), ("board.md", markdown(b))):
-        p = cfg.sub(name)
-        with open(p + ".tmp", "w", encoding="utf-8") as fh:
+        p, tmp = cfg.sub(name), cfg.sub(f"{name}.{os.getpid()}.tmp")
+        with open(tmp, "w", encoding="utf-8") as fh:
             fh.write(text)
-        os.replace(p + ".tmp", p)
+        os.replace(tmp, p)
