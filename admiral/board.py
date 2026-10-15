@@ -291,8 +291,9 @@ def began(s):
     if s.get("status") in ("busy", "shell", "waiting"):
         return True
     start, changed = s.get("startedAt"), s.get("statusUpdatedAt") or 0
-    def number(t):  # a time read as a number: an integer, or a finite float; never a flag or a string
-        return (isinstance(t, int) and not isinstance(t, bool)) or (isinstance(t, float) and math.isfinite(t))
+    def number(t):  # a time a clock could show, in milliseconds: an integer or finite float, never a flag or a string
+        ok = (isinstance(t, int) and not isinstance(t, bool)) or (isinstance(t, float) and math.isfinite(t))
+        return ok and 0 < t < 10 ** 14
     if not (number(start) and number(changed)):
         return True
     try:

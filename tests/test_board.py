@@ -315,11 +315,13 @@ class OnlyWhoShouldRegister(World):
 
     def test_times_that_do_not_read_as_numbers_are_taken_as_begun(self):
         from admiral import sessions
-        for start in ("soon", "NaN", "Infinity", 10 ** 400, True):
-            with self.subTest(start=start):
+        for start, changed in (("soon", None), ("NaN", None), ("Infinity", None), (10 ** 400, None), (True, None),
+                               (10 ** 400, int((NOW - 60) * 1000)), (-5, None)):
+            with self.subTest(start=start, changed=changed):
                 self.tearDown()
                 self.setUp()
-                self.session(3, "worker", since=NOW - 60, startedAt=start)
+                extra = {"statusUpdatedAt": changed} if changed is not None else {}
+                self.session(3, "worker", since=NOW - 60, startedAt=start, **extra)
                 os.remove(sessions.transcript(self.cfg, "/w/app", "s3"))
                 b = self.build(use_gh=False)
                 self.assertIn("running but not registered: worker", b["hints"])
