@@ -276,9 +276,14 @@ the board costs none:
 - **There is no model in it.** Admiral is Python's standard library and the `gh` CLI: no API key, no model client, no
   `claude -p`. The background job reads files and counts; no step of it asks a model anything. It calls out only to
   `gh`, `git` and `ps`, and reaches the network only through `gh` (`admiral/github.py`).
-- **It reads instead of asking.** Claude Code already writes every session's registry entry and transcript to
-  `~/.claude` as it works. Asking a session how it is doing would take one of its turns, and a turn costs tokens;
-  reading the file it has already written costs nothing, and the session never notices.
+- **It reads the record instead of asking.** To learn how a session is doing, you could send it a message: "Where are
+  you?" The model would then read the whole conversation again to answer, and every word it reads and writes is
+  tokens: in a long conversation one such question costs tens of thousands, and asking fifty sessions every minute
+  would cost far more, and interrupt their work besides. But Claude Code already writes every message and every
+  command of each session to a file under `~/.claude` as it works. Admiral reads those files and works out what each
+  session did last, who waits for you and which PR each is on. Reading a file is your machine computing, with no model
+  involved: it costs nothing, and the session never notices. A manager reading the work log everyone already keeps,
+  rather than going from desk to desk.
 - **What it shows stays on your screen.** Claude Code runs the status line command and draws its output under the
   prompt; the plugin draws the sidebar from the board file. Neither is put into any conversation, so no model reads
   them.
