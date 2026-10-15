@@ -357,6 +357,64 @@ class OnlyWhoShouldRegister(World):
         self.assertTrue([h for h in self.build(use_gh=False)["health"] if "no transcript" in h])
 
 
+class PutAway(World):
+    """A registration whose session has ended, every branch merged on GitHub, its worktree gone and no lock held, is
+    said nothing of: its work is over. Any of them missing, the person decides. Past a hundred, the oldest of them
+    are put away."""
+
+    def ended_with(self, branch="feat/a,feat/b", worktree="", states=("MERGED", "MERGED")):
+        self.session(4, "keeper")  # keeps the board refreshing
+        self.register("worker", branch=branch, worktree=worktree)
+        self.prs = {b: pr(i + 1, st) for i, (b, st) in enumerate(zip(branch.split(","), states))}
+        return self.build()
+
+    def kept(self, b):
+        from admiral import registry
+        return [r["who"] for r in registry.registrations(self.cfg)]
+
+    def test_a_session_ended_with_its_work_over_and_wrapped_up_is_said_nothing_of(self):
+        b = self.ended_with(worktree=os.path.join(self.root, "gone"))
+        self.assertFalse([h for h in b["hints"] if "worker" in h], b["hints"])
+        self.assertEqual(self.kept(b), ["worker"])  # kept: a session that comes back still reads as finished
+
+    def test_past_the_limit_the_oldest_are_put_away(self):
+        from admiral import registry
+        from unittest import mock
+        self.session(4, "keeper")
+        for i in range(3):
+            self.register(f"w{i}", branch=f"feat/{i}")
+            os.utime(registry.reg_path(self.cfg, f"w{i}"), (NOW - 1000 + i, NOW - 1000 + i))
+        self.prs = {f"feat/{i}": pr(i + 1, "MERGED") for i in range(3)}
+        with mock.patch.object(registry, "OVER_KEPT", 2):
+            self.build()
+        self.assertEqual(sorted(self.kept(None)), ["w1", "w2"])
+        self.assertEqual(len(os.listdir(os.path.join(self.root, "state", "registry-archive"))), 1)
+
+    def test_a_worktree_left_keeps_it(self):
+        wt = self.root  # still there
+        b = self.ended_with(worktree=wt)
+        self.assertTrue([h for h in b["hints"] if "has ended: worker" in h])
+        self.assertEqual(self.kept(b), ["worker"])
+
+    def test_a_branch_not_merged_keeps_it(self):
+        self.assertEqual(self.kept(self.ended_with(states=("MERGED", "OPEN"))), ["worker"])
+
+    def test_a_lock_still_held_keeps_it(self):
+        self.lock("heavy", "worker")
+        self.assertEqual(self.kept(self.ended_with()), ["worker"])
+
+    def test_no_branch_keeps_it(self):
+        self.assertEqual(self.kept(self.ended_with(branch="", states=())), ["worker"])
+
+    def test_github_not_answering_keeps_it(self):
+        self.gh_down = True
+        self.assertEqual(self.kept(self.ended_with()), ["worker"])
+
+    def test_a_session_still_running_is_left_to_its_wrap_up(self):
+        self.session(3, "worker")
+        self.assertEqual(self.kept(self.ended_with()), ["worker"])
+
+
 class OutsideTheProjects(World):
     """Sessions outside the configured projects are not shown, but a name running there is never taken for one that
     ended, nor its batch for one with nobody running."""

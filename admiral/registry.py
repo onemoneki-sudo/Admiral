@@ -174,6 +174,28 @@ def done(cfg, who):
         return False
 
 
+OVER_KEPT = 100  # registrations of sessions that ended with their work over, kept in the registry, the newest
+ARCHIVE_KEPT = 200  # registrations put away, the newest
+
+
+def put_away_oldest(cfg, over):
+    """Of the registrations `over` (sessions ended, work over and wrapped up), keep the newest OVER_KEPT and move the
+    rest into registry-archive, which keeps its newest ARCHIVE_KEPT."""
+    paths = sorted((path_of(cfg, r) for r in over), key=lambda p: os.path.getmtime(p) if os.path.exists(p) else 0,
+                   reverse=True)
+    if len(paths) <= OVER_KEPT:
+        return
+    d = cfg.sub("registry-archive")
+    os.makedirs(d, exist_ok=True)
+    for p in paths[OVER_KEPT:]:
+        try:
+            os.replace(p, os.path.join(d, os.path.basename(p)))
+        except FileNotFoundError:
+            pass
+    for f in sorted((os.path.join(d, f) for f in os.listdir(d)), key=os.path.getmtime, reverse=True)[ARCHIVE_KEPT:]:
+        os.remove(f)
+
+
 def registrations(cfg):
     d = cfg.sub("registry")
     out = []

@@ -584,11 +584,21 @@ def build(cfg, use_gh=True, now=None, starts=sessions.proc_starts, fetch=github.
     hints += [T["h_twice"].format(name=name, n=n, where=", ".join(where)) for name, n, where in open_twice]
     hints += [T["h_plan_finished"].format(lead=lead) for lead in finished]
     live_ids = {s.get("sessionId") for s in live + elsewhere}
+    over = []  # registrations of sessions that ended with their work over and wrapped up
     for r in regs:
         # its session has ended: by its session when it records one, else by its name, wherever sessions run
         ended = r["sessionId"] not in live_ids if r.get("sessionId") else \
             r["who"] not in matched and r["who"] not in running_elsewhere
         if ended:
+            # nothing to say once its work is over and wrapped up: every branch merged on GitHub, its worktree gone
+            # and no lock held; else the person decides. The registration stays, so a session that comes back still
+            # reads as finished.
+            bs, wt, names = branches_of(r.get("branch")), first(r.get("worktree")), registry.names_of(r)
+            if gh_ok and bs and all((prs.get(b) or {}).get("state") == "MERGED" for b in bs) \
+                    and not (wt and os.path.isdir(wt)) \
+                    and not any(who.split(" ")[0] in names or who in names for who in locks.values()):
+                over.append(r)
+                continue
             hints.append(T["h_gone"].format(who=r["who"]))
             continue
         wt = first(r.get("worktree"))
@@ -600,6 +610,8 @@ def build(cfg, use_gh=True, now=None, starts=sessions.proc_starts, fetch=github.
         if r.get("phase") not in (None, "paused", "done") and r.get("phaseAt") and now - r["phaseAt"] > cfg.stale_phase_s:
             hints.append(T["h_stale_phase"].format(hours=cfg.stale_phase_s // 3600, who=r["who"],
                                                    phase=W["phases"].get(r["phase"], r["phase"])))
+
+    registry.put_away_oldest(cfg, over)  # so the registry does not grow without bound
 
     # Problems with the sources themselves: every other number depends on them, so they are shown apart.
     health = []
