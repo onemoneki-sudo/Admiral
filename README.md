@@ -421,6 +421,12 @@ finds a PR's owner from its push; registrations and plans are what make progress
 **Is it worth it with two or three sessions?** No: Claude Code on its own is enough. Admiral pays off from about half
 a dozen sessions, on work big enough to split.
 
+**No sidebar?** The sidebar, `/admiral` and the playbook reminder need a Claude Code with plugin function hooks, an
+early-access feature: it depends on your Claude Code's version, and may depend on your account too. Update Claude Code,
+open a new session and type `/admiral`: if the sidebar opens, or a "◂ Admiral board" button appears above the prompt,
+you have it. Without it Admiral still works: the status line and the playbook do not need it, and a line in your
+project's `CLAUDE.md` does the reminder's job (see [Install](#install)).
+
 **Linux? Windows?** Everything runs on macOS. On Linux all but click-to-focus works, and for now you schedule the
 once-a-minute job yourself (cron or a systemd timer). Windows is untested.
 
