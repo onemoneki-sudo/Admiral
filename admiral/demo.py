@@ -4,17 +4,19 @@ be seen (and pictured) without running dozens of sessions.
     admiral demo [--lang en|zh] [--tty NAME=ttysNNN ...] [--once]
 
 Everything lives under <state_dir>/demo: its own sessions, transcripts, registrations, plans, locks, config and
-board. It rebuilds the board every 20 seconds until stopped (`--once`: build it once and exit). Start Claude Code with
-ADMIRAL_CONFIG set to the config it prints, and that session's status line and sidebar show the demo. `--tty` ties a
-demo session to a real terminal tab, so a click on its name in the sidebar brings that tab to the front.
+board. It rebuilds the board every 20 seconds until stopped (`--once`: build it once and exit). It prints the board's
+status line, and the command that opens Claude Code on the demo with Admiral's status line and sidebar loaded from
+this clone for that session only, so the demo can be tried before anything is installed. `--tty` ties a demo session
+to a real terminal tab, so a click on its name in the sidebar brings that tab to the front.
 """
 
 import json
 import os
+import shlex
 import shutil
 import time
 
-from . import board, config, registry, sessions
+from . import board, config, registry, sessions, statusline
 
 START = "Mon Oct 12 09:00:00 2026"
 
@@ -276,6 +278,18 @@ def build(root, ttys, now=None, fleet=FLEET):
     return snap
 
 
+def try_command(demo_cfg):
+    """The command that opens Claude Code on the demo, its status line and sidebar read straight from this clone for
+    that session only: nothing installed, no setting changed."""
+    root = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+    plugin, launcher = os.path.join(root, "plugin"), os.path.join(root, "bin", "admiral")
+    cmd = f"ADMIRAL_CONFIG={shlex.quote(demo_cfg)} claude"
+    if os.path.isdir(plugin) and os.path.isfile(launcher):
+        line = {"type": "command", "command": f"{shlex.quote(launcher)} statusline", "refreshInterval": 20}
+        cmd += f" --plugin-dir {shlex.quote(plugin)} --settings {shlex.quote(json.dumps({'statusLine': line}))}"
+    return cmd
+
+
 def run(cfg, language, ttys, once=False):
     root = cfg.sub("demo")
     os.makedirs(root, exist_ok=True)
@@ -289,8 +303,14 @@ def run(cfg, language, ttys, once=False):
         if row[8] == WRAPPED:
             registry.done(cfg_demo, row[0])
     build(root, ttys, fleet=fleet)
-    print(f"Demo board written. Start Claude Code with:\n\n  ADMIRAL_CONFIG='{demo_cfg}' claude\n\n"
-          "and open the sidebar with /admiral." + ("" if once else " Rebuilding every 20 seconds; Ctrl-C stops."))
+    cols = statusline.columns()
+    lines = statusline.admiral_lines(cfg_demo.sub("board.json"), None, cols=cols)
+    where = "" if once else " in another terminal"
+    print("Demo board written. Its status line:\n\n" + "\n".join(statusline.fit(x, cols) for x in lines) + "\n\n"
+          "To see it in Claude Code, with Admiral's status line and sidebar for that session only (nothing installed, "
+          f"no setting of yours changed), run{where}:\n\n  {try_command(demo_cfg)}\n\n"
+          "and open the sidebar with /admiral."
+          + ("" if once else " Rebuilding every 20 seconds; Ctrl-C stops."))
     while not once:
         time.sleep(20)
         build(root, ttys, fleet=fleet)

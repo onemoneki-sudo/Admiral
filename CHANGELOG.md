@@ -6,6 +6,11 @@ its cache, one copy per version, so a change to the sidebar or the playbook reac
 
 ## Unreleased
 
+**Try it**
+- `admiral demo` prints the demo's status line, and the command that opens Claude Code on the demo with Admiral's status
+  line and sidebar read from the clone for that session only: the demo can be tried right after cloning, before
+  anything is installed or set. "Try it in a minute" in the README now starts from the clone.
+
 **Status line**
 - On a board of several projects, the status line names a session or a commander without its project unless another
   project has the name too, as the project is there to tell two apart: with it, batch names were cut short. The board

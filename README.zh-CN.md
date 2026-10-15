@@ -141,12 +141,17 @@ Admiral 先运行它，原样保留）。
 
 ## 一分钟试用
 
+不用先安装，有 Python 3.11 或更新就行。
+
 ```sh
-admiral demo --lang zh
+git clone https://github.com/onemoneki-sudo/Admiral.git ~/admiral
+~/admiral/bin/admiral demo --lang zh
 ```
 
-用 Admiral 真实的面板代码，搭一支虚构的舰队：7 个总指挥、54 个对话，然后告诉你怎么在 Claude Code 里打开它。
-不碰你的任何东西。
+用 Admiral 真实的面板代码，搭一支虚构的舰队：7 个总指挥、54 个对话，打印它的状态栏，并持续刷新，按 Ctrl-C
+停止。让它开着，在另一个终端里运行它打印的那条命令：打开一个 Claude Code 对话，状态栏和侧边栏（`/admiral`，
+需要支持插件函数钩子的 Claude Code）都直接从 clone 里读取，只对这一个对话生效。不碰也不安装你的任何东西；
+要用在自己的对话上，看[安装](#安装)。
 
 ## 工作原理
 
@@ -171,7 +176,7 @@ GitHub（gh：PR、检查）────┤      每分钟一次                
 （抢先体验功能，按 2.1.299 开发，在 2.1.300 上测试过）。
 
 ```sh
-git clone https://github.com/onemoneki-sudo/Admiral.git ~/admiral
+git clone https://github.com/onemoneki-sudo/Admiral.git ~/admiral   # 试 demo 时已经 clone 过的，跳过这行
 ~/admiral/scripts/install.sh       # 配置模板、后台任务、把 admiral 加到 PATH；--dry-run 只显示会做什么
 ```
 
