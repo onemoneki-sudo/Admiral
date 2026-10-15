@@ -19,7 +19,6 @@ its cache, one copy per version, so a change to the sidebar or the playbook reac
   the owner's last registration speaks only for the branches it named, under its old name or its session's new one.
 - A session that finished and deregistered reads as finished in `admiral board` and its own status line, not as
   unregistered.
-
 - A batch whose commander was closed before its plan closes itself once every deliverable has merged and no session
   of it runs: it leaves the status line and the sidebar rather than showing "commander not running". A batch with
   anything unmerged, or unknown, still shows, marked as before.
