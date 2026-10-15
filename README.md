@@ -31,7 +31,7 @@ it works:
 - **No chaos.** Past a dozen sessions you lose the thread: which one waits for your approval, which batch is stuck,
   which PR is red, which are done. Admiral answers those at a glance in every session, and its playbook keeps each
   session to its own worktree, branch and locks.
-- **No drop in quality.** The playbook has every change reviewed by a different model and tested where it matters,
+- **No drop in quality.** The playbook has every change in behaviour reviewed by a different model and tested where it matters,
   and Admiral counts progress by real delivery only: reviewed, accepted, CI, merged.
 - **Decisions in one place.** Executors send the calls they cannot make to their commander. It makes the low-risk
   ones itself, the best way it sees, and writes each into the batch's decision log for you to read whenever you like;
@@ -144,12 +144,15 @@ Six skills Claude Code loads when they apply, so dozens of sessions stay out of 
 | roles | commanders plan, decide and accept; executors build; how to size a batch |
 | workspace | one worktree per task; registration; what never to touch (others' branches, shared git state, processes by name) |
 | resources | locks and queues for heavy tests, databases, browsers, ports and model quota |
-| pipeline | from task brief to merge: affected tests, review by a different model, the full gate only when needed, one push to ready |
-| wrapup | after the merge: clean up safely, then close |
+| pipeline | from task brief to merge: affected tests, review by a different model, your acceptance, one push to ready |
+| wrapup | after the merge: clean up safely, then close; a short summary when a batch ends |
 
 `admiral lock` guards what the sessions share: one full test run at a time, a few database slots, model quota, ports.
-Short jobs go first; a full gate waiting an hour is raised; a session that crashed never holds a lock for good, the
-next in line takes it over. Where your project's own rules differ, they win.
+Short jobs go first; a commander raises a long job left waiting; a session that crashed never holds a lock for good,
+the next in line takes it over.
+
+The skills are defaults that hold for any project, not a checklist: where your project's own rules differ, they win, so
+the details that are yours (thresholds, tools, CI, reviewers) live in your project's rules.
 
 ## Try it in a minute
 
@@ -354,7 +357,7 @@ What does take tokens is your sessions' own work with Admiral, and it is small:
 
 - **The playbook.** It is instructions for your sessions, so it sits in their context like any rules: the reminder of
   when to read which skill, about 1 KB, and the six skill descriptions, about 2 KB, in every session; a skill's full
-  text, 3 to 11 KB, once a session opens it. `[playbook] remind = false` drops the reminder.
+  text, 2 to 5 KB, once a session opens it. `[playbook] remind = false` drops the reminder.
 - **A few commands.** Registering (`admiral register`), taking a lock or a commander reading `board.md` is an ordinary
   command, and the session reads its few lines of output.
 - **`/admiral`** leaves one line in the conversation, saying the sidebar opened or closed.

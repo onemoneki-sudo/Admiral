@@ -40,6 +40,17 @@ its cache, one copy per version, so a change to the sidebar or the playbook reac
 - A session or planned PR only reported done says so, and its last milestone is drawn dim: it no longer looks merged.
 
 **Playbook**
+- Only what any project can use, as defaults rather than a checklist, at about half the length. Thresholds, tools and
+  one team's procedures (minutes in a lock queue, when a fix is reviewed again, the fields of a pre-ready report,
+  fixes after approval) are left to each project's own rules, which win wherever they differ.
+- Acceptance is the person's call: before the PR, or by using the change once merged; either way shown at its real
+  entry rather than described.
+- A fix settles the kind its defect belongs to, never a condition for the one case that broke.
+- When a batch ends, the commander writes a short summary, the one thing the next batch reads; what was deferred along
+  the way is gone through once, and issues are opened only for what is risky or hurts real use.
+- Once a PR is ready, push only what it needs, since every push runs CI again and voids approvals; local checks run
+  under the conditions CI and production have.
+- The review by a different model names an example: for code Claude wrote, Codex.
 - The wrap-up skill's verdicts follow the board: a session that reported done with no merged PR is for you to confirm.
 
 **Install**

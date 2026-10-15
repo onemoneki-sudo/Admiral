@@ -1,6 +1,6 @@
 ---
 name: wrapup
-description: What to do after a PR merges or closes, and how to tell which AI sessions can be closed - stopping processes, releasing locks, the exact conditions for deleting a worktree and branch, and the board's close verdicts. Read when a PR of yours has merged or closed, when a batch ends, or when deciding which sessions to close.
+description: What to do after a PR merges or closes and when a batch ends, and how to tell which AI sessions can be closed - stopping processes, releasing locks, when a worktree and branch may be deleted, the batch summary, and the board's close verdicts. Read when a PR of yours has merged or closed, when a batch ends, or when deciding which sessions to close.
 ---
 
 # Wrap-up
@@ -11,24 +11,35 @@ Where the project's own rules differ from this playbook, the project's rules win
 
 The session that owns the PR wraps up at once; if it has already been closed, its commander does.
 
-1. Stop your own processes and private services by pid and release your locks, without asking. Keep anything another PR of the same batch or another session still uses.
-2. Delete the worktree, any separate clone and the local branch (after a squash merge, `git branch -D`) **only when all hold**: the PR is MERGED; the local branch head equals the PR's final head commit; the working tree has no tracked or untracked changes; no session uses it as its working directory. Move evidence worth keeping to the batch folder first; baselines and acceptance data later PRs need stay until the batch ends.
-3. A PR closed without merging, a remote or backup branch, a condition not met, or unclear ownership: list it and wait for the person. When a deletion is blocked by permissions, hand the command to the person; never ask another session to delete it.
+1. Stop your own processes by pid and release your locks; keep anything another session still uses.
+2. Delete the worktree and the local branch **only when all hold**: GitHub has the PR merged; the local branch head is
+   the PR's final commit; the working tree has no changes; no session works in it. Move evidence worth keeping to the
+   batch folder first.
+3. Anything else (a PR closed unmerged, a condition not met, unclear ownership): list it and leave it to the person.
 4. `admiral done --who "<name>"`.
+
+## When a batch ends
+
+- The commander writes a short summary into the batch folder, the one thing the next batch reads: what merged, what
+  was left and why, the decisions still in force, the pitfalls, and where any baseline the next batch needs is kept.
+  A single task adds the same in a few lines at the end of its brief.
+- The deferred list is gone through once: with the person's agreement, issues are opened for what is risky (security,
+  permissions, data lost or leaked, wrong numbers) or hurts real use; the rest gets a line in the summary.
+- The process notes are kept but not read by default; where they disagree with the code or the PRs, those are right.
 
 ## Which sessions can be closed
 
-The board (`admiral board`, and the sidebar's wrap-up section) sorts every session; closing is always the person's act, since it discards the session's context.
+The board (`admiral board`, and the sidebar's wrap-up section) sorts every session; closing is always the person's
+act, since it discards the session's context.
 
 | Verdict | When |
 |---|---|
 | can close | its PR merged, as GitHub has it, and it has wrapped up: worktree gone, no lock held |
-| wrap up first | its PR merged but its worktree remains or it still holds locks: it must do the steps above |
-| for the person to confirm | it reported `done` and has no PR at all (shown as reported done); its PR closed without merging; or it is unregistered, has no PR and has been idle over a day; or it is a commander with no running members and no plan (it may be planning, or deferred) |
+| wrap up first | its PR merged but its worktree remains or it still holds locks |
+| for the person to confirm | it reported `done` with no PR at all (shown as reported done); its PR closed unmerged; it is unregistered, with no PR, idle over a day; or it is a commander with no running members and no plan |
 | keep | working, waiting for the person, PR still open, or still developing |
 
-A commander can close once no member is still running and it has wrapped up its batch: with its plan all merged, it
-closes the plan (`admiral plan close`) and reports `done` (`admiral state --who "<its name>" --phase done`; a commander registers like any session). Until it reports `done`, a
-commander with no running member is for the person to confirm: it may be planning, or deferred. If the commander was
-closed before its plan, the batch leaves the board once every deliverable has merged and no session of it runs; its
-plan stays, listed to tidy, until someone runs `admiral plan close`.
+A commander can close once no member is still running and its batch is wrapped up: with its plan all merged, it runs
+`admiral plan close` and reports `done` (`admiral state --who "<its name>" --phase done`). If it was closed first, the
+batch leaves the board once every deliverable has merged and nobody of it runs; its plan stays, listed to tidy, until
+someone runs `admiral plan close`.
