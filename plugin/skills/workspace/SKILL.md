@@ -14,8 +14,9 @@ Where the project's own rules differ from this playbook, the project's rules win
 - Look first: `admiral list` (who works on what), `admiral lock status`, `git worktree list`. When someone's registered
   area overlaps yours, agree the order with them or the person first.
 - Register when work starts: `admiral register --who "<this session's name>" --task "<task>" --branch <branch>
-  --worktree <path> --files "<main files or areas>" [--lead "<commander>"]`. `--who` is exactly the session's name (register again after a rename):
-  the board joins sessions to registrations by it.
+  --worktree <path> --files "<main files or areas>" [--lead "<commander>"]`. `--who` is exactly the session's name.
+  Registered by the session itself, the registration follows it through a rename: report under the new name and it
+  moves along.
 - Report each new phase with `admiral state --who "<name>" --phase <phase> [--note "<one line>"]`: `working`,
   `waiting` (the note says on what), `needs_you` (the person must act or decide: the note says what), `review`,
   `accepting`, `paused`, `done`. Whenever you ask the person something, report `needs_you` too: they may not be

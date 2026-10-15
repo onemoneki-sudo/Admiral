@@ -88,9 +88,14 @@ def main(argv=None):
     cfg = config.load()
 
     if a.cmd == "register":
-        registry.register(cfg, a.who, a.task, a.branch, a.worktree, a.files, a.lead)
-        warn_not_running(cfg, a.who, a.lead)
-        print(f"registered {a.who}")
+        reg = registry.register(cfg, a.who, a.task, a.branch, a.worktree, a.files, a.lead)
+        sid, names = registry.caller(cfg)
+        if reg.get("sessionId") and a.who not in names:  # itself, under another name: the board knows it anyway
+            print(f"registered {a.who}, for this session ({names[0] if names else sid[:8]})")
+            warn_not_running(cfg, a.lead)
+        else:
+            warn_not_running(cfg, a.who, a.lead)
+            print(f"registered {a.who}")
     elif a.cmd == "state":
         ok, msg = registry.set_phase(cfg, a.who, a.phase, a.note)
         if not ok:

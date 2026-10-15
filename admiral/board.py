@@ -296,7 +296,8 @@ def remember(cfg, convs):
     for c in convs:
         r = c["reg"]
         if r:
-            fresh[c["sessionId"]] = {"who": r["who"], "branches": c["branches"], "worktree": first(r.get("worktree")),
+            fresh[c["sessionId"]] = {"who": r["who"], "aka": registry.names_of(r)[1:], "branches": c["branches"],
+                                     "worktree": first(r.get("worktree")),
                                      "lead": r.get("lead", ""), "phase": r.get("phase"),
                                      "registered": branches_of(r.get("branch"))}
         elif c["sessionId"] in memory:
@@ -335,15 +336,20 @@ def build(cfg, use_gh=True, now=None, starts=sessions.proc_starts, fetch=github.
             one = dict(same[0], _pids=[p["pid"] for p in same])  # a message may come from any of them
             one["formerNames"] = [f for p in same for f in p.get("formerNames") or []]  # as may an old registration
             live.append(one)
+    # A registration its session made follows that session, whatever it is called now; one made without a session
+    # (by hand, or for another session) is found by name, as before.
+    by_session = {r["sessionId"]: r for r in regs if r.get("sessionId")}
     by_name = {}
     for r in regs:
-        by_name.setdefault(r["who"], r)
+        if not r.get("sessionId"):
+            by_name.setdefault(r["who"], r)
 
     convs, matched = [], set()
     for s in live:
         name = s.get("name") or s.get("sessionId", "?")[:8]
         former = [f.get("name", "") for f in s.get("formerNames") or []]
-        reg = next((by_name[n] for n in [s.get("name") or ""] + former if n in by_name), None)
+        reg = by_session.get(s.get("sessionId")) or next((by_name[n] for n in [s.get("name") or ""] + former
+                                                          if n in by_name), None)
         if reg:
             matched.add(reg["who"])
         convs.append({"name": name, "sessionId": s.get("sessionId", ""), "pid": s["pid"], "pids": s.get("_pids", [s["pid"]]),
@@ -465,7 +471,12 @@ def build(cfg, use_gh=True, now=None, starts=sessions.proc_starts, fetch=github.
                        "members": [x for x in rows if not x["isCommander"] and x["lead"] == lead]})
     unassigned = [x for x in rows if not x["isCommander"] and not x["lead"]]
 
-    reg_by_who = {r["who"]: r for r in regs}
+    reg_by_who = {}  # by the name each is under, then the names it was under before
+    for r in regs:
+        reg_by_who.setdefault(r["who"], r)
+    for r in regs:
+        for n in registry.names_of(r)[1:]:
+            reg_by_who.setdefault(n, r)
     finished = []  # plans of batches over, with nobody of them running: not shown, left to `admiral plan close`
     # a planned PR's owner may run ungrouped, or outside the projects
     running = {n for c in convs for n in [c["name"]] + c["former"]} | running_elsewhere
@@ -473,7 +484,7 @@ def build(cfg, use_gh=True, now=None, starts=sessions.proc_starts, fetch=github.
     mem_by_who = {}  # owners that deregistered since, by the name each registered under and its session's name now
     for c in convs:
         m = memory.get(c["sessionId"])
-        for n in ({m.get("who"), c["name"]} if m else set()) - {None, ""}:
+        for n in ({m.get("who"), c["name"], *(m.get("aka") or [])} if m else set()) - {None, ""}:
             mem_by_who.setdefault(n, []).append(m)
     for p in plans:
         lead = alias.get(p["lead"], p["lead"])
@@ -485,7 +496,12 @@ def build(cfg, use_gh=True, now=None, starts=sessions.proc_starts, fetch=github.
             owner = it.get("owner", "")
             # an owner's last registration speaks only for the branches it named
             mem = next((m for m in mem_by_who.get(owner, []) if it["branch"] in m.get("registered", m.get("branches", []))), None)
-            st = item_stage(reg_by_who.get(owner) or mem, pr, unknown)
+            # of the registrations that answer to the owner's name, the one with this deliverable's branch
+            answering = [r for r in regs if owner and owner in registry.names_of(r)]
+            # the one with this deliverable's branch, else what the owner last registered for it, else its name's
+            reg = next((r for r in answering if it["branch"] in branches_of(r.get("branch"))), None) \
+                or (None if mem else reg_by_who.get(owner))
+            st = item_stage(reg or mem, pr, unknown)
             items.append({"branch": it["branch"], "title": it.get("title", ""), "owner": it.get("owner", ""),
                           "stage": st, "reportedDone": st == 5 and not merged(pr),
                           "pr": github.pr_label(pr, cfg.language), "ci": ci_text, "ciLevel": ci_level})
@@ -535,15 +551,19 @@ def build(cfg, use_gh=True, now=None, starts=sessions.proc_starts, fetch=github.
                     n=prs[b]["number"], branch=b, name=x["name"]))
     for c in convs:
         r = c["reg"]
-        if r and r["who"] != c["name"]:
+        if r and r["who"] != c["name"] and not r.get("sessionId"):  # one that follows its session needs nothing
             hints.append(T["h_renamed"].format(old=r["who"], new=c["name"]))
         if c["status"] == "idle" and c["statusSince"] and now - c["statusSince"] > cfg.idle_flag_s:
             hints.append(T["h_idle"].format(days=cfg.idle_flag_s // 86400, name=c["name"]))
     hints += [T["h_lead_gone"].format(lead=lead) for lead in orphans]
     hints += [T["h_twice"].format(name=name, n=n, where=", ".join(where)) for name, n, where in open_twice]
     hints += [T["h_plan_finished"].format(lead=lead) for lead in finished]
+    live_ids = {s.get("sessionId") for s in live + elsewhere}
     for r in regs:
-        if r["who"] not in matched and r["who"] not in running_elsewhere:
+        # its session has ended: by its session when it records one, else by its name, wherever sessions run
+        ended = r["sessionId"] not in live_ids if r.get("sessionId") else \
+            r["who"] not in matched and r["who"] not in running_elsewhere
+        if ended:
             hints.append(T["h_gone"].format(who=r["who"]))
             continue
         wt = first(r.get("worktree"))

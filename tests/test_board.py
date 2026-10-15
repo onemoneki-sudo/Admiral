@@ -185,6 +185,88 @@ class PastTheLists(World):
         self.assertEqual((row["stage"], row["reportedDone"]), (3, False))
 
 
+class KnownBySession(World):
+    """A registration made by its session follows that session, whatever it is called; one made without a session
+    is found by name, as before."""
+
+    def register_as(self, who, sid, **kw):
+        """Registered by its session `sid`: kept under that session, as `admiral register` keeps it."""
+        from admiral import registry
+        extra = kw.pop("extra", {})
+        self.register(who, **kw)
+        reg = registry.read_json(registry.reg_path(self.cfg, who))
+        os.remove(registry.reg_path(self.cfg, who))
+        registry.write_json(registry.session_path(self.cfg, sid), dict(reg, sessionId=sid, **extra))
+
+    def test_a_renamed_session_keeps_its_registration_with_no_hint(self):
+        self.register_as("worker", "s3", branch="feat/a", phase="review")
+        self.session(3, "worker-renamed", former=("worker",))
+        b = self.build(use_gh=False)
+        row = next(x for x in b["unassigned"] if x["sessionId"] == "s3")
+        self.assertEqual((row["name"], row["registered"], row["branches"], row["stage"]), ("worker-renamed", True, ["feat/a"], 2))
+        self.assertFalse([h for h in b["hints"] if "old name" in h or "has ended" in h], b["hints"])
+
+    def test_a_session_taking_an_ended_ones_name_does_not_inherit_its_registration(self):
+        self.register_as("worker", "s9", branch="feat/old", phase="review")  # s9 has ended
+        self.session(3, "worker")
+        b = self.build(use_gh=False)
+        row = next(x for x in b["unassigned"] if x["sessionId"] == "s3")
+        self.assertEqual((row["registered"], row["branches"]), (False, []))
+        self.assertTrue([h for h in b["hints"] if "has ended: worker" in h], b["hints"])
+
+    def test_a_plan_keeps_its_owner_through_a_rename(self):
+        self.register_as("old", "s3", branch="feat/a", phase="accepting", extra={"aka": []})
+        from admiral import registry
+        reg = registry.read_json(registry.session_path(self.cfg, "s3"))
+        registry.write_json(registry.session_path(self.cfg, "s3"), dict(reg, who="new", aka=["old"]))
+        self.session(3, "new", former=("old",))
+        self.session(1, "Commander-A")
+        self.plan("Commander-A", ("feat/a", "the deliverable", "old"))
+        item = self.group(self.build(use_gh=False), "Commander-A")["batch"]["items"][0]
+        self.assertEqual(item["stage"], 3)
+
+    def test_a_plan_finds_each_owner_by_its_branch_when_two_answer_to_one_name(self):
+        self.register_as("alpha", "s3", branch="feat/a", phase="review")
+        self.register_as("beta", "s4", branch="feat/b", phase="done")
+        from admiral import registry
+        reg = registry.read_json(registry.session_path(self.cfg, "s3"))
+        registry.write_json(registry.session_path(self.cfg, "s3"), dict(reg, who="beta", aka=["alpha"]))  # renamed
+        self.session(3, "beta", former=("alpha",))
+        self.session(4, "beta")
+        self.session(1, "Commander-A")
+        self.plan("Commander-A", ("feat/a", "a", "alpha"), ("feat/b", "b", "beta"))
+        items = self.group(self.build(use_gh=False), "Commander-A")["batch"]["items"]
+        self.assertEqual([(i["branch"], i["stage"]) for i in items], [("feat/a", 2), ("feat/b", 5)])
+
+    def test_an_owner_that_deregistered_keeps_its_deliverable_though_another_now_has_its_name(self):
+        self.register_as("beta", "s4", branch="feat/b", phase="done")
+        self.session(4, "beta")
+        self.session(1, "Commander-A")
+        self.plan("Commander-A", ("feat/b", "b", "beta"))
+        self.build(use_gh=False)  # the board remembers what s4 registered
+        from admiral import registry
+        os.remove(registry.session_path(self.cfg, "s4"))  # s4 deregisters
+        self.register_as("beta", "s3", branch="feat/a", phase="review")  # another, renamed to beta
+        self.session(3, "beta", former=("alpha",))
+        item = self.group(self.build(use_gh=False), "Commander-A")["batch"]["items"][0]
+        self.assertEqual(item["stage"], 5)
+
+    def test_a_registration_that_records_its_session_ends_with_that_session(self):
+        self.register_as("old", "s9", branch="feat/a")  # s9 runs, outside the projects, under another name
+        self.session(9, "renamed", cwd="/w/other")
+        self.session(4, "keeper")
+        self.assertFalse([h for h in self.build(use_gh=False)["hints"] if "has ended: old" in h])
+        self.register_as("gone", "s8", branch="feat/b")  # s8 ended; another session elsewhere took its name
+        self.session(7, "gone", cwd="/w/other")
+        self.assertTrue([h for h in self.build(use_gh=False)["hints"] if "has ended: gone" in h])
+
+    def test_a_registration_without_a_session_is_found_by_name(self):
+        self.register("worker", branch="feat/a")
+        self.session(3, "worker")
+        row = next(x for x in self.build(use_gh=False)["unassigned"] if x["sessionId"] == "s3")
+        self.assertEqual((row["registered"], row["branches"]), (True, ["feat/a"]))
+
+
 class OutsideTheProjects(World):
     """Sessions outside the configured projects are not shown, but a name running there is never taken for one that
     ended, nor its batch for one with nobody running."""
