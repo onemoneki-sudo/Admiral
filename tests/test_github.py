@@ -137,6 +137,19 @@ class Limits(FakeGitHub):
         later = self.paced({"feat/a"}, 120, {})  # #9 fell out of the recent list too
         self.assertNotIn("feat/a", later)  # the merge #9 replaced does not come back
 
+    def test_a_cache_written_before_the_memory_keeps_its_merges(self):
+        registry.write_json(self.cfg.sub("pr-cache.json"), {"at": 0, "branches": ["feat/a"], "mine": {},
+                            "prs": {"feat/a": {"number": 1, "headRefName": "feat/a", "state": "MERGED"}}})
+        self.assertEqual(self.paced({"feat/a"}, 60, {})["feat/a"]["number"], 1)
+
+    def test_an_answer_reused_while_quiet_holds_only_the_branches_in_use(self):
+        past = {"number": 100, "headRefName": "b100", "state": "OPEN", "isDraft": False, "checksUnknown": True}
+        github.prs_paced(self.cfg, {"b100", "b200"}, False, 0, fetch=lambda cfg, b: {"b100": past},
+                         fetch_mine=lambda cfg, now: {})
+        prs, _, reused = github.prs_paced(self.cfg, {"b200"}, True, 60, fetch=lambda cfg, b: self.fail("asked"),
+                                          fetch_mine=lambda cfg, now: {})
+        self.assertEqual((reused, prs), (True, {}))  # b100 is no longer in use: neither it nor its warning comes back
+
     def test_a_newer_pr_on_the_same_branch_wins_over_a_remembered_merge(self):
         merged = {"number": 1, "headRefName": "feat/a", "state": "MERGED", "isDraft": False}
         reopened = {"number": 9, "headRefName": "feat/a", "state": "OPEN", "isDraft": False}

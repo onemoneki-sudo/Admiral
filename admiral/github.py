@@ -70,11 +70,13 @@ def prs_paced(cfg, branches, quiet, now, fetch=prs_by_branch, fetch_mine=my_prs)
     cache = read_json(path) or {}
     if quiet and now - cache.get("at", 0) < cfg.quiet_github_s and set(branches) <= set(cache.get("branches", [])) \
             and cache.get("mine") is not None:
-        return cache["prs"], cache["mine"], True
+        return {b: p for b, p in cache["prs"].items() if b in branches}, cache["mine"], True
     prs = fetch(cfg, branches)
     mine = fetch_mine(cfg, now) if prs is not None else None
     if prs is not None:  # what GitHub answers now wins; a merge seen before fills in what it no longer lists
-        prs = {**{b: p for b, p in (cache.get("merged") or {}).items() if b in branches}, **prs}
+        seen = {**{b: p for b, p in (cache.get("prs") or {}).items() if p.get("state") == "MERGED"},
+                **(cache.get("merged") or {})}  # the last answer's merges count too: a cache from before has no memory
+        prs = {**{b: p for b, p in seen.items() if b in branches}, **prs}
         kept = sorted(((b, p) for b, p in prs.items() if p["state"] == "MERGED"), key=lambda bp: -bp[1]["number"])
         write_json(path, {"at": now, "branches": sorted(branches), "prs": prs, "mine": mine,
                           "merged": dict(kept[:MERGED_KEPT])})
