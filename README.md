@@ -14,9 +14,9 @@ https://github.com/user-attachments/assets/45d323e5-d813-40b3-8f96-10a7cf6d5188
   <img src="https://img.shields.io/badge/model%20tokens-0-3fb950" alt="no model tokens">
 </p>
 
-<p align="center">The film in 1080p: <a href="https://github.com/onemoneki-sudo/Admiral/releases/latest/download/admiral.mp4">English</a> · <a href="https://github.com/onemoneki-sudo/Admiral/releases/latest/download/admiral.zh.mp4">中文</a></p>
+<p align="center">⬇ Download the film in 1080p: <a href="https://github.com/onemoneki-sudo/Admiral/releases/latest/download/admiral.mp4">English</a> · <a href="https://github.com/onemoneki-sudo/Admiral/releases/latest/download/admiral.zh.mp4">中文</a></p>
 
-<p align="center">English · <a href="README.zh-CN.md">中文</a></p>
+<p align="center">🌐 Read this in: English · <a href="README.zh-CN.md">简体中文</a></p>
 
 ---
 
