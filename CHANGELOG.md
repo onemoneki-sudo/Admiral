@@ -7,15 +7,17 @@ its cache, one copy per version, so a change to the sidebar or the playbook reac
 ## Unreleased
 
 **Board**
-- Not seen among the projects' sessions is no proof a session has ended. One outside `project_dirs` that a session
-  there names as its commander, or a plan names as commander or owner, is on the board: a commander sitting in its
-  batch folder no longer reads as not running, and a batch whose owner works elsewhere is not taken for one that is
-  over. One elsewhere that only registered may belong to another project: it is not shown, and no longer reads as
-  ended.
-- A PR list that comes back full may leave a branch's PR out: the branches it left out are asked for by name, one
-  more call, so an old PR past both lists is found rather than taken for none, and a session that reported done with
-  its draft still open stays at accept. If that call fails too, the PRs read as unknown, as when GitHub does not
-  answer.
+- Not seen among the projects' sessions is no proof a session has ended. One outside `project_dirs` that is tied
+  to the fleet is on the board: a session there named it as its commander, a plan names it commander or owner, or
+  its own registration's commander is on the board. So a commander sitting in its batch folder no longer reads as
+  not running, a member working elsewhere keeps its commander from reading as done, and a batch whose owner works
+  elsewhere is not taken for one that is over. One elsewhere tied to nothing here may belong to another project: it
+  is not shown, and no longer reads as ended.
+- A PR list that comes back full may leave a branch's PR out: those branches are asked for by name, one more call
+  for every 50, which gives each its open PR, else its newest. So an old PR past both lists is found rather than
+  taken for none, a session that reported done with its draft still open stays at accept, and an open PR wins over
+  a newer one of its branch closed or merged. If that call fails too, the PRs read as unknown, as when GitHub does
+  not answer.
 
 ## 0.2.5 (2026-10-15)
 

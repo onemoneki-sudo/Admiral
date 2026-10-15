@@ -216,10 +216,38 @@ class OutsideTheProjects(World):
         self.assertEqual([g["lead"] for g in b["groups"]], ["Commander-A"])  # its owner still runs: not over
         self.assertFalse([h for h in b["hints"] if "all merged" in h], b["hints"])
 
+    def test_a_session_outside_the_projects_naming_a_commander_here_is_its_member(self):
+        self.session(1, "Commander-A", status="idle")
+        self.register("Commander-A", phase="done")
+        self.session(9, "worker", status="busy", cwd="/w/other")
+        self.register("worker", lead="Commander-A")
+        b = self.build(use_gh=False)
+        g = self.group(b, "Commander-A")
+        self.assertEqual([m["name"] for m in g["members"]], ["worker"])
+        self.assertNotEqual(g["leadRow"]["close"], "close")  # a member still works
+
+    def test_the_commander_of_an_owner_outside_the_projects_is_found_outside_too(self):
+        self.session(3, "keeper")  # keeps the board refreshing
+        self.session(9, "owner", cwd="/w/other")
+        self.session(8, "Commander-B", cwd="/w/other")
+        self.register("owner", lead="Commander-B")
+        self.plan("Commander-A", ("feat/a", "one", "owner"))
+        b = self.build(use_gh=False)
+        self.assertEqual(self.group(b, "Commander-B")["leadRow"]["sessionId"], "s8")
+        self.assertFalse([h for h in b["hints"] if "not running" in h], b["hints"])
+
+    def test_a_conversation_already_here_is_not_taken_again_from_outside(self):
+        self.session(3, "worker")
+        self.session(9, "worker", cwd="/w/other", sessionId="s3")  # the same conversation, resumed elsewhere
+        self.plan("Commander-A", ("feat/a", "one", "worker"))
+        b = self.build(use_gh=False)
+        self.assertEqual([(x["name"], x["sessionId"]) for x in b["unassigned"]], [("worker", "s3")])
+
     def test_a_session_outside_the_projects_the_fleet_does_not_name_stays_out(self):
         self.session(1, "Commander-A")
         self.session(9, "elsewhere", cwd="/w/other")
         self.session(8, "Commander-Other", cwd="/w/other")  # another project's commander, named only there
+        self.session(6, None, cwd="/w/other")  # no name: tied by none
         self.session(7, "other-worker", cwd="/w/other")
         self.register("other-worker", lead="Commander-Other")
         self.assertEqual(self.build(use_gh=False)["count"], 1)

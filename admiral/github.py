@@ -4,7 +4,7 @@ Four `gh` calls a refresh: open PRs with their checks, the state of recent PRs (
 call is heavy enough that GitHub answers 502), and the person's own open PRs and those merged today. The recent-PR
 list pages in hundreds, so a refresh makes up to about six API requests. A list that comes back full may have left
 out a branch's PR: in a repository with more PRs than the lists hold, the branches left out are asked for by name, one
-more call. While every session is quiet, GitHub is asked only every
+more call for every LOOKUP_CHUNK of them. While every session is quiet, GitHub is asked only every
 `quiet_github_minutes` and the last answer is reused in between (<state_dir>/pr-cache.json). A merge is final, so the
 cache also keeps the merged PRs it has seen, for branches still in use: a deliverable merged days ago still counts after
 it falls out of the recent list.
@@ -44,12 +44,17 @@ def prs_by_branch(cfg, branches):
         # opened between the calls, and the next refresh has them)
         return dict(pr, checksUnknown=True) if pr["state"] == "OPEN" and full else pr
 
-    for pr in all_prs:  # newest first
-        if pr["headRefName"] in branches and pr["headRefName"] not in out:
-            out[pr["headRefName"]] = past(pr)
-    left = sorted(set(branches) - set(out))
-    if left and len(all_prs) >= RECENT_LIMIT:  # the list of every state is full: it may have left a branch's PR out
-        found = by_name(cfg, left)
+    for pr in all_prs:  # newest first; an open one wins over a newer one closed or merged
+        b = pr["headRefName"]
+        if b in branches and (b not in out or (pr["state"] == "OPEN" and out[b]["state"] != "OPEN")):
+            out[b] = past(pr)
+    left = set()
+    if len(all_prs) >= RECENT_LIMIT:  # the list of every state is full: a branch's PR may be past it
+        left = {b for b in branches if b not in out}
+        if full:  # and an open one past the open list, though a branch shows one closed or merged
+            left |= {b for b in branches if b in out and out[b]["state"] != "OPEN"}
+    if left:
+        found = by_name(cfg, sorted(left))
         if found is None:
             return None  # "no PR" cannot be told from "not listed"
         out.update({b: past(pr) for b, pr in found.items()})
@@ -57,14 +62,16 @@ def prs_by_branch(cfg, branches):
 
 
 def by_name(cfg, branches):
-    """branch -> its PR, asked for by branch name (an open one wins, else the newest), one call per LOOKUP_CHUNK
-    branches; a branch with no PR is left out. None when gh failed."""
+    """branch -> its PR, asked for by branch name (its open one, else its newest), one call per LOOKUP_CHUNK branches;
+    a branch with no PR is left out. None when gh failed."""
     out = {}
+    fields = "{ nodes { number headRefName state isDraft } }"
     for i in range(0, len(branches), LOOKUP_CHUNK):
         chunk = branches[i:i + LOOKUP_CHUNK]
         heads = "".join(f", $b{k}: String!" for k in range(len(chunk)))
-        asks = " ".join(f"b{k}: pullRequests(headRefName: $b{k}, first: 5, orderBy: {{field: CREATED_AT, "
-                        "direction: DESC}) { nodes { number headRefName state isDraft } }" for k in range(len(chunk)))
+        asks = " ".join(f"o{k}: pullRequests(headRefName: $b{k}, states: OPEN, first: 1) {fields} "
+                        f"n{k}: pullRequests(headRefName: $b{k}, first: 1, orderBy: {{field: CREATED_AT, "
+                        f"direction: DESC}}) {fields}" for k in range(len(chunk)))
         query = f"query($owner: String!, $name: String!{heads}) {{ repository(owner: $owner, name: $name) {{ {asks} }} }}"
         args = ["gh", "api", "graphql", "-F", "owner={owner}", "-F", "name={repo}", "-f", f"query={query}"]
         r = subprocess.run(args + [a for k, b in enumerate(chunk) for a in ("-f", f"b{k}={b}")],
@@ -76,9 +83,9 @@ def by_name(cfg, branches):
         if not isinstance(repo, dict):
             return None
         for k, b in enumerate(chunk):
-            nodes = [n for n in ((repo.get(f"b{k}") or {}).get("nodes") or []) if n]
+            nodes = [n for key in (f"o{k}", f"n{k}") for n in ((repo.get(key) or {}).get("nodes") or []) if n]
             if nodes:
-                out[b] = next((n for n in nodes if n.get("state") == "OPEN"), nodes[0])
+                out[b] = nodes[0]
     return out
 
 

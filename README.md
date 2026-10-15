@@ -175,8 +175,8 @@ Locks ────────────────────────�
 ```
 
 One background job builds the board once a minute; every session reads the same snapshot. Each refresh asks GitHub
-four times (up to about six API requests, and one more in a repository with more PRs than the lists hold, for the
-branches they left out) while any session works; once all have been idle for 30 minutes, every 15 minutes; with no
+four times (up to about six API requests, and in a repository with more PRs than the lists hold, one more for every
+50 branches they left out) while any session works; once all have been idle for 30 minutes, every 15 minutes; with no
 session running, not at all. That stays under a tenth of GitHub's hourly allowance.
 
 Transcripts are read from where the last refresh stopped, and every cache is bounded, so fifty sessions running for

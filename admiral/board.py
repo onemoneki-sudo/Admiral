@@ -312,16 +312,27 @@ def build(cfg, use_gh=True, now=None, starts=sessions.proc_starts, fetch=github.
     T, W = TEXT[cfg.language], words(cfg.language)
     live, broken, shapeless, elsewhere = sessions.load(cfg, starts)
     regs, plans = registry.registrations(cfg), registry.plans(cfg)
-    # A session outside the configured projects is shown when the fleet here names it: a session of the projects
-    # registered it as its commander, or a plan names it commander or owner. One that only registered may belong to
-    # another project and is not shown; but it runs, so it is never taken for one that ended.
+    # A session outside the configured projects is the fleet's when it is tied to it: the fleet names it (a session
+    # on the board registered it as its commander, or a plan names it commander or owner), or it names the fleet (its
+    # registration's commander is on the board or has a plan). One that only registered may belong to another project
+    # and is not shown; but it runs, so it is never taken for one that ended. A conversation already on the board
+    # through a process of the projects is not taken again.
     def names(s):
-        return {s.get("name")} | {f.get("name") for f in s.get("formerNames") or []}
-    here = set().union(*map(names, live)) - {None, ""}
-    named = ({r.get("lead") for r in regs if r["who"] in here} | {p["lead"] for p in plans}
-             | {it.get("owner") for p in plans for it in p["items"]}) - {None, ""}
-    live += [s for s in elsewhere if names(s) & named]
-    running_elsewhere = set().union(*map(names, elsewhere)) - {None, ""}
+        return ({s.get("name")} | {f.get("name") for f in s.get("formerNames") or []}) - {None, ""}
+    lead_of = {r["who"]: r["lead"] for r in regs if r.get("lead")}
+    planned = {p["lead"] for p in plans} | {it.get("owner") for p in plans for it in p["items"]}
+    taken = {s.get("sessionId") for s in live}
+    outside = [s for s in elsewhere if s.get("sessionId") not in taken]
+    while outside:
+        on = set().union(*map(names, live))
+        named = ({lead_of.get(n) for n in on} | planned) - {None, ""}
+        leads = on | {p["lead"] for p in plans}
+        tied = [s for s in outside if names(s) & named or {lead_of[n] for n in names(s) if n in lead_of} & leads]
+        if not tied:
+            break
+        live += tied
+        outside = [s for s in outside if s not in tied]
+    running_elsewhere = set().union(*map(names, elsewhere))
     # One conversation resumed in another terminal runs as another process, named in a hint. Processes alike in all
     # but their terminal are one session, shown as its most pressing process (waiting before working before idle, then
     # the latest change); those that differ in name or directory are rare and stay apart, so nothing of them is lost.
