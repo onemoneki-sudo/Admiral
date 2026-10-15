@@ -184,7 +184,8 @@ git clone https://github.com/onemoneki-sudo/Admiral.git ~/admiral
    claude plugin install admiral@admiral
    ```
 
-最后，在 `~/.config/admiral/config.toml` 里设置 `project_dirs` 和 `[github] repo_dir`。
+最后，在 `~/.config/admiral/config.toml` 里设置 `project_dirs` 和 `[github] repo_dir`，再运行 `admiral doctor`：
+它逐项检查 Python、后台任务、状态栏、插件、`gh` 和配置，告诉你哪一项没接上、怎么修，自己不改任何东西。
 `scripts/install.sh --uninstall` 会移除后台任务和链接。
 
 **每个对话都按协作规则做。** 技能要对话自己想起来才会读，忙起来的对话可能想不起来。所以插件在每个对话的系统提示
@@ -284,6 +285,7 @@ admiral lock acquire | release | status | port  共享资源的锁
 admiral focus <tty>                             把一个对话的标签页调到最前（macOS：终端、iTerm2）
 admiral demo [--lang zh]                        一支虚构的舰队，不用自己的舰队也能看效果
 admiral where                                   状态目录
+admiral doctor                                  逐项检查是否装好，没装好的告诉你怎么修
 ```
 
 ## 读取什么与数据去向
@@ -387,8 +389,9 @@ Admiral 照样显示每个对话、谁在等你，也能从推送记录找到 PR
 
 **没有侧边栏怎么办？** 侧边栏、`/admiral` 和协作规则提醒需要 Claude Code 支持插件函数钩子。这是抢先体验功能，
 取决于你的 Claude Code 版本，可能还要看账号是否开通。先把 Claude Code 升到最新，新开一个对话，输入 `/admiral`：
-弹出侧边栏，或输入框上方出现"◂ Admiral board"按钮，就说明支持。不支持也能用：状态栏和协作规则不需要它，在项目的
-`CLAUDE.md` 里加一句"按 Admiral 协作规则工作"就能代替提醒（见[安装](#安装)）。
+弹出侧边栏，或输入框上方出现"◂ Admiral board"按钮，就说明支持。其余的交给 `admiral doctor`：它会检查插件是否已装、
+已启用、版本是否跟得上你的 clone。不支持也能用：状态栏和协作规则不需要它，在项目的 `CLAUDE.md` 里加一句
+"按 Admiral 协作规则工作"就能代替提醒（见[安装](#安装)）。
 
 **Linux 呢？Windows 呢？** macOS 上全部功能可用。Linux 上除了一键跳转都能用，后台的每分钟任务目前需要你自己
 安排（cron 或 systemd 定时器）。Windows 没有测试过。

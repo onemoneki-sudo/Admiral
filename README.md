@@ -202,8 +202,10 @@ Then two steps that are yours, since Admiral never edits Claude Code's settings 
    claude plugin install admiral@admiral
    ```
 
-Last, set `project_dirs` and `[github] repo_dir` in `~/.config/admiral/config.toml`. `scripts/install.sh --uninstall`
-removes the background job and the link.
+Last, set `project_dirs` and `[github] repo_dir` in `~/.config/admiral/config.toml`, and run `admiral doctor`: it checks
+each piece (Python, the background job, the status line, the plugin, `gh` and the config), says what is not in
+place and how to fix it, and changes nothing itself. `scripts/install.sh --uninstall` removes the background job and
+the link.
 
 **The playbook in every session.** A skill is read when a session thinks of it, and a busy one may not. So the plugin
 ends every session's system prompt with a short reminder, about 1 KB, of which skill to read at which moment: before a
@@ -310,6 +312,7 @@ admiral lock acquire | release | status | port  shared-resource locks
 admiral focus <tty>                             bring a session's tab to the front (macOS: Terminal, iTerm2)
 admiral demo                                    a made-up fleet, to see Admiral without one
 admiral where                                   the state directory
+admiral doctor                                  whether each piece is in place, and how to fix the rest
 ```
 
 ## What it reads, and where data goes
@@ -427,8 +430,9 @@ a dozen sessions, on work big enough to split.
 **No sidebar?** The sidebar, `/admiral` and the playbook reminder need a Claude Code with plugin function hooks, an
 early-access feature: it depends on your Claude Code's version, and may depend on your account too. Update Claude Code,
 open a new session and type `/admiral`: if the sidebar opens, or a "◂ Admiral board" button appears above the prompt,
-you have it. Without it Admiral still works: the status line and the playbook do not need it, and a line in your
-project's `CLAUDE.md` does the reminder's job (see [Install](#install)).
+you have it. `admiral doctor` checks the rest: that the plugin is installed, enabled and as new as your clone. Without
+it Admiral still works: the status line and the playbook do not need it, and a line in your project's `CLAUDE.md` does
+the reminder's job (see [Install](#install)).
 
 **Linux? Windows?** Everything runs on macOS. On Linux all but click-to-focus works, and for now you schedule the
 once-a-minute job yourself (cron or a systemd timer). Windows is untested.

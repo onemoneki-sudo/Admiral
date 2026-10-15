@@ -34,6 +34,12 @@ its cache, one copy per version, so a change to the sidebar or the playbook reac
 **Playbook**
 - The wrap-up skill's verdicts follow the board: a session that reported done with no merged PR is for you to confirm.
 
+**Install**
+- `admiral doctor` checks each piece Admiral needs: Python, `admiral` on the PATH, the config, `gh` and the
+  repository, the background job and the board's freshness, the status line, the plugin and its version. It says
+  what is not in place and how to fix it, changes nothing, and asks GitHub once at most. The install script ends by
+  pointing to it.
+
 ## 0.2.4 (2026-10-15)
 
 **Sidebar**
