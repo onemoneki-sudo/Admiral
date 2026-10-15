@@ -196,6 +196,18 @@ class Lines(unittest.TestCase):
         self.assertIn("x [A]", self.lines(b, "nobody")[1])  # a batch not on the line still has the name
         b = board(projects=["A", "B"], groups=[team("Commander-x", "A", ["one"]), team("Commander-x ", "B", ["two"])])
         self.assertEqual(sorted(x.split()[1] for x in self.lines(b, "nobody")[1:3]), ["[A]", "[B]"])  # padded alike
+        b = board(projects=["A", "B"], groups=[team("Commander-x", "A", ["one"])],
+                  unassigned=[dict(row("x [B]", "s9", status="waiting"), project="B")])
+        lines = self.lines(b, "nobody")
+        self.assertIn("(one, x [B])", lines[0])
+        self.assertIn("x [A]", lines[1])  # not the batch of the session waiting
+
+    def test_a_batch_not_on_the_line_leaves_the_names_column_as_it_was(self):
+        b = board()
+        quiet = dict(b["groups"][0]["summary"], total=0, busy=0, waiting=0, ciFail=0)
+        b["groups"].append({"lead": "Commander-LongerName", "members": [], "summary": quiet,
+                            "leadRow": row("Commander-LongerName", "s9", commander=True)})
+        self.assertTrue(self.lines(b, "nobody")[1].startswith("  A  █"))
 
     def test_a_name_with_brackets_of_its_own_is_left_as_it_is(self):
         b = board()
