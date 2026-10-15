@@ -30,6 +30,13 @@ with open(os.path.join(d, "calls.log"), "a") as fh:
 if args[:2] == ["api", "graphql"]:
     if os.path.exists(os.path.join(d, "graphql.fail")):
         sys.exit(1)
+    import re
+    query = next(a for a in args if a.startswith("query="))
+    for k in sorted({a.split("=", 1)[0][1:] for a in args if re.match(r"b[0-9]+=", a)}):  # asked as the query says
+        for ask in (rf"o{k}: pullRequests\\(headRefName: \\$b{k}, states: OPEN, first: 1\\)",
+                    rf"n{k}: pullRequests\\(headRefName: \\$b{k}, first: 1, orderBy: \\{{field: CREATED_AT, direction: DESC\\}}\\)"):
+            if not re.search(ask, query):
+                sys.exit("unexpected query: " + query)
     path = os.path.join(d, "by-name.json")
     data = json.load(open(path)) if os.path.exists(path) else []
     asked = dict(kv.split("=", 1) for kv in args[3::2])

@@ -186,26 +186,16 @@ class PastTheLists(World):
 
 
 class OutsideTheProjects(World):
-    """A session outside the configured projects is the fleet's when the fleet names it, rather than taken for one
-    that ended; one the fleet does not name stays out."""
+    """Sessions outside the configured projects are not shown, but a name running there is never taken for one that
+    ended, nor its batch for one with nobody running."""
 
-    def test_a_session_outside_the_projects_that_only_registered_is_not_shown_nor_taken_for_ended(self):
+    def test_a_registered_session_outside_the_projects_is_not_taken_for_ended(self):
         self.session(3, "worker")
         self.session(9, "helper", cwd="/w/other")  # registrations are shared: it may belong to another project
         self.register("helper")
         b = self.build(use_gh=False)
         self.assertEqual([x["name"] for x in b["unassigned"]], ["worker"])
         self.assertFalse([h for h in b["hints"] if "has ended" in h], b["hints"])
-
-    def test_a_commander_outside_the_projects_named_by_its_member_leads_it(self):
-        self.session(1, "Commander-A", cwd="/w/batch")  # sits in its batch folder
-        self.session(3, "worker")
-        self.register("worker", lead="Commander-A")
-        b = self.build(use_gh=False)
-        g = self.group(b, "Commander-A")
-        self.assertEqual((g["leadRow"] or {}).get("sessionId"), "s1")
-        self.assertEqual([m["name"] for m in g["members"]], ["worker"])
-        self.assertFalse([h for h in b["hints"] if "not running" in h], b["hints"])
 
     def test_a_planned_owner_running_outside_the_projects_keeps_its_batch_on_the_board(self):
         self.session(3, "worker")  # keeps the board refreshing
@@ -216,34 +206,7 @@ class OutsideTheProjects(World):
         self.assertEqual([g["lead"] for g in b["groups"]], ["Commander-A"])  # its owner still runs: not over
         self.assertFalse([h for h in b["hints"] if "all merged" in h], b["hints"])
 
-    def test_a_session_outside_the_projects_naming_a_commander_here_is_its_member(self):
-        self.session(1, "Commander-A", status="idle")
-        self.register("Commander-A", phase="done")
-        self.session(9, "worker", status="busy", cwd="/w/other")
-        self.register("worker", lead="Commander-A")
-        b = self.build(use_gh=False)
-        g = self.group(b, "Commander-A")
-        self.assertEqual([m["name"] for m in g["members"]], ["worker"])
-        self.assertNotEqual(g["leadRow"]["close"], "close")  # a member still works
-
-    def test_the_commander_of_an_owner_outside_the_projects_is_found_outside_too(self):
-        self.session(3, "keeper")  # keeps the board refreshing
-        self.session(9, "owner", cwd="/w/other")
-        self.session(8, "Commander-B", cwd="/w/other")
-        self.register("owner", lead="Commander-B")
-        self.plan("Commander-A", ("feat/a", "one", "owner"))
-        b = self.build(use_gh=False)
-        self.assertEqual(self.group(b, "Commander-B")["leadRow"]["sessionId"], "s8")
-        self.assertFalse([h for h in b["hints"] if "not running" in h], b["hints"])
-
-    def test_a_conversation_already_here_is_not_taken_again_from_outside(self):
-        self.session(3, "worker")
-        self.session(9, "worker", cwd="/w/other", sessionId="s3")  # the same conversation, resumed elsewhere
-        self.plan("Commander-A", ("feat/a", "one", "worker"))
-        b = self.build(use_gh=False)
-        self.assertEqual([(x["name"], x["sessionId"]) for x in b["unassigned"]], [("worker", "s3")])
-
-    def test_a_session_outside_the_projects_the_fleet_does_not_name_stays_out(self):
+    def test_sessions_outside_the_projects_stay_out(self):
         self.session(1, "Commander-A")
         self.session(9, "elsewhere", cwd="/w/other")
         self.session(8, "Commander-Other", cwd="/w/other")  # another project's commander, named only there

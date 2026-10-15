@@ -312,27 +312,10 @@ def build(cfg, use_gh=True, now=None, starts=sessions.proc_starts, fetch=github.
     T, W = TEXT[cfg.language], words(cfg.language)
     live, broken, shapeless, elsewhere = sessions.load(cfg, starts)
     regs, plans = registry.registrations(cfg), registry.plans(cfg)
-    # A session outside the configured projects is the fleet's when it is tied to it: the fleet names it (a session
-    # on the board registered it as its commander, or a plan names it commander or owner), or it names the fleet (its
-    # registration's commander is on the board or has a plan). One that only registered may belong to another project
-    # and is not shown; but it runs, so it is never taken for one that ended. A conversation already on the board
-    # through a process of the projects is not taken again.
-    def names(s):
-        return ({s.get("name")} | {f.get("name") for f in s.get("formerNames") or []}) - {None, ""}
-    lead_of = {r["who"]: r["lead"] for r in regs if r.get("lead")}
-    planned = {p["lead"] for p in plans} | {it.get("owner") for p in plans for it in p["items"]}
-    taken = {s.get("sessionId") for s in live}
-    outside = [s for s in elsewhere if s.get("sessionId") not in taken]
-    while outside:
-        on = set().union(*map(names, live))
-        named = ({lead_of.get(n) for n in on} | planned) - {None, ""}
-        leads = on | {p["lead"] for p in plans}
-        tied = [s for s in outside if names(s) & named or {lead_of[n] for n in names(s) if n in lead_of} & leads]
-        if not tied:
-            break
-        live += tied
-        outside = [s for s in outside if s not in tied]
-    running_elsewhere = set().union(*map(names, elsewhere))
+    # Sessions outside the configured projects are not shown, but they run: a name running anywhere is never taken
+    # for a session that ended, nor its batch for one with nobody of it running.
+    running_elsewhere = {n for s in elsewhere for n in [s.get("name")] + [f.get("name") for f in s.get("formerNames") or []]
+                         if n}
     # One conversation resumed in another terminal runs as another process, named in a hint. Processes alike in all
     # but their terminal are one session, shown as its most pressing process (waiting before working before idle, then
     # the latest change); those that differ in name or directory are rare and stay apart, so nothing of them is lost.
@@ -484,7 +467,8 @@ def build(cfg, use_gh=True, now=None, starts=sessions.proc_starts, fetch=github.
 
     reg_by_who = {r["who"]: r for r in regs}
     finished = []  # plans of batches over, with nobody of them running: not shown, left to `admiral plan close`
-    running = {n for c in convs for n in [c["name"]] + c["former"]}  # a planned PR's owner may run ungrouped
+    # a planned PR's owner may run ungrouped, or outside the projects
+    running = {n for c in convs for n in [c["name"]] + c["former"]} | running_elsewhere
     heard = set(read["heard"].values())  # commanders a running session last heard from, gone or not
     mem_by_who = {}  # owners that deregistered since, by the name each registered under and its session's name now
     for c in convs:

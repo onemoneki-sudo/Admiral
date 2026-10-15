@@ -411,6 +411,9 @@ what you can close, and a playbook that keeps them out of each other's way. No c
   looking as expected, rather than showing wrong numbers quietly; a Claude Code update can still need an Admiral one.
 - The sidebar uses Claude Code's early-access plugin API, which moves between releases.
 - It sees the sessions on this machine only, and Claude Code ones only.
+- It shows the sessions of `project_dirs` only. One running elsewhere is never taken for one that ended, but a
+  commander working outside them (in its batch folder, say) reads as not running: add that directory to
+  `project_dirs`.
 - Progress is milestone-based: it cannot see how far along development itself is.
 
 Status: early, maintained on a best-effort basis.
