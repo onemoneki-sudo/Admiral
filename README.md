@@ -109,8 +109,11 @@ terminal tab comes to the front (macOS: Terminal and iTerm2).
 <img src="docs/media/milestones.png" alt="Five milestones: develop 25%, review 50%, accept 70%, CI 80%, merged 100%" width="100%">
 
 Progress follows real delivery, never a guess: a session or deliverable is at **develop**, **review** (by a different
-model), **accept** (yours), **CI** (its PR is open) or **merged**, each worth a set share. A batch takes the mean of its
-deliverables; one planned but not started counts as zero, and a merged one keeps counting after its session closes.
+model), **accept** (yours), **CI** (its PR is open and ready, not a draft) or **merged** (as GitHub has it: nothing else
+counts as a merge), each worth a set share. A batch takes the mean of its deliverables; one planned but not started
+counts as zero, and a merged one keeps counting after its session closes. A session that says it is done with no PR to
+show it reads **reported done**: its own progress is complete, but it is never counted as a merged PR, and whether to
+close it is yours to confirm.
 
 ### PRs find their owner
 

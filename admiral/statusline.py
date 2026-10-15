@@ -155,7 +155,8 @@ class Lines:
 
         if me and not me["isCommander"] and me["registered"]:
             st = me.get("stage") or 0
-            parts = [self.pips(st) + " " + W["stages"][st] + (f" {me['note']}" if me.get("note") else "")]
+            word = W["reported_done"] if me.get("reportedDone") else W["stages"][st]
+            parts = [self.pips(st) + " " + word + (f" {me['note']}" if me.get("note") else "")]
             if me.get("pr"):
                 parts.append(me["pr"]["label"])
             if me["ciLevel"] == "fail":

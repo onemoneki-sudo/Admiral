@@ -6,6 +6,13 @@ its cache, one copy per version, so a change to the sidebar or the playbook reac
 
 ## Unreleased
 
+**Board**
+- Merged means merged on GitHub. A session's own `done` no longer counts as a merge: with its PR still open it stays
+  in CI; with its PR closed unmerged it is not finished, and closing it is yours to confirm; with no PR at all it reads
+  *reported done*, its own progress complete, and closing it is yours to confirm too. PR counts, the plan's "merged
+  n/m" and "plan all merged" count only PRs GitHub merged.
+- A draft PR no longer moves its session to CI: the session stays at the phase it reported until the PR is ready.
+
 ## 0.2.4 (2026-10-15)
 
 **Sidebar**
