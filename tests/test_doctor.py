@@ -233,7 +233,7 @@ class Checks(Doctor):
                 self.assertEqual("✓ status line runs Admiral" in out, ok, out)
                 self.assertEqual(code, 0 if ok else 1)
 
-    def test_a_script_that_runs_admiral_passes_whatever_it_is_called(self):
+    def test_a_script_named_with_admiral_that_runs_it_passes(self):
         script = self.write("home/bin/my-admiral-line", f"#!/bin/sh\nexec {shlex.quote(self.here)}/bin/admiral \"$@\"\n")
         os.chmod(script, 0o755)
         self.statusline(f"{shlex.quote(script)} statusline")
@@ -358,6 +358,15 @@ class SpacedClone(Doctor):
     def test_the_cron_command_adds_one_line_cron_reads_as_the_path(self):
         refresh = os.path.join(self.here, "scripts", "refresh.sh")
         self.assertEqual(self.cron_given(), "* * * * * '" + refresh.replace("%", "\\%") + "'\n")  # % as cron needs
+
+    def test_a_relative_config_goes_with_the_job_as_a_full_path(self):
+        here = os.getcwd()
+        os.chdir(self.root)
+        self.addCleanup(os.chdir, here)
+        os.rename(self.config_path, os.path.join(self.root, "rel.toml"))
+        self.config_path = "rel.toml"
+        given = self.cron_given()  # as cron reads it, from the home directory
+        self.assertIn(f"ADMIRAL_CONFIG={shlex.quote(os.path.abspath('rel.toml'))} ".replace("%", "\\%"), given)
 
     def test_a_config_of_its_own_goes_with_the_job_it_fixes(self):
         # cron and launchd start the job without the shell's environment: the config's path goes in the command

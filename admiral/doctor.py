@@ -198,8 +198,8 @@ def with_config(m, path, cmd):
     """cmd, given the config in use when it is not the default one: launchd and cron start a job without the shell's
     environment, so ADMIRAL_CONFIG has to go in the command."""
     default = os.path.join(m.home, ".config", "admiral", "config.toml")
-    if path and os.path.abspath(path) != os.path.abspath(default):
-        return f"ADMIRAL_CONFIG={shlex.quote(path)} {cmd}"
+    if path and os.path.abspath(path) != os.path.abspath(default):  # from anywhere: cron and launchd start in $HOME
+        return f"ADMIRAL_CONFIG={shlex.quote(os.path.abspath(path))} {cmd}"
     return cmd
 
 

@@ -64,8 +64,23 @@ class Main(unittest.TestCase):
     def test_a_base_that_runs_admiral_again_never_draws_admiral_inside_admiral(self):
         code, out = self.run_line(base="printenv ADMIRAL_IN_BASE")  # the base runs knowing it is one
         self.assertEqual((code, out.splitlines()[0]), (0, "1"))
-        code, out = self.run_line(base="echo hud", ADMIRAL_IN_BASE="1")  # Admiral run by such a base draws nothing
-        self.assertEqual((code, out), (0, ""))
+        with tempfile.TemporaryDirectory() as d:  # Admiral run by such a base draws nothing, nor says it did
+            probe = os.path.join(d, "ran")
+            code, out = self.run_line(base="echo hud", ADMIRAL_IN_BASE="1", ADMIRAL_PROBE=probe)
+            self.assertEqual((code, out, os.path.exists(probe)), (0, "", False))
+
+    def test_a_base_running_admiral_through_a_script_still_draws_admiral_once(self):
+        # what doctor offers for a script whose command does not name Admiral: keep it to run first
+        root = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+        with tempfile.TemporaryDirectory() as d:
+            script = os.path.join(d, "my-line")
+            with open(script, "w") as fh:
+                fh.write(f'#!/bin/sh\necho hud\nPYTHONPATH={root} exec {sys.executable} -m admiral statusline\n')
+            os.chmod(script, 0o755)
+            code, out = self.run_line(base=script)
+        self.assertEqual(code, 0)
+        self.assertEqual(out.splitlines()[0], "hud")
+        self.assertEqual(out.count("Admiral"), 1, out)
 
 
 class Parts(unittest.TestCase):

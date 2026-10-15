@@ -209,13 +209,13 @@ def admiral_lines(board_file, session_id, now=None, cols=None):
 
 
 def main(cfg):
-    if os.environ.get("ADMIRAL_PROBE"):  # doctor asks whether a status line command reaches this one
+    if os.environ.get("ADMIRAL_IN_BASE"):  # run by the base of an Admiral status line: that one draws Admiral
+        return
+    if os.environ.get("ADMIRAL_PROBE"):  # doctor asks whether a status line command reaches one that draws
         try:
             open(os.environ["ADMIRAL_PROBE"], "w").close()
         except OSError:
             pass
-    if os.environ.get("ADMIRAL_IN_BASE"):  # run by the base of an Admiral status line: that one draws Admiral
-        return
     raw = sys.stdin.read()
     try:
         data = json.loads(raw)
