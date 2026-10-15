@@ -70,6 +70,20 @@ def columns():
     return max(20, int(v) - 4)
 
 
+def shortened(rows, groups):
+    """How the line names a session or commander: on a board of several projects, where every name says its project,
+    without it when no other project has the name, since the line is short and the project is there to tell two
+    apart."""
+    said = {}  # a name without its project: the names it stands for
+    for name, project in ([(x["name"], x.get("project")) for x in rows] + [(x["lead"], x.get("project")) for x in rows]
+                          + [(g["lead"], g.get("project")) for g in groups]):
+        tag = f" [{project}]"
+        if name and project and name.endswith(tag):
+            said.setdefault(name[:-len(tag)], set()).add(name)
+    alone = {next(iter(full)): bare for bare, full in said.items() if len(full) == 1}
+    return lambda name: alone.get(name, name)
+
+
 class Lines:
     def __init__(self, b):
         self.b, self.W = b, phrases(b["words"])  # the snapshot's words, with their singular/plural forms
@@ -113,10 +127,11 @@ class Lines:
         b, W = self.b, self.W
         label = c(ORANGE, "Admiral")
         rows = [x for g in b["groups"] for x in ([g["leadRow"]] if g["leadRow"] else []) + g["members"]] + b["unassigned"]
+        short = shortened(rows, b["groups"])
         waiting = [x for x in rows if x["status"] == "waiting"]
         busy = sum(x["status"] in ("busy", "shell") for x in rows)
         zh = b.get("language") == "zh"
-        names = ("、" if zh else ", ").join(x["name"] for x in waiting[:3]) + ("…" if len(waiting) > 3 else "")
+        names = ("、" if zh else ", ").join(short(x["name"]) for x in waiting[:3]) + ("…" if len(waiting) > 3 else "")
         who = c(YELLOW, ("（" if zh else " (") + names + ("）" if zh else ")")) if waiting else ""
         d = b["dist"]
         if b.get("mine") is not None:  # the person's own PRs as GitHub has them, whatever the registrations say
@@ -137,8 +152,8 @@ class Lines:
         teams = [g for g in b["groups"] if g["summary"]["total"] or g.get("batch")]
         teams.sort(key=lambda g: (-g["summary"]["waiting"], -g["summary"]["ciFail"], g["lead"]))
         prefix = b.get("commanderPrefix", "")
-        names = {g["lead"]: (g["lead"][len(prefix):].lstrip("-_ ") if prefix and g["lead"].startswith(prefix) else g["lead"]) or g["lead"]
-                 for g in teams}
+        names = {g["lead"]: (n[len(prefix):].lstrip("-_ ") if prefix and n.startswith(prefix) else n) or n
+                 for g in teams for n in [short(g["lead"])]}
         cells = min(14, max((width(n) for n in names.values()), default=0))
         for g in teams[:TEAMS]:
             s = g["summary"]
@@ -164,7 +179,7 @@ class Lines:
                 parts.append(me["pr"]["label"])
             if me["ciLevel"] == "fail":
                 parts.append(f"{DIM}{W['ci']} {RESET}{RED}✗{RESET}")
-            tail = c(DIM, "  · " + W["lead_of"].format(lead=me["lead"])) if me.get("lead") else ""
+            tail = c(DIM, "  · " + W["lead_of"].format(lead=short(me["lead"]))) if me.get("lead") else ""
             lines.append(c(DIM, W["this_session"]) + "  " + SEP.join(parts) + tail)
         elif me and not me["isCommander"]:
             lines.append(c(DIM, f"{W['this_session']}  {W['unregistered']}"))

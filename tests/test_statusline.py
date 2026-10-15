@@ -154,6 +154,35 @@ class Lines(unittest.TestCase):
         self.assertIn("10 min ago", line)
         self.assertIn("(RuntimeError: gh is not signed in)", line)
 
+    def test_names_leave_their_project_out_unless_another_project_has_the_name(self):
+        def two_projects(lead, worker):
+            b = board(projects=["Shop", "Tools"])
+            g = b["groups"][0]
+            g["project"], g["lead"] = "Shop", "Commander-A [Shop]"
+            for x in [g["leadRow"]] + g["members"]:
+                x["project"], x["name"], x["lead"] = "Shop", x["name"] + " [Shop]", x["lead"] and x["lead"] + " [Shop]"
+            cmd = dict(row(f"{lead} [Tools]", "s5", commander=True), project="Tools")
+            w = dict(row(f"{worker} [Tools]", "s6", status="waiting", lead=f"{lead} [Tools]"), project="Tools")
+            s = dict(g["summary"], total=1, busy=0, waiting=1, ciFail=0)
+            b["groups"].append({"project": "Tools", "lead": f"{lead} [Tools]", "leadRow": cmd, "members": [w],
+                                "summary": s})
+            return b
+
+        lines = self.lines(two_projects("Commander-B", "three"), "s3")
+        self.assertIn("(two, three)", lines[0])
+        self.assertEqual(sorted(x.split()[0] for x in lines[1:3]), ["A", "B"])
+        self.assertIn("under Commander-A", lines[-1])
+        self.assertNotIn("[", "".join(lines))
+        lines = self.lines(two_projects("Commander-A", "two"), "s3")
+        self.assertIn("(two [Shop], two [Tools])", lines[0])
+        self.assertEqual(sorted(x.split()[1] for x in lines[1:3]), ["[Shop]", "[Tools]"])
+        self.assertIn("under Commander-A [Shop]", lines[-1])
+
+    def test_a_name_with_brackets_of_its_own_is_left_as_it_is(self):
+        b = board()
+        b["groups"][0]["members"][1]["name"] = "two [Shop]"
+        self.assertIn("(two [Shop])", self.lines(b, "nobody")[0])
+
     def test_the_first_line_breaks_every_session_down(self):
         first = self.lines(board(), "nobody")[0]
         self.assertIn("3 sessions: ◆ 1 waiting for you (two) · ● 1 working · ○ 1 idle", first)
