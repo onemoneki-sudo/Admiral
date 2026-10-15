@@ -586,6 +586,12 @@ class Closing(World):
 
 
 class Sources(World):
+    def test_open_prs_past_the_open_list_say_their_ci_is_not_shown(self):
+        self.session(3, "worker")
+        self.register("worker", branch="feat/a")
+        self.prs = {"feat/a": dict(pr(1, "OPEN"), checksUnknown=True)}
+        self.assertIn("1 open PR is past the newest 100: its CI is not shown", self.build()["health"])
+
     def test_no_session_means_no_github_call(self):
         self.register("gone", branch="feat/a")
         self.build()

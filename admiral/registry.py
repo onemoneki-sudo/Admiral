@@ -20,9 +20,10 @@ def key(name):
 
 def write_json(path, data):
     os.makedirs(os.path.dirname(path), exist_ok=True)
-    with open(path + ".tmp", "w", encoding="utf-8") as fh:
+    tmp = f"{path}.{os.getpid()}.tmp"  # one per process: the background job and a session may write the same file
+    with open(tmp, "w", encoding="utf-8") as fh:
         json.dump(data, fh, ensure_ascii=False, indent=1)
-    os.replace(path + ".tmp", path)
+    os.replace(tmp, path)
 
 
 def read_json(path):

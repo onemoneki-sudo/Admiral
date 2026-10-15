@@ -3,7 +3,9 @@
 Four `gh` calls a refresh: open PRs with their checks, the state of recent PRs (asking checks for every state in one
 call is heavy enough that GitHub answers 502), and the person's own open PRs and those merged today. The recent-PR
 list pages in hundreds, so a refresh makes up to about six API requests. While every session is quiet, GitHub is asked only every
-`quiet_github_minutes` and the last answer is reused in between (<state_dir>/pr-cache.json).
+`quiet_github_minutes` and the last answer is reused in between (<state_dir>/pr-cache.json). A merge is final, so the
+cache also keeps the merged PRs it has seen, for branches still in use: a deliverable merged days ago still counts after
+it falls out of the recent list.
 """
 
 import json
@@ -11,6 +13,9 @@ import subprocess
 import time
 
 from .registry import read_json, write_json
+
+OPEN_LIMIT = 100  # open PRs asked with their checks
+RECENT_LIMIT = 300  # PRs of every state asked, newest first
 
 
 def gh_prs(cfg, state, limit, fields):
@@ -23,14 +28,15 @@ def prs_by_branch(cfg, branches):
     """branch -> its PR (an open one wins, else the newest); None when gh failed."""
     if not branches or not cfg.repo_dir:
         return {}
-    open_prs = gh_prs(cfg, "open", 100, "number,headRefName,state,isDraft,reviewDecision,statusCheckRollup")
-    all_prs = gh_prs(cfg, "all", 300, "number,headRefName,state")
+    open_prs = gh_prs(cfg, "open", OPEN_LIMIT, "number,headRefName,state,isDraft,reviewDecision,statusCheckRollup")
+    all_prs = gh_prs(cfg, "all", RECENT_LIMIT, "number,headRefName,state,isDraft")
     if open_prs is None or all_prs is None:
         return None
     out = {pr["headRefName"]: pr for pr in open_prs if pr["headRefName"] in branches}
     for pr in all_prs:  # newest first
         if pr["headRefName"] in branches and pr["headRefName"] not in out:
-            out[pr["headRefName"]] = dict(pr, isDraft=False)
+            # an open PR found only here is past the open list, so its checks were never asked for
+            out[pr["headRefName"]] = dict(pr, checksUnknown=True) if pr["state"] == "OPEN" else pr
     return out
 
 
@@ -39,8 +45,11 @@ def my_prs(cfg, now):
     today. None when gh failed or no repository is configured."""
     if not cfg.repo_dir:
         return None
-    today = time.strftime("%Y-%m-%d", time.localtime(now))
-    calls = [["--state", "open"], ["--state", "merged", "--search", f"merged:>={today}"]]
+    # GitHub reads a bare date as a UTC day; with the offset it is the person's own day
+    t = time.localtime(now)
+    zone = time.strftime("%z", t)
+    since = time.strftime("%Y-%m-%dT00:00:00", t) + zone[:3] + ":" + zone[3:]
+    calls = [["--state", "open"], ["--state", "merged", "--search", f"merged:>={since}"]]
     out = []
     for extra in calls:
         r = subprocess.run(["gh", "pr", "list", "--author", "@me", "--limit", "100", *extra,
@@ -60,8 +69,11 @@ def prs_paced(cfg, branches, quiet, now, fetch=prs_by_branch, fetch_mine=my_prs)
         return cache["prs"], cache["mine"], True
     prs = fetch(cfg, branches)
     mine = fetch_mine(cfg, now) if prs is not None else None
+    if prs is not None:  # what GitHub answers now wins; a merge seen before fills in what it no longer lists
+        prs = {**{b: p for b, p in (cache.get("merged") or {}).items() if b in branches}, **prs}
     if prs is not None and mine is not None:
-        write_json(path, {"at": now, "branches": sorted(branches), "prs": prs, "mine": mine})
+        write_json(path, {"at": now, "branches": sorted(branches), "prs": prs, "mine": mine,
+                          "merged": {b: p for b, p in prs.items() if p["state"] == "MERGED"}})
     return prs, mine, False
 
 
