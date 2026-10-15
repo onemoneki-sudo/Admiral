@@ -17,6 +17,8 @@ its cache, one copy per version, so a change to the sidebar or the playbook reac
   not answer.
 
 **Status line and sidebar**
+- In Chinese, a commander's planned PRs are headed 交付清单, as the board names the plan everywhere else, rather than
+  计划中的 PR, which read as PRs not started yet.
 - A batch with no plan and no member registered reads "progress unknown: no member registered" rather than "no
   progress yet", which read as nothing done.
 
