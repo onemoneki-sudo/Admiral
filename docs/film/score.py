@@ -16,7 +16,8 @@ from scipy.signal import butter, fftconvolve, sosfilt
 SR = 48000
 DUR = 92.0
 P = 1.2  # film.js opens on its poster for this long; every cue is that much later
-N = int(SR * (DUR + P))
+IN, D = 41.6, 6.4  # film.js's decisions scene comes in here and lasts this long; every cue from here on is that much later
+N = int(SR * (DUR + P + D))
 rng = np.random.default_rng(7)
 
 
@@ -57,9 +58,10 @@ class Track:
         self.l = np.zeros(N + SR * 4)
         self.r = np.zeros(N + SR * 4)
 
-    def add(self, at, sig, gain=1.0, pan=0.0):
-        """Mix a mono signal in at `at` seconds, panned -1 (left) to 1 (right)."""
-        i = int((at + P) * SR)
+    def add(self, at, sig, gain=1.0, pan=0.0, shift=True):
+        """Mix a mono signal in at `at` seconds of the story, panned -1 (left) to 1 (right). A cue from IN on moves
+        past the decisions scene, unless shift is False (the scene's own cues)."""
+        i = int((at + P + (D if shift and at >= IN else 0)) * SR)
         if i < 0:
             sig, i = sig[-i:], 0
         sig = sig[:len(self.l) - i]
@@ -205,6 +207,24 @@ def compose():
     sfx.add(84.8, ping(1174.7, 3.5), .05, pan=.3)
     for k, at in enumerate((86.6, 86.8, 87.0)):  # the install lines
         sfx.add(at, tick(1900 + k * 150), .07)
+    # the decisions scene (IN .. IN + D): calls go to the commander; four are logged, two come to the person together
+    def dec(u, sig, gain, pan=0.0):
+        sfx.add(IN + u, sig, gain, pan, shift=False)
+    dec(0.0, whoosh(.9, 1500, 300, .4), .22)
+    for k in range(6):
+        dec(.4 + k * .08, tick(2200 + k * 120), .06, pan=-.6)
+    dec(.6, thump(.4, 110, 55), .14)
+    route = [0, 4, 1, 2, 5, 3]  # the order film.js sends them; 0-3 are logged, 4-5 are the person's
+    for n, i in enumerate(route):
+        go, back = 1.1 + n * .32, 1.9 + n * .32
+        dec(go, blip(1180, 1480), .07, pan=-.4)
+        dec(go + .55, click(), .12, pan=-.1)
+        if i < 4:
+            dec(back + .5, pluck(hz(note_names("E6", "G6", "A6", "C7")[i]), .7, 7, .3), .1, pan=.5)
+        else:
+            dec(back + .5, blip(1568, 1976), .1, pan=.5)
+    dec(4.4, ping(1318.5, 2.4), .1, pan=.4)
+    dec(D - .5, whoosh(.8, 300, 1500, .6), .18)
     return sfx
 
 

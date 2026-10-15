@@ -49,6 +49,14 @@ const TX = {
     limit: ["The limit is no longer you.", "It's your tokens.", "Admiral itself spends none: no model calls, everything runs on your machine."],
     facts: ["No model tokens", "Reads only your machine", "Works under claude-hud", "MIT licensed"],
     demoNote: "# a fleet of 54, before you run your own",
+    dec: {
+      cap: ["Decisions", "Most calls never reach you: the commander makes the low-risk ones and records them. Yours arrive together."],
+      cmd: "decides within your authorisation", log: "decision log", you: "for you", rec: "recommend",
+      q: ["Round tax per line or per order?", "Reuse the receipt template?", "Retry a failed payment webhook?",
+        "Block or flag a high fraud score?", "Approve the provider's sandbox key?", "Turn the new checkout on for everyone?"],
+      a: ["Per line, as the tax tests expect", "Reuse it: one template to keep", "Retry twice, then alert",
+        "Flag for review, never block silently", "approve: the new form needs it to be tested", "after your acceptance, behind a flag"],
+    },
   },
   zh: {
     toasts: ["<b>{0}</b> 需要你批准", "<b>{0}</b> 在等你", "CI 失败：<b>{0}</b>", "<b>{0}</b> 在问你问题",
@@ -85,13 +93,22 @@ const TX = {
     limit: ["瓶颈不再是你，", "而是你的 token。", "Admiral 自己一个 token 都不花：不调用模型，全在本机运行。"],
     facts: ["不花模型额度", "只读本机", "搭配 claude-hud", "MIT 开源"],
     demoNote: "# 先用 54 个对话的演示舰队看看效果",
+    dec: {
+      cap: ["决策", "大多数决定到不了你这：低风险的由总指挥做出并记录，必须你定的集中送到。"],
+      cmd: "在你的授权范围内决策", log: "决策记录", you: "待你决定", rec: "建议",
+      q: ["税费按行还是按单四舍五入？", "收据模板能不能复用？", "支付回调失败要不要重试？",
+        "风控高分是拦截还是标记？", "要不要批准支付商的沙箱密钥？", "新结账页要不要对所有人开放？"],
+      a: ["按行，与税费测试一致", "复用：只维护一份模板", "重试两次，再告警",
+        "标记待查，不悄悄拦截", "批准：新表单要靠它测试", "你验收后，用开关逐步开放"],
+    },
   },
 }[LANG];
 const f0 = (tpl, v) => tpl.replace("{0}", v);
 const W = 1920, H = 1080;
 const P = 1.2;           // the film opens on its poster for this long: chat apps show the first frame as the cover
 const POSTER_AT = 12.8;  // the poster is this frame of the story: the title over the fleet
-const DURATION = 92 + P;
+const IN = 41.6, D = 6.4;  // story time the decisions scene comes in, and its length: every later scene starts D later
+const DURATION = 92 + P + D;
 
 // ---------- helpers ----------
 const clamp = (x, a = 0, b = 1) => Math.min(b, Math.max(a, x));
@@ -927,14 +944,89 @@ function sceneOutro(t) {
   show(url, out3(seg(t, 87.4, 88.0)));
 }
 
+// ---------- the decisions scene: calls gather at the commander; the low-risk ones are decided and logged, the person's
+// ones arrive together (story IN .. IN + D) ----------
+const decL = el("div", "layer", document.getElementById("stage"));
+decL.style.zIndex = 60;
+const capDec = makeCaption(decL);
+const EXEC = ["Tax-Rules", "Order-Emails", "Checkout-API", "Fraud-Signals", "Checkout-UI", "Payments-Gateway"];
+const ROUTE = [0, 4, 1, 2, 5, 3];  // the order the calls come in; 0-3 are low-risk, 4-5 the person's
+const execCards = EXEC.map((name, i) => {
+  const c = card(decL, { left: "110px", top: 300 + i * 104 + "px", width: "380px", height: "76px", padding: "14px 20px",
+    fontFamily: "var(--mono)", fontSize: "21px", color: "var(--fg)" });
+  c.innerHTML = `<span style="color:var(--green)">●</span> ${esc(N(name))}`;
+  return c;
+});
+const cmdCard = card(decL, { left: "730px", top: "500px", width: "430px", padding: "22px 26px", borderColor: "var(--brass)" });
+cmdCard.innerHTML = `<div class="mono" style="font-size:23px;color:var(--fg)">${esc(N("Commander-Checkout"))}</div>` +
+  `<div style="font-size:20px;color:var(--muted);margin-top:8px">${esc(TX.dec.cmd)}</div>`;
+const logCard = card(decL, { left: "1290px", top: "250px", width: "540px", height: "380px", padding: "22px 26px" });
+logCard.innerHTML = `<div class="mono" style="font-size:22px;color:var(--brass)">${esc(TX.dec.log)}</div>` +
+  [0, 1, 2, 3].map(k => `<div class="mono dl" style="font-size:19px;color:#cdd7e2;margin-top:16px;white-space:normal;line-height:1.35">` +
+    `<span style="color:var(--green)">✓</span> ${esc(TX.dec.a[k])}</div>`).join("");
+const youCard = card(decL, { left: "1290px", top: "668px", width: "540px", height: "300px", padding: "22px 26px", borderColor: "var(--amber)" });
+youCard.innerHTML = `<div class="mono" style="font-size:22px;color:var(--amber)">${esc(TX.dec.you)} · <span id="youN">0</span></div>` +
+  [4, 5].map(k => `<div class="yl" style="margin-top:16px"><div style="font-size:21px;color:var(--fg)">◆ ${esc(TX.dec.q[k])}</div>` +
+    `<div class="mono" style="font-size:17px;color:var(--muted);margin-top:4px;white-space:normal">${esc(TX.dec.rec)}: ${esc(TX.dec.a[k])}</div></div>`).join("");
+const chips = EXEC.map((_, i) => {
+  const c = el("div", "abs", decL, `? ${esc(TX.dec.q[i])}`);
+  Object.assign(c.style, { fontFamily: "var(--body)", fontSize: "18px", padding: "8px 14px", borderRadius: "999px", whiteSpace: "nowrap",
+    background: "#1d2c3c", border: `1px solid ${i >= 4 ? "var(--amber)" : "rgba(207,167,90,.6)"}`, color: "var(--fg)", zIndex: 5 });
+  return c;
+});
+const bez = (a, b, c, x) => (1 - x) * (1 - x) * a + 2 * (1 - x) * x * b + x * x * c;
+function sceneDecisions(u) {
+  const on = u > 0 && u < D;
+  decL.style.display = on ? "block" : "none";
+  if (!on) return 0;
+  const k = fade(u, 0, .5, D - .5, D);
+  decL.style.opacity = k;
+  capDec(u, .2, D - .2, ...TX.dec.cap);
+  execCards.forEach((c, i) => show(c, out3(seg(u, .4 + i * .08, .8 + i * .08)), `translateX(${(1 - out3(seg(u, .4 + i * .08, .9 + i * .08))) * -30}px)`));
+  show(cmdCard, out3(seg(u, .6, 1.0)), `scale(${lerp(.94, 1, out3(seg(u, .6, 1.1)))})`);
+  show(logCard, out3(seg(u, .8, 1.2)));
+  show(youCard, out3(seg(u, .9, 1.3)));
+  const cmdIn = { x: 740, y: 560 }, cmdOut = { x: 1150, y: 560 };
+  let logged = 0, yours = 0, busy = 0;
+  ROUTE.forEach((i, n) => {
+    const c = chips[i], w = c.offsetWidth, h = c.offsetHeight;
+    const go = 1.1 + n * .32, mid = go + .55, back = 1.9 + n * .32, land = back + .5;
+    const from = { x: 490, y: 338 + i * 104 };
+    const to = i < 4 ? { x: 1290, y: 300 + i * 60 } : { x: 1290, y: 730 + (i - 4) * 80 };
+    let x, y, o = 1;
+    // x is the chip's left edge: it leaves the member's card, stops with its right edge at the commander's card, and
+    // later leaves from the commander's right edge into the log or the person's card
+    if (u < go) o = 0;
+    else if (u < mid) { const p = inOut(seg(u, go, mid)); x = bez(from.x + 10, 610 - w / 2, cmdIn.x - 12 - w, p); y = bez(from.y, (from.y + cmdIn.y) / 2 - 60, cmdIn.y, p);
+      o = 1 - seg(u, mid - .12, mid); }
+    else if (u < back) { o = 0; busy = Math.max(busy, 1 - seg(u, mid, back)); }
+    else if (u < land) { const p = inOut(seg(u, back, land)); x = bez(cmdOut.x + 12, 1210, to.x + 16, p); y = bez(cmdOut.y, (cmdOut.y + to.y) / 2 - 40, to.y, p);
+      o = Math.min(1, seg(u, back, back + .1)) * (1 - seg(u, land - .12, land)); }
+    else o = 0;
+    if (u >= land) { if (i < 4) logged++; else yours++; }
+    if (o > 0) { c.style.left = x + "px"; c.style.top = y - h / 2 + "px"; }
+    show(c, o, `scale(${u < mid ? 1 : .9})`);
+  });
+  cmdCard.style.boxShadow = `0 20px 60px rgba(0,0,0,.45), 0 0 ${30 * busy}px rgba(207,167,90,${.45 * busy})`;
+  logCard.querySelectorAll(".dl").forEach((d, j) => show(d, j < logged ? 1 : 0, `translateY(${j < logged ? 0 : 8}px)`));
+  youCard.querySelectorAll(".yl").forEach((d, j) => show(d, j < yours ? 1 : 0));
+  youCard.querySelector("#youN").textContent = yours;
+  const glow = yours === 2 ? Math.sin(Math.PI * seg(u, 4.4, 6.0)) : 0;
+  youCard.style.boxShadow = `0 20px 60px rgba(0,0,0,.45), 0 0 0 ${2 * glow}px var(--amber), 0 0 ${50 * glow}px rgba(233,185,73,${.35 * glow})`;
+  return k;
+}
+
 // ---------- frame ----------
 const scenes = [sceneChaos, sceneFleet, sceneUI, sceneMilestones, scenePush, sceneClose, scenePlaybook, sceneLimit, sceneOutro];
 const curtain = el("div", "layer", document.getElementById("stage"));  // the poster fades to the dark water the story starts on
 Object.assign(curtain.style, { background: "var(--ink)", zIndex: 100 });
 function render(t) {
   const s = t < P ? POSTER_AT : t - P;
-  drawChart(s, sonar(s));
-  for (const sc of scenes) sc(s);
+  const old = s < IN ? s : s < IN + D ? IN : s - D;  // the other scenes' own time: they hold still while the decisions play
+  drawChart(old, sonar(old));
+  for (const sc of scenes) sc(old);
+  const k = sceneDecisions(s - IN);
+  if (k > 0) { const ui = document.getElementById("ui"); ui.style.opacity = (parseFloat(ui.style.opacity) || 0) * (1 - k); }
   show(curtain, t < P ? inOut(seg(t, P - .5, P)) : 1 - seg(t, P, P + .4));
 }
 window.render = render;

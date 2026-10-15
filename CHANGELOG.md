@@ -6,6 +6,18 @@ folder is read from it, but one installed from a repository is updated by Claude
 
 ## Unreleased
 
+## 0.2.1 (2026-10-15)
+
+**Playbook**
+- Commanders gather the decisions only the person can make and bring them together, each with options and a
+  recommendation; the low-risk ones they make go into the batch's decision log.
+- Where knowledge lives: rules, product principles, the task brief, the decision log and environment notes, each in
+  its file, not in one conversation or an automatic memory.
+
+**Docs**
+- The README says why decisions go through commanders and why the work runs on briefs and records rather than memory.
+- The film shows decisions gathered at the commander; the README's film links follow the latest release.
+
 ## 0.2.0 (2026-10-15)
 
 The first versioned release.

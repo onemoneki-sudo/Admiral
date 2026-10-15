@@ -16,7 +16,7 @@
   <img src="https://img.shields.io/badge/model%20tokens-0-3fb950" alt="no model tokens">
 </p>
 
-<p align="center"><a href="https://github.com/onemoneki-sudo/Admiral/releases/download/v0.2.0/admiral.mp4"><b>▶ Watch the film</b></a> · <a href="https://github.com/onemoneki-sudo/Admiral/releases/download/v0.2.0/admiral.zh.mp4">中文版</a></p>
+<p align="center"><a href="https://github.com/onemoneki-sudo/Admiral/releases/latest/download/admiral.mp4"><b>▶ Watch the film</b></a> · <a href="https://github.com/onemoneki-sudo/Admiral/releases/latest/download/admiral.zh.mp4">中文版</a></p>
 
 <p align="center">English · <a href="README.zh-CN.md">中文</a></p>
 
@@ -24,7 +24,7 @@
 
 **One person is becoming a whole team.** Admiral grew out of daily work, not a design exercise: one person running
 **close to fifty Claude Code sessions at once** on one product, in parallel, with commanders that split each batch of
-work and direct the sessions under them. That is where building software is going, and at that scale three things
+work and direct the sessions under them. That is where building software is going, and at that scale four things
 decide whether it works:
 
 - **Big work in parallel.** Many large, hard tasks at the same time, each in a session of its own, grouped under
@@ -34,6 +34,10 @@ decide whether it works:
   session to its own worktree, branch and locks.
 - **No drop in quality.** The playbook has every change reviewed by a different model and tested where it matters,
   and Admiral counts progress by real delivery only: reviewed, accepted, CI, merged.
+- **Decisions in one place.** Executors send the calls they cannot make to their commander. It makes the low-risk
+  ones itself, the best way it sees, and writes each into the batch's decision log for you to read whenever you like;
+  the ones only you can make, it gathers and brings to you together, each with options and a recommendation. You
+  decide in a handful of commanders, not across fifty sessions.
 
 All of it inside Claude Code, without asking any session anything and without spending a single model token.
 
@@ -278,6 +282,22 @@ that takes hours or days wants a session of its own:
   so many. Fifty sessions report to you through Admiral's board instead, and none of them has to hold the others.
 
 Sessions still use subagents for small jobs inside them. Admiral is for keeping the sessions themselves in hand.
+
+## Briefs and records, not memory
+
+Fifty sessions cannot share one memory, and should not lean on one. The playbook keeps what the work needs in files
+that you and every session can read:
+
+- **A task brief per task**: goal, real user and entry point, data, expected result, what is out of scope, how it will
+  be accepted. Whichever session takes the task, and after any restart or compaction, works from the same page.
+- **A folder per batch**: its briefs, a status note per session and the decision log: what was decided, by whom and
+  why. The low-risk calls a commander made for you are all there to read.
+- **Every kind of knowledge in its place**: lasting rules in the project's rule files, standing product principles in
+  files of their own, commands and environment notes beside the tools.
+
+Automatic memory is the opposite: you cannot see what it holds, notes from one task drift into unrelated ones, and
+stale facts stay. The fleet Admiral grew out of runs with Claude Code's automatic memory turned off
+(`"autoMemoryEnabled": false`) and lets the files carry everything; the playbook works either way.
 
 ## How it differs from an orchestration platform
 

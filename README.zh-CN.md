@@ -16,7 +16,7 @@
   <img src="https://img.shields.io/badge/model%20tokens-0-3fb950" alt="no model tokens">
 </p>
 
-<p align="center"><a href="https://github.com/onemoneki-sudo/Admiral/releases/download/v0.2.0/admiral.zh.mp4"><b>▶ 观看宣传片</b></a> · <a href="https://github.com/onemoneki-sudo/Admiral/releases/download/v0.2.0/admiral.mp4">English</a></p>
+<p align="center"><a href="https://github.com/onemoneki-sudo/Admiral/releases/latest/download/admiral.zh.mp4"><b>▶ 观看宣传片</b></a> · <a href="https://github.com/onemoneki-sudo/Admiral/releases/latest/download/admiral.mp4">English</a></p>
 
 <p align="center"><a href="README.md">English</a> · 中文</p>
 
@@ -24,7 +24,7 @@
 
 **一个人，正在变成一支团队。** Admiral 来自每天的真实工作，不是凭空设计出来的：一个人在同一个产品上，
 **同时并行运行近 50 个 Claude Code 对话**，由总指挥拆分每一批工作、指挥手下的对话。这就是软件开发正在走的方向。
-到了这个规模，成败取决于三件事：
+到了这个规模，成败取决于四件事：
 
 - **大任务并行。** 许多又大又难的任务同时推进，每个任务一个独立对话，按总指挥、按批次组织。这正是 Admiral
   的用途，小活用不着舰队。
@@ -32,6 +32,9 @@
   在每个对话里一眼答清这些；它附带的协作规则让每个对话守住自己的工作区、分支和锁。
 - **质量不打折。** 协作规则要求每个改动都由另一个模型审查、在关键处测试；Admiral 只按真实交付计算进度：
   审查、验收、CI、合并。
+- **决策集中到总指挥。** 执行对话把自己定不了的事交给总指挥：风险低的由总指挥按最优解直接决定，逐条写进批次的
+  决策记录，你随时可以翻看；必须你定的，总指挥汇总后一起带给你，每条附选项和建议。你只在几个总指挥那里拍板，
+  不用在五十个对话之间来回跑。
 
 这一切都在 Claude Code 里完成，不打扰任何对话，不花一个模型 token。
 
@@ -267,6 +270,19 @@ admiral where                                   状态目录
   Admiral 的面板向你汇报，谁也不用替别人扛着。
 
 对话内部照样用子智能体做小事。Admiral 管的是对话本身。
+
+## 用任务书和记录，不靠记忆
+
+五十个对话没法共用一份记忆，也不该依赖它。协作规则把工作需要的东西都写进你和每个对话都能读的文件：
+
+- **每个任务一份任务书**：目标、真实使用者和入口、数据、预期结果、不做什么、怎么验收。不管哪个对话接手，
+  重启或上下文被压缩之后，读的都是同一页。
+- **每个批次一个文件夹**：任务书、各对话的进度、决策记录（定了什么、谁定的、为什么）。总指挥替你做的低风险
+  决定都在这里，随时可查。
+- **各类知识各归其位**：长期规则进项目规则文件，跨任务的产品原则单独成文件，命令和环境说明放在工具旁边。
+
+自动记忆正好相反：你看不见它记了什么，一个任务的笔记会混进不相干的任务，过时的事实也一直留着。Admiral 起源的
+那支舰队关闭了 Claude Code 的自动记忆（`"autoMemoryEnabled": false`），让文件承载一切；不关也能用这套协作规则。
 
 ## 和编排平台有什么不同
 

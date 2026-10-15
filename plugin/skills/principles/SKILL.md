@@ -49,6 +49,23 @@ The aim is not proof of zero defects, nor turning every PR into a full audit.
 - **Claims match evidence.** Keep "implemented", "automated checks pass", "accepted" and "released" apart; say what was verified and what was not; a green CI or an older version is no evidence for an unverified business result. "Deliverable" points to the exact version verified. Simple changes need no parallel status tables or documents.
 - **Verification cost matches risk.** None of this requires every change to add tests, call real models or run end-to-end tests. Copy and simple configuration need the necessary checks only; computation, data mapping, caching, permissions and cross-module paths need more. Prefer the smallest test that exposes the target error. Wider coverage never justifies going around data, cost or action authorisation, nor skipping the repository's own gates.
 
+## Where knowledge lives
+
+What the person or another session will need goes into a file they can read, never only into one conversation or an
+automatic memory: a session's context gets compacted, a new session starts empty, and a memory nobody sees cannot be
+checked or handed over.
+
+- **The project's rules**: what holds for any task and will still hold next month.
+- **Standing product principles**, where the project keeps them: what holds across the tasks of one area; a brief
+  names the ones it follows.
+- **The task brief**: one task's goal, scope, acceptance and the decisions made for it.
+- **The decision log** in the batch folder: what was decided, by whom and why.
+- **Environment notes** beside the tools: commands, names, quotas and other facts that change; they go when the
+  environment goes.
+
+Do not lean on an automatic memory for any of this. Where the person has turned it off, nothing is lost: the files
+carry it.
+
 ## Writing for others
 
 - PRs, issues, review notes, test plans and handovers are objective and readable on their own: facts, basis, scope, approach, verification, limits and state. No "I/we/you" or chat context; describe relations by PR or issue number, commit and role ("independent review", "code-owner approval"); name people, accounts or tools only where attribution, authorisation or a required review trail needs it. Keep the paths, commands and standard titles evidence needs. Chat is not bound by this.
