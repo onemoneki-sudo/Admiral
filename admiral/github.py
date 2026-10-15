@@ -119,7 +119,7 @@ def my_prs(cfg, now):
 
 def prs_paced(cfg, branches, quiet, now, fetch=prs_by_branch, fetch_mine=my_prs):
     """(prs or None when gh failed, the person's own PRs or None, whether the answer is a reused one)."""
-    path = cfg.sub("pr-cache.json")
+    path = cfg.cache("pr-cache.json")
     cache = read_json(path) or {}
     if quiet and now - cache.get("at", 0) < cfg.quiet_github_s and set(branches) <= set(cache.get("branches", [])) \
             and cache.get("mine") is not None:

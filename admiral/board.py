@@ -18,6 +18,7 @@ live members. Grouping: a registered `--lead` wins; otherwise the commander whos
 received last.
 """
 
+import copy
 import math
 import os
 import time
@@ -310,7 +311,7 @@ def branches_of(cell):
 def remember(cfg, convs):
     """sessionId -> the last registration seen for that live session. A session that wrapped up deregisters;
     remembering what it worked on lets the board still tell it finished. Only live sessions are kept."""
-    memory = registry.read_json(cfg.sub("reg-memory.json")) or {}
+    memory = registry.read_json(cfg.cache("reg-memory.json")) or {}
     fresh = {}
     for c in convs:
         r = c["reg"]
@@ -321,17 +322,96 @@ def remember(cfg, convs):
                                      "registered": branches_of(r.get("branch"))}
         elif c["sessionId"] in memory:
             fresh[c["sessionId"]] = memory[c["sessionId"]]
-    registry.write_json(cfg.sub("reg-memory.json"), fresh)
+    registry.write_json(cfg.cache("reg-memory.json"), fresh)
     return fresh
 
 
 def build(cfg, use_gh=True, now=None, starts=sessions.proc_starts, fetch=github.prs_by_branch,
           commits=sessions.last_commit, fetch_mine=github.my_prs, checked_out=sessions.worktree_branch,
           worktrees=sessions.worktrees):
+    """The board. With several projects, each is built on its own (its sessions, its repository, its caches) from
+    the registrations and plans that are its, and the boards are put together, each row and batch saying its
+    project; with one, as it always was."""
+    kw = dict(use_gh=use_gh, now=now, starts=starts, fetch=fetch, commits=commits, fetch_mine=fetch_mine,
+              checked_out=checked_out, worktrees=worktrees)
+    if not cfg.projects:
+        return build_one(cfg, **kw)
+    views = [cfg.for_project(p) for p in cfg.projects]
+    regs, plans = owned(cfg, views, starts)
+    return combine(cfg, views, [build_one(v, regs=regs[v.project], plans=plans[v.project], **kw) for v in views])
+
+
+def owned(cfg, views, starts):
+    """(project -> its registrations, project -> its plans). A registration is its session's project, where that
+    session runs (found by the session it records, else by name), else its worktree's; a plan, its commander's, else
+    its owners'. One that says nothing goes to the first project."""
+    every = copy.copy(cfg)
+    every.project_dirs = []  # every running session, wherever it runs
+    live = sessions.load(every, starts)[0]
+    by_sid = {s.get("sessionId"): s for s in live}
+    by_name = {n: s for s in live for n in [s.get("name")] + [f.get("name") for f in s.get("formerNames") or []] if n}
+
+    def project_of(path):
+        hits = [(len(d), v.project) for v in views for d in v.project_dirs if path and str(path).startswith(d)]
+        return max(hits)[1] if hits else None
+
+    def of_reg(r):
+        s = by_sid.get(r["sessionId"]) if r.get("sessionId") else \
+            next((by_name[n] for n in registry.names_of(r) if n in by_name), None)
+        return project_of(s and s.get("cwd")) or project_of(first(r.get("worktree")))
+
+    regs = {v.project: [] for v in views}
+    home = {}
+    for r in registry.registrations(cfg):
+        p = of_reg(r) or views[0].project
+        regs[p].append(r)
+        for n in registry.names_of(r):
+            home.setdefault(n, p)
+    plans = {v.project: [] for v in views}
+    for pl in registry.plans(cfg):
+        lead = by_name.get(pl["lead"])
+        p = project_of(lead and lead.get("cwd")) or next((home[it.get("owner")] for it in pl["items"]
+                                                         if it.get("owner") in home), None) or home.get(pl["lead"])
+        plans[p or views[0].project].append(pl)
+    return regs, plans
+
+
+def combine(cfg, views, boards):
+    """One board of each project's: counts summed, progress over all, every row and batch saying its project, and
+    each project's notes and source problems led by its name."""
+    out = dict(boards[0])
+    for v, b in zip(views, boards):
+        for g in b["groups"]:
+            g["project"] = v.project
+            for x in ([g["leadRow"]] if g["leadRow"] else []) + g["members"]:
+                x["project"] = v.project
+        for x in b["unassigned"]:
+            x["project"] = v.project
+    dist = [sum(b["dist"][i] for b in boards) for i in range(len(boards[0]["dist"]))]
+    gh = [b["gh"] for b in boards]
+    mine = [b["mine"] for b in boards if b["mine"]]
+    out.update(
+        count=sum(b["count"] for b in boards), gh=False if False in gh else (True if True in gh else None),
+        ghReused=all(b["ghReused"] for b in boards), dist=dist, pct=pct(dist, cfg.weights),
+        reported=sum(b["reported"] for b in boards), waiting=[x for b in boards for x in b["waiting"]],
+        prsMerged=sum(b["prsMerged"] for b in boards), prs=sum(b["prs"] for b in boards),
+        mine={k: sum(m[k] for m in mine) for k in ("open", "mergedToday")} if mine else None,
+        groups=[g for b in boards for g in b["groups"]], unassigned=[x for b in boards for x in b["unassigned"]],
+        closable={k: [x for b in boards for x in b["closable"].get(k, [])] for b0 in boards[:1] for k in b0["closable"]},
+        health=[f"{v.project}: {h}" for v, b in zip(views, boards) for h in b["health"]],
+        hints=[f"{v.project}: {h}" for v, b in zip(views, boards) for h in b["hints"]],
+        projects=[v.project for v in views])
+    return out
+
+
+def build_one(cfg, use_gh=True, now=None, starts=sessions.proc_starts, fetch=github.prs_by_branch,
+              commits=sessions.last_commit, fetch_mine=github.my_prs, checked_out=sessions.worktree_branch,
+              worktrees=sessions.worktrees, regs=None, plans=None):
     now = time.time() if now is None else now
     T, W = TEXT[cfg.language], words(cfg.language)
     live, broken, shapeless, elsewhere = sessions.load(cfg, starts)
-    regs, plans = registry.registrations(cfg), registry.plans(cfg)
+    regs = registry.registrations(cfg) if regs is None else regs
+    plans = registry.plans(cfg) if plans is None else plans
     # Sessions outside the configured projects are not shown, but they run: a name running anywhere is never taken
     # for a session that ended, nor its batch for one with nobody of it running.
     running_elsewhere = {n for s in elsewhere for n in [s.get("name")] + [f.get("name") for f in s.get("formerNames") or []]
@@ -385,11 +465,11 @@ def build(cfg, use_gh=True, now=None, starts=sessions.proc_starts, fetch=github.
         bs = branches_of(r.get("branch")) if r else []
         now_on = checked_out(first(r.get("worktree"))) if r else ""
         c["branches"] = bs + ([now_on] if now_on and now_on not in bs and now_on not in ("main", "master") else [])
-    kept = registry.read_json(cfg.sub("guessed.json")) or {}  # branches attached by work on earlier runs
+    kept = registry.read_json(cfg.cache("guessed.json")) or {}  # branches attached by work on earlier runs
     for c in convs:
         c["kept"] = [b for b in kept.get(c["sessionId"], []) if b not in c["branches"]]
         c["branches"] = c["branches"] + c["kept"]
-    known = registry.read_json(cfg.sub("reg-memory.json")) or {}
+    known = registry.read_json(cfg.cache("reg-memory.json")) or {}
     claimed = ({b for c in convs for b in c["branches"]} | {it["branch"] for p in plans for it in p["items"]}
                | {b for m in known.values() for b in m.get("branches", [])}) - {""}
     # A branch no session claims goes to the session that pushed it (its `git push` output says so), else, for a
@@ -422,7 +502,7 @@ def build(cfg, use_gh=True, now=None, starts=sessions.proc_starts, fetch=github.
         new = [b for b in guessed.get(c["sessionId"], []) if (prs.get(b) or {}).get("state") == "OPEN"]
         c["branches"] = c["branches"] + new
         c["guessed"] = c["kept"] + new
-    registry.write_json(cfg.sub("guessed.json"), {c["sessionId"]: c["guessed"] for c in convs if c["guessed"]})
+    registry.write_json(cfg.cache("guessed.json"), {c["sessionId"]: c["guessed"] for c in convs if c["guessed"]})
     memory = remember(cfg, convs)
 
     inferred, read = sessions.infer_leads(cfg, convs) if convs else ({}, {"missing": 0, "read": 0, "found": False,
@@ -673,6 +753,9 @@ def markdown(b, live=False):
     T, W, S = TEXT[lang], b["words"], b["words"]["stages"]
     now = b["generated"]
 
+    def named(name, x):  # with several projects, each name says its project
+        return f"{name} [{x['project']}]" if x.get("project") else name
+
     def table(rows):
         out = [T["cols"], "|---|---|---|---|---|---|---|"]
         for x in rows:
@@ -687,7 +770,7 @@ def markdown(b, live=False):
             commit = T["dir_gone"] if x["worktreeGone"] else (
                 T["ago"].format(age=ago(now - x["lastCommit"], lang)) if x["lastCommit"] else "-")
             out.append("| " + " | ".join(cell(v) for v in [
-                x["name"], f"{x['run']} {ago(now - x['statusSince'], lang)}", ph, x["branch"] or "-",
+                named(x["name"], x), f"{x['run']} {ago(now - x['statusSince'], lang)}", ph, x["branch"] or "-",
                 (x["pr"] or {}).get("label", "-"), x["ci"] or "-", commit]) + " |")
         return out
 
@@ -706,14 +789,14 @@ def markdown(b, live=False):
         s = g["summary"]
         own = f"{g['leadRow']['run']} {ago(now - g['leadRow']['statusSince'], lang)}" if g["leadRow"] else T["not_running"]
         p = f"{s['pct']}% ({spread(s['dist'], W, s['reported'])})" if s["pct"] is not None else "-"
-        out.append(T["team_line"].format(lead=g["lead"], own=own, pct=p, how="" if g.get("batch") else T["live_members"],
+        out.append(T["team_line"].format(lead=named(g["lead"], g), own=own, pct=p, how="" if g.get("batch") else T["live_members"],
                                          n=s["total"], busy=s["busy"], waiting=s["waiting"], ci=s["ciFail"]))
     if not b["groups"]:
         out.append(T["none"])
     for g in b["groups"]:
         s = g["summary"]
         how = T["how_plan"].format(done=s["prsMerged"], n=s["items"]) if g.get("batch") else T["how_live"]
-        out += ["", T["team_head"].format(lead=g["lead"], pct=f"{s['pct']}%" if s["pct"] is not None else "-", how=how)]
+        out += ["", T["team_head"].format(lead=named(g["lead"], g), pct=f"{s['pct']}%" if s["pct"] is not None else "-", how=how)]
         if g.get("batch"):
             out += [T["item_cols"], "|---|---|---|---|---|---|"]
             out += ["| " + " | ".join(cell(v) for v in [it["title"] or "-", it["branch"], it["owner"] or "-",

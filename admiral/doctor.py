@@ -46,6 +46,9 @@ TEXT = phrases({
         "dir_missing": "project_dirs names {d}, and no directory starts with it",
         "repo_none": "[github] repo_dir is empty: no PR or CI on the board",
         "fix_repo": "set [github] repo_dir in {path} to your repository",
+        "project_no_dirs": "the project has no dirs: none of its sessions shows",
+        "project_no_repo": "the project has no repo_dir: no PR or CI for it on the board",
+        "fix_project": "set dirs and repo_dir of the project \"{name}\" in {path}",
         "repo_missing": "[github] repo_dir {d} does not exist", "repo_not_git": "[github] repo_dir {d} is not a git repository",
         "gh_skipped": "gh not checked: no repository set", "gh_missing": "gh (the GitHub CLI) is not installed",
         "fix_gh": "install it from https://cli.github.com, then sign in",
@@ -103,6 +106,9 @@ TEXT = phrases({
         "dir_missing": "project_dirs 里的 {d}，没有任何目录以它开头",
         "repo_none": "[github] repo_dir 为空：看板上没有 PR 和 CI",
         "fix_repo": "在 {path} 里把 [github] repo_dir 设为你的仓库",
+        "project_no_dirs": "这个项目没写 dirs：它的对话都不会显示",
+        "project_no_repo": "这个项目没写 repo_dir：看板上没有它的 PR 和 CI",
+        "fix_project": "在 {path} 里给项目「{name}」写上 dirs 和 repo_dir",
         "repo_missing": "[github] repo_dir {d} 不存在", "repo_not_git": "[github] repo_dir {d} 不是 git 仓库",
         "gh_skipped": "没有设置仓库，跳过 gh 检查", "gh_missing": "没有安装 gh（GitHub CLI）",
         "fix_gh": "从 https://cli.github.com 安装，再登录",
@@ -374,18 +380,31 @@ def check_config(m, T, ctx):
         return out + [result(FAIL, T["config_broken"].format(path=path, error=first_line(str(e)) or type(e).__name__),
                              T["fix_config"].format(path=path))]
     ctx["cfg"] = cfg
+    if not cfg.projects:
+        return out + where(m, T, cfg, path)
+    for p in cfg.projects:  # each project its directories and its repository, its name before what is said of it
+        view = cfg.for_project(p)
+        found = where(m, T, view, path, T["fix_project"].format(name=p["name"], path=path))
+        out += [(level, f"{p['name']}: {text}", fix, cmd) for level, text, fix, cmd in found]
+    return out
+
+
+def where(m, T, cfg, path, fix=None):
+    """What is wrong with the directories and repository one project is read from."""
+    out = []
     if not cfg.project_dirs:
-        out.append(result(NOTE, T["dirs_all"]))
-    out += [result(WARN, T["dir_missing"].format(d=d), T["fix_config"].format(path=path))
+        out.append(result(WARN, T["project_no_dirs"], fix) if cfg.project else result(NOTE, T["dirs_all"]))
+    out += [result(WARN, T["dir_missing"].format(d=d), fix or T["fix_config"].format(path=path))
             for d in cfg.project_dirs if not matches_a_directory(d)]
+    fix = fix or T["fix_repo"].format(path=path)
     if not cfg.repo_dir:
-        out.append(result(WARN, T["repo_none"], T["fix_repo"].format(path=path)))
+        out.append(result(WARN, T["project_no_repo"] if cfg.project else T["repo_none"], fix))
     elif not os.path.isdir(cfg.repo_dir):
-        out.append(result(FAIL, T["repo_missing"].format(d=cfg.repo_dir), T["fix_repo"].format(path=path)))
+        out.append(result(FAIL, T["repo_missing"].format(d=cfg.repo_dir), fix))
     else:
         r = m.run(["git", "-C", cfg.repo_dir, "rev-parse", "--git-dir"])
         if r is not None and r[0]:
-            out.append(result(FAIL, T["repo_not_git"].format(d=cfg.repo_dir), T["fix_repo"].format(path=path)))
+            out.append(result(FAIL, T["repo_not_git"].format(d=cfg.repo_dir), fix))
     return out
 
 
@@ -398,6 +417,9 @@ GH_NETWORK = re.compile(r"error connecting|could not resolve host|no such host|d
 
 def check_gh(m, T, ctx):
     cfg = ctx.get("cfg")
+    if cfg is not None and cfg.projects:  # one request for each project's repository
+        return [(level, f"{p['name']}: {text}", fix, cmd) for p in cfg.projects
+                for level, text, fix, cmd in check_gh(m, T, dict(ctx, cfg=cfg.for_project(p)))]
     if cfg is None or not cfg.repo_dir or not os.path.isdir(cfg.repo_dir):
         return [result(NOTE, T["gh_skipped"])]
     r = m.run(["gh", "repo", "view", "--json", "nameWithOwner", "--jq", ".nameWithOwner"], cwd=cfg.repo_dir)

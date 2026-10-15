@@ -77,7 +77,7 @@ def infer_leads(cfg, convs):
     sessionId -> the name that last commander message came from, whether that commander still runs or not).
     Only the bytes added since the last run are read; <state_dir>/lead-cache.json keeps where each live session's
     scan stopped and the last commander it found, and only live sessions are kept, so it stays bounded."""
-    path = cfg.sub("lead-cache.json")
+    path = cfg.cache("lead-cache.json")
     cache = read_json(path) or {}
     commanders = [c for c in convs if c["isCommander"]]
     by_pid = {pid: c["name"] for c in commanders for pid in c.get("pids") or [c["pid"]]}  # every process of one
@@ -152,7 +152,7 @@ def work_in(cfg, convs, roots):
     branch without re-registering is still known by what it pushed and where it works. Only the bytes added since
     the last run are read, up to the last whole line; <state_dir>/work-cache.json keeps where each live session's
     scan stopped and what it found, and only live sessions are kept, so it stays bounded."""
-    path = cfg.sub("work-cache.json")
+    path = cfg.cache("work-cache.json")
     cache = read_json(path) or {}
     roots = sorted({r for r in roots if r}, key=len, reverse=True)  # the longest first: a/b-c before a/b
     pattern = re.compile("|".join(re.escape(r) + r"(?![-\w])" for r in roots)) if roots else None

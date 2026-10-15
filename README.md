@@ -267,6 +267,24 @@ ci = 80
 merged = 100
 ```
 
+**Several projects on one board.** Working on more than one repository at once, list each as a project instead of
+`[sessions] project_dirs` and `[github] repo_dir`. Each is read on its own (its sessions, its PRs and CI, its
+caches), and the board puts them together, every batch and session saying its project:
+
+```toml
+[[projects]]
+name = "Shop"
+dirs = ["~/code/shop", "~/code/shop-worktrees"]
+repo_dir = "~/code/shop"
+
+[[projects]]
+name = "Tools"
+dirs = ["~/code/tools"]
+repo_dir = "~/code/tools"
+```
+
+Locks, the commander prefix and everything else stay one for the machine. `admiral doctor` checks each project.
+
 ## Your first batch
 
 From a new project to a running fleet, once Admiral is installed:

@@ -456,6 +456,82 @@ class PutAway(World):
         self.assertEqual(self.kept(self.ended_with()), ["worker"])
 
 
+class SeveralProjects(World):
+    """[[projects]]: one board for several projects, each with its directories and repository."""
+
+    def setUp(self):
+        super().setUp()
+        self.cfg = config.Config(config.merge(self.cfg.data, {"projects": [
+            {"name": "Shop", "dirs": ["/w/app"], "repo_dir": "/w/app"},
+            {"name": "Tool", "dirs": ["/w/tool"], "repo_dir": "/w/tool"}]}))
+        self.asked = []
+
+    def build(self, use_gh=True, now=NOW):
+        def fetch(cfg, branches):
+            self.asked.append((cfg.repo_dir, set(branches)))
+            return {b: p for b, p in self.prs.items() if b in branches}
+        return board.build(self.cfg, use_gh=use_gh, now=now,
+                           starts=lambda pids: {p: (START, f"ttys{p:03d}") for p in pids}, fetch=fetch,
+                           commits=lambda wt: None, fetch_mine=lambda cfg, now: {"open": [{"number": 1, "headRefName": "x"}], "mergedToday": []},
+                           checked_out=lambda wt: "", worktrees=lambda cfg: {})
+
+    def test_every_projects_sessions_are_on_one_board_saying_their_project(self):
+        self.session(3, "shop-worker")
+        self.session(5, "tool-worker", cwd="/w/tool", status="waiting")
+        b = self.build(use_gh=False)
+        self.assertEqual(b["count"], 2)
+        self.assertEqual(sorted((x["name"], x["project"]) for x in b["unassigned"]),
+                         [("shop-worker", "Shop"), ("tool-worker", "Tool")])
+        self.assertEqual([x["name"] for x in b["waiting"]], ["tool-worker"])
+        self.assertIn("Tool: running but not registered: tool-worker", b["hints"])
+
+    def test_each_project_asks_its_own_repository_for_its_own_branches(self):
+        self.session(3, "shop-worker")
+        self.session(5, "tool-worker", cwd="/w/tool")
+        self.register("shop-worker", branch="feat/shop")
+        self.register("tool-worker", branch="feat/tool")
+        b = self.build()
+        self.assertEqual(sorted((r, sorted(bs)) for r, bs in self.asked), [("/w/app", ["feat/shop"]), ("/w/tool", ["feat/tool"])])
+        self.assertEqual(b["mine"], {"open": 2, "mergedToday": 0})  # the person's own PRs, in both repositories
+
+    def test_a_registration_belongs_to_where_its_session_runs(self):
+        self.session(5, "tool-worker", cwd="/w/tool")
+        self.session(3, "shop-worker")
+        self.register("tool-worker", branch="feat/tool")
+        b = self.build(use_gh=False)
+        x = next(x for x in b["unassigned"] if x["name"] == "tool-worker")
+        self.assertEqual((x["project"], x["registered"]), ("Tool", True))
+        self.assertFalse([h for h in b["hints"] if "has ended" in h], b["hints"])
+
+    def test_a_plan_belongs_to_its_commanders_project(self):
+        self.session(8, "Commander-T", cwd="/w/tool")
+        self.session(3, "shop-worker")
+        self.plan("Commander-T", ("feat/t", "a tool deliverable", ""))
+        b = self.build(use_gh=False)
+        self.assertEqual([(g["lead"], g["project"], bool(g["leadRow"])) for g in b["groups"]], [("Commander-T", "Tool", True)])
+
+    def test_the_markdown_board_says_each_ones_project(self):
+        self.session(8, "Commander-T", cwd="/w/tool")
+        self.session(3, "shop-worker")
+        md = board.markdown(self.build(use_gh=False))
+        self.assertIn("Commander-T [Tool]", md)
+        self.assertIn("| shop-worker [Shop] |", md)
+
+    def test_a_project_with_no_directories_has_no_sessions(self):
+        self.cfg = config.Config(config.merge(self.cfg.data, {"projects": [
+            {"name": "Shop", "dirs": ["/w/app"], "repo_dir": "/w/app"}, {"name": "Empty", "repo_dir": "/w/x"}]}))
+        self.session(3, "shop-worker")
+        b = self.build(use_gh=False)
+        self.assertEqual([(x["name"], x["project"]) for x in b["unassigned"]], [("shop-worker", "Shop")])
+
+    def test_each_project_keeps_its_own_caches(self):
+        self.session(3, "shop-worker")
+        self.session(5, "tool-worker", cwd="/w/tool")
+        self.build(use_gh=False)
+        kept = os.listdir(os.path.join(self.root, "state", "projects"))
+        self.assertEqual(sorted(k.split("_")[0] for k in kept), ["Shop", "Tool"])
+
+
 class OutsideTheProjects(World):
     """Sessions outside the configured projects are not shown, but a name running there is never taken for one that
     ended, nor its batch for one with nobody running."""
