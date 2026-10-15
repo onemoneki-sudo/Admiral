@@ -79,6 +79,30 @@ class Cli(unittest.TestCase):
         self.assertIsNone(self.reg("worker"))
         self.assertEqual(self.reg("worker-renamed")["phase"], "review")  # what it reported is kept
 
+    def test_a_session_registering_itself_under_another_name_is_still_known_by_its_session(self):
+        self.in_session(45, "sid-45", "dev-45")  # a name it was given, registering under its task's
+        r = self.run_cli("register", "--who", "the task", "--branch", "feat/a")
+        self.assertEqual(self.reg("the task")["sessionId"], "sid-45")
+        self.assertEqual((r.stdout.strip(), r.stderr), ("registered the task, for this session (dev-45)", ""))
+
+    def test_registering_a_running_session_records_no_session(self):
+        self.in_session(42, "sid-42", "worker")  # running, under its own name
+        self.in_session(41, "sid-41", "helper")
+        self.run_cli("register", "--who", "worker")
+        self.assertNotIn("sessionId", self.reg("worker"))
+
+    def test_a_commander_registering_a_member_not_yet_open_records_no_session(self):
+        self.in_session(40, "sid-40", "Commander-A")
+        self.run_cli("register", "--who", "worker-to-come", "--lead", "Commander-A")
+        self.assertNotIn("sessionId", self.reg("worker-to-come"))
+
+    def test_a_session_registered_as_itself_registering_another_records_no_session(self):
+        self.in_session(41, "sid-41", "helper")
+        self.run_cli("register", "--who", "helper")
+        self.run_cli("register", "--who", "worker-to-come")  # for a session not open yet
+        self.assertNotIn("sessionId", self.reg("worker-to-come"))
+        self.assertEqual(self.reg("helper")["sessionId"], "sid-41")
+
     def test_phases_are_checked(self):
         self.run_cli("register", "--who", "worker")
         self.assertNotEqual(self.run_cli("state", "--who", "worker", "--phase", "pending").returncode, 0)

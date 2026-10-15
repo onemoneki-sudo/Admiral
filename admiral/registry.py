@@ -80,6 +80,17 @@ def own(cfg, who):
     return None
 
 
+def itself(cfg, who, sid, names):
+    """Whether a session registering a name it does not have (its task's, say) registers itself, not another: it is
+    no commander (commanders register their members, open or not), the name is no other running session's, and the
+    session is not registered as itself already."""
+    if names and names[0].startswith(cfg.commander_prefix):
+        return False
+    if who in running_names(cfg) - set(names):
+        return False
+    return not any(r.get("sessionId") == sid and r["who"] != who for r in registrations(cfg))
+
+
 def register(cfg, who, task="", branch="", worktree="", files="", lead=""):
     """Create or replace a registration; a phase already reported is kept. Made by the session it names, it records
     that session, so it follows the session through renames; one made for another session records none."""
@@ -87,7 +98,7 @@ def register(cfg, who, task="", branch="", worktree="", files="", lead=""):
     sid, names = caller(cfg)
     reg = {"who": who, "task": task, "branch": branch, "worktree": worktree, "files": files, "lead": lead,
            "since": time.time(), "phase": old.get("phase"), "note": old.get("note", ""), "phaseAt": old.get("phaseAt")}
-    if sid and who in names:
+    if sid and (who in names or itself(cfg, who, sid, names)):
         reg["sessionId"] = sid
     write_json(reg_path(cfg, who), reg)
     return reg
