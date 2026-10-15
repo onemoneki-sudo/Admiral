@@ -381,9 +381,11 @@ class PutAway(World):
         from admiral import registry
         from unittest import mock
         self.session(4, "keeper")
+        import time as clock
         for i in range(3):
             self.register(f"w{i}", branch=f"feat/{i}")
-            os.utime(registry.reg_path(self.cfg, f"w{i}"), (NOW - 1000 + i, NOW - 1000 + i))
+            old = clock.time() - registry.STILL_S - 1000 + i  # nothing has changed them for over a month
+            os.utime(registry.reg_path(self.cfg, f"w{i}"), (old, old))
         self.prs = {f"feat/{i}": pr(i + 1, "MERGED") for i in range(3)}
         with mock.patch.object(registry, "OVER_KEPT", 2):
             self.build()
@@ -406,6 +408,29 @@ class PutAway(World):
         self.prs = {"feat/a": pr(1, "MERGED")}
         self.lock("heavy", "worker two")
         self.assertTrue([h for h in self.build()["hints"] if "has ended: worker two" in h])
+
+    def test_past_the_limit_one_changed_lately_stays(self):
+        from admiral import registry
+        from unittest import mock
+        self.session(4, "keeper")
+        for i in range(3):
+            self.register(f"w{i}", branch=f"feat/{i}")  # changed just now: its session may come back
+        self.prs = {f"feat/{i}": pr(i + 1, "MERGED") for i in range(3)}
+        with mock.patch.object(registry, "OVER_KEPT", 2):
+            self.build()
+        self.assertEqual(sorted(self.kept(None)), ["w0", "w1", "w2"])
+
+    def test_a_session_file_that_did_not_read_keeps_it(self):
+        with open(os.path.join(self.root, "sessions", "77.json"), "w") as fh:
+            fh.write("{ half written")
+        b = self.ended_with(worktree=os.path.join(self.root, "gone"))
+        self.assertTrue([h for h in b["hints"] if "has ended: worker" in h], b["hints"])
+
+    def test_a_worktree_with_a_comma_in_its_path_is_seen_whole(self):
+        wt = os.path.join(self.root, "work,tree")
+        os.makedirs(wt)
+        b = self.ended_with(worktree=wt)
+        self.assertTrue([h for h in b["hints"] if "has ended: worker" in h], b["hints"])
 
     def test_a_worktree_left_keeps_it(self):
         wt = self.root  # still there

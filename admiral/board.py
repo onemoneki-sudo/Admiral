@@ -593,9 +593,12 @@ def build(cfg, use_gh=True, now=None, starts=sessions.proc_starts, fetch=github.
             # nothing to say once its work is over and wrapped up: every branch merged on GitHub, its worktree gone
             # and no lock held; else the person decides. The registration stays, so a session that comes back still
             # reads as finished.
-            bs, wt, names = branches_of(r.get("branch")), first(r.get("worktree")), registry.names_of(r)
-            if gh_ok and bs and all((prs.get(b) or {}).get("state") == "MERGED" for b in bs) \
-                    and not (wt and os.path.isdir(wt)) \
+            # whether a session ended is known only when every session file read: one that did not may be its
+            # worktree, as written whole or as the list it may be
+            bs, names = branches_of(r.get("branch")), registry.names_of(r)
+            wts = [r.get("worktree") or ""] + [w.strip() for w in (r.get("worktree") or "").split(",")]
+            if gh_ok and not broken and bs and all((prs.get(b) or {}).get("state") == "MERGED" for b in bs) \
+                    and not any(w and os.path.isdir(w) for w in wts) \
                     and not any(who == n or who.startswith(n + " ") for who in locks.values() for n in names):
                 over.append(r)
                 continue
