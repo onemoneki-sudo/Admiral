@@ -16,6 +16,10 @@ its cache, one copy per version, so a change to the sidebar or the playbook reac
   a newer one of its branch closed or merged. If that call fails too, the PRs read as unknown, as when GitHub does
   not answer.
 
+**Status line and sidebar**
+- A batch with no plan and no member registered reads "progress unknown: no member registered" rather than "no
+  progress yet", which read as nothing done.
+
 **Install**
 - `admiral doctor` asks Admiral whether the status line reaches it, rather than reading the command: one that runs it
   through `exec`, `env`, `sh -c` or a script named in the command passes, and one that names Admiral but does not run
