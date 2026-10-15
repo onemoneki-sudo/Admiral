@@ -192,6 +192,10 @@ class Lines(unittest.TestCase):
         self.assertIn("(x [A], x [B], x [A] [B])", lines[0])
         self.assertEqual(sorted(x.split("  ")[1] for x in lines[1:3]), ["x [A]", "x [B]"])
         self.assertIn("under Commander_x", lines[-1])
+        b = board(projects=["A", "B"], groups=[team("Commander-x", "A", ["one"]), team("Commander-x", "B", [])])
+        self.assertIn("x [A]", self.lines(b, "nobody")[1])  # a batch not on the line still has the name
+        b = board(projects=["A", "B"], groups=[team("Commander-x", "A", ["one"]), team("Commander-x ", "B", ["two"])])
+        self.assertEqual(sorted(x.split()[1] for x in self.lines(b, "nobody")[1:3]), ["[A]", "[B]"])  # padded alike
 
     def test_a_name_with_brackets_of_its_own_is_left_as_it_is(self):
         b = board()

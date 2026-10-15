@@ -82,12 +82,13 @@ def unprojected(rows, groups):
 
 
 def told_apart(names, short, full):
-    """Each name as `short` shows it, unless that shows it like another: then as `full` does, as it always was."""
+    """Each name as `short` shows it, unless that shows it like another (padded to a column, so spaces at the ends
+    do not tell two apart): then as `full` does, as it always was."""
     shown = {n: short(n) for n in names}
     while True:
         alike = {}
         for n, s in shown.items():
-            alike.setdefault(s, []).append(n)
+            alike.setdefault(s.strip(), []).append(n)
         back = [n for ns in alike.values() if len(ns) > 1 for n in ns if shown[n] != full(n)]
         if not back:
             return shown
@@ -168,7 +169,7 @@ class Lines:
         prefix = b.get("commanderPrefix", "")
         def unprefixed(n):
             return (n[len(prefix):].lstrip("-_ ") if prefix and n.startswith(prefix) else n) or n
-        names = told_apart([g["lead"] for g in teams], lambda n: unprefixed(bare(n)), unprefixed)
+        names = told_apart([g["lead"] for g in b["groups"]], lambda n: unprefixed(short(n)), unprefixed)
         cells = min(14, max((width(n) for n in names.values()), default=0))
         for g in teams[:TEAMS]:
             s = g["summary"]
