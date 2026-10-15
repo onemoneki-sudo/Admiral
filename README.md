@@ -175,8 +175,9 @@ Locks ────────────────────────�
 ```
 
 One background job builds the board once a minute; every session reads the same snapshot. Each refresh asks GitHub
-four times (up to about six API requests) while any session works; once all have been idle for 30 minutes, every 15
-minutes; with no session running, not at all. That stays under a tenth of GitHub's hourly allowance.
+four times (up to about six API requests, and in a repository with more PRs than the lists hold, one more for every
+50 branches they left out) while any session works; once all have been idle for 30 minutes, every 15 minutes; with no
+session running, not at all. That stays under a tenth of GitHub's hourly allowance.
 
 Transcripts are read from where the last refresh stopped, and every cache is bounded, so fifty sessions running for
 days stay fast. When Claude Code's internal files stop looking as expected, the board says so in red, rather than
@@ -411,6 +412,9 @@ what you can close, and a playbook that keeps them out of each other's way. No c
   looking as expected, rather than showing wrong numbers quietly; a Claude Code update can still need an Admiral one.
 - The sidebar uses Claude Code's early-access plugin API, which moves between releases.
 - It sees the sessions on this machine only, and Claude Code ones only.
+- It shows the sessions of `project_dirs` only. One running elsewhere is never taken for one that ended, but a
+  commander working outside them (in its batch folder, say) reads as not running: add that directory to
+  `project_dirs`.
 - Progress is milestone-based: it cannot see how far along development itself is.
 
 Status: early, maintained on a best-effort basis.
