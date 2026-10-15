@@ -441,6 +441,7 @@ def build(cfg, use_gh=True, now=None, starts=sessions.proc_starts, fetch=github.
 
     reg_by_who = {r["who"]: r for r in regs}
     finished = []  # plans of batches over, with nobody of them running: not shown, left to `admiral plan close`
+    running = {n for c in convs for n in [c["name"]] + c["former"]}  # a planned PR's owner may run ungrouped
     mem_by_who = {}  # owners that deregistered since, by the name each registered under and its session's name now
     for c in convs:
         m = memory.get(c["sessionId"])
@@ -460,7 +461,8 @@ def build(cfg, use_gh=True, now=None, starts=sessions.proc_starts, fetch=github.
             items.append({"branch": it["branch"], "title": it.get("title", ""), "owner": it.get("owner", ""),
                           "stage": st, "reportedDone": st == 5 and not merged(pr),
                           "pr": github.pr_label(pr, cfg.language), "ci": ci_text, "ciLevel": ci_level})
-        if g is None and items and all((i["pr"] or {}).get("state") == "MERGED" for i in items):
+        if g is None and items and all((i["pr"] or {}).get("state") == "MERGED" for i in items) \
+                and not any(i["owner"] in running for i in items):
             # the batch is over: every deliverable merged, and nobody of it runs. It leaves the board rather than show
             # its commander not running; its plan is the commander's or the person's to close, never the board's
             finished.append(p["lead"])

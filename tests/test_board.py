@@ -896,6 +896,32 @@ class FinishedBatches(World):
         g = self.lead_of(self.gone(("feat/a", pr(1, "MERGED"))))
         self.assertEqual([m["name"] for m in g["members"]], ["worker"])
 
+    def test_an_owner_still_running_keeps_the_batch_though_nothing_groups_it(self):
+        for name, former in (("worker", ()), ("worker-2", ("worker",))):  # by its name, or the one it had
+            with self.subTest(name=name):
+                self.tearDown()
+                self.setUp()
+                self.session(3, name, former=former)
+                self.register(name, branch="feat/a")  # no --lead, no commander message
+                b = self.gone(("feat/a", pr(1, "MERGED")))
+                self.assertIsNotNone(self.lead_of(b))
+                self.assertFalse([h for h in b["hints"] if "nobody of its batch runs" in h])
+
+    def test_an_empty_plan_is_not_taken_for_a_finished_one(self):
+        self.plan("Commander-Gone", ("feat/a", "a", "worker"))
+        from admiral import registry
+        registry.plan_remove(self.cfg, "Commander-Gone", "feat/a")
+        self.assertIsNotNone(self.lead_of(self.build()))
+
+    def test_the_board_leaves_the_plan_file_as_it_was(self):
+        self.plan("Commander-Gone", ("feat/a", "a", "worker"))
+        self.prs = {"feat/a": pr(1, "MERGED")}
+        d = self.cfg.sub("batches")
+        before = {f: (open(os.path.join(d, f), "rb").read(), os.stat(os.path.join(d, f)).st_mtime_ns) for f in os.listdir(d)}
+        self.assertIsNone(self.lead_of(self.build()))
+        after = {f: (open(os.path.join(d, f), "rb").read(), os.stat(os.path.join(d, f)).st_mtime_ns) for f in os.listdir(d)}
+        self.assertEqual(before, after)
+
     def test_once_the_plan_is_closed_the_hint_goes_too(self):
         from admiral import registry
         self.gone(("feat/a", pr(1, "MERGED")))
