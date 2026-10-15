@@ -22,8 +22,9 @@ https://github.com/user-attachments/assets/45d323e5-d813-40b3-8f96-10a7cf6d5188
 
 **One person is becoming a whole team.** Admiral grew out of daily work, not a design exercise: one person running
 **close to fifty Claude Code sessions at once** on one product, in parallel, with commanders that split each batch of
-work and direct the sessions under them. That is where building software is going, and at that scale four things
-decide whether it works:
+work and direct the sessions under them. Each is a real Claude Code session you can talk to at any moment, not a
+subagent hidden inside another. That is where building software is going, and at that scale six things decide whether
+it works:
 
 - **Big work in parallel.** Many large, hard tasks at the same time, each in a session of its own, grouped under
   commanders, batch by batch. This is what Admiral is for; small jobs do not need a fleet.
@@ -36,9 +37,14 @@ decide whether it works:
   ones itself, the best way it sees, and writes each into the batch's decision log for you to read whenever you like;
   the ones only you can make, it gathers and brings to you together, each with options and a recommendation. You
   decide in a handful of commanders, not across fifty sessions, and the pushes you approve go out from there.
+- **Records, not memory.** Every task has a brief, and every batch keeps its progress and its decisions in files. A
+  session compacted, closed or replaced loses nothing: the next one picks the work up from the files
+  ([more](#briefs-and-records-not-memory)).
+- **Free to watch.** Admiral reads the records Claude Code already writes rather than asking sessions how they are
+  doing, so it spends no model tokens and interrupts no one: watching fifty sessions costs what watching five does,
+  nothing ([why](#why-it-spends-no-tokens)).
 
-Admiral shows all of it inside Claude Code without asking any session anything, and spends no model tokens doing so
-([why](#why-it-spends-no-tokens)).
+All of it shows inside Claude Code: in every session's status line, and in a sidebar one click away.
 
 ## Who it's for
 
