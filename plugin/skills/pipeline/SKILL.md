@@ -32,8 +32,9 @@ briefs, a status note per session and the decision log.
 - When the change alters behaviour, ask a model other than the one that wrote it (for code Claude wrote, Codex, say)
   to refute it, once the work is complete and its tests pass. Docs, copy and mechanical changes need only your own
   read of the final diff.
-- Use the repository's review prompt where it has one. Give the model the goal and the diff, not your conclusions,
-  which would anchor it.
+- Ask the model, besides for defects, whether the change serves the goal, stays within the brief and holds for every
+  case of its kind. Where the repository has its own review prompt, use it, adding only those of these questions it
+  does not ask. Give the model the goal and the diff, not your conclusions, which would anchor it.
 - Judge each finding by whether it blocks the goal (see principles): fix what blocks it with the simplest reliable
   fix, disprove what is not a defect, defer the rest. The model's opinion is input to your judgment, not a to-do list.
 - Have significant fixes reviewed again. Stop when nothing blocking remains, at most three rounds.
@@ -48,8 +49,8 @@ Docs, copy and mechanical changes need none. What changes during acceptance goes
 ## 5. Push and PR
 
 - Before pushing, tell the person briefly: what changed, how it was verified, the review's findings and what became of
-  them, and what is unverified. For a change in behaviour, ask whether they want to accept it first or by using it once
-  merged. Report `needs_you` while you wait.
+  them, where it stands on goal, scope and kind (see principles), and what is unverified. For a change in behaviour,
+  ask whether they want to accept it first or by using it once merged. Report `needs_you` while you wait.
 - Pushing is the person's decision. Push once the work is final and open the PR ready, not draft, so CI runs on the
   final version. In a batch, executors commit locally and the commander pushes, so the person decides in one place.
 - Once the PR is ready, push only what it needs: a fix, a conflict, a change of base. Every push runs CI again and

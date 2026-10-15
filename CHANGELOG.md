@@ -6,6 +6,12 @@ its cache, one copy per version, so a change to the sidebar or the playbook reac
 
 ## Unreleased
 
+**Playbook**
+- A session that hands a piece of work over (done, sent for review, ready to push), or is in doubt, says unasked, a
+  sentence each with its evidence, whether the work still serves the goal, stays within the task's scope and holds for
+  every case of its kind rather than one. The review by a different model asks the same, adding to a repository's own
+  review prompt only what it does not ask, and the report before a push carries it.
+
 **Try it**
 - `admiral demo` prints the demo's status line, and the command that opens Claude Code on the demo with Admiral's status
   line and sidebar read from the clone for that session only: the demo can be tried right after cloning, before
