@@ -313,9 +313,24 @@ class OnlyWhoShouldRegister(World):
                 os.remove(sessions.transcript(self.cfg, "/w/app", "s3"))
                 self.assertIn("running but not registered: worker", self.build(use_gh=False)["hints"])
 
-    def test_times_that_do_not_read_as_numbers_do_not_stop_the_board(self):
-        self.session(3, "worker", startedAt="soon")
-        self.assertIn("running but not registered: worker", self.build(use_gh=False)["hints"])
+    def test_times_that_do_not_read_as_numbers_are_taken_as_begun(self):
+        from admiral import sessions
+        for start in ("soon", "NaN", "Infinity", 10 ** 400, True):
+            with self.subTest(start=start):
+                self.tearDown()
+                self.setUp()
+                self.session(3, "worker", since=NOW - 60, startedAt=start)
+                os.remove(sessions.transcript(self.cfg, "/w/app", "s3"))
+                b = self.build(use_gh=False)
+                self.assertIn("running but not registered: worker", b["hints"])
+                self.assertTrue([h for h in b["health"] if "no transcript" in h])
+
+    def test_a_conversation_resumed_under_another_name_has_begun_all_the_same(self):
+        from admiral import sessions
+        self.session(3, "Commander-old", since=NOW - 300, startedAt=(NOW - 3600) * 1000)
+        self.session(4, "worker", sessionId="s3", since=NOW - 30, startedAt=(NOW - 30) * 1000)
+        os.remove(sessions.transcript(self.cfg, "/w/app", "s3"))
+        self.assertTrue([h for h in self.build(use_gh=False)["health"] if "no transcript" in h])
 
     def test_a_resumed_conversation_has_begun_whichever_process_shows(self):
         from admiral import sessions

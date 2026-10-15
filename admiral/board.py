@@ -18,6 +18,7 @@ live members. Grouping: a registered `--lead` wins; otherwise the commander whos
 received last.
 """
 
+import math
 import os
 import time
 
@@ -289,9 +290,14 @@ def began(s):
     have."""
     if s.get("status") in ("busy", "shell", "waiting"):
         return True
+    start, changed = s.get("startedAt"), s.get("statusUpdatedAt") or 0
+    def number(t):  # a time read as a number: an integer, or a finite float; never a flag or a string
+        return (isinstance(t, int) and not isinstance(t, bool)) or (isinstance(t, float) and math.isfinite(t))
+    if not (number(start) and number(changed)):
+        return True
     try:
-        return float(s.get("statusUpdatedAt") or 0) - float(s["startedAt"]) >= 30_000
-    except (KeyError, TypeError, ValueError):
+        return changed - start >= 30_000
+    except OverflowError:  # an integer past any float
         return True
 
 
@@ -337,6 +343,7 @@ def build(cfg, use_gh=True, now=None, starts=sessions.proc_starts, fetch=github.
         by_sid.setdefault(s.get("sessionId") or f"pid {s['pid']}", []).append(s)
     live, open_twice = [], []
     for procs in by_sid.values():
+        begun = any(began(p) for p in procs)  # the work may have begun in any process of the conversation
         procs.sort(key=lambda s: (ORDER.get(s.get("status"), 9), -(s.get("statusUpdatedAt") or 0)))
         if len(procs) > 1:
             where = list(dict.fromkeys(p.get("_tty") or f"pid {p['pid']}" for p in procs))
@@ -345,8 +352,7 @@ def build(cfg, use_gh=True, now=None, starts=sessions.proc_starts, fetch=github.
         for p in procs:
             alike.setdefault((p.get("name"), p.get("cwd")), []).append(p)
         for same in alike.values():
-            one = dict(same[0], _pids=[p["pid"] for p in same],  # a message may come from any of them
-                       _began=any(began(p) for p in same))  # as the work may have begun in any of them
+            one = dict(same[0], _pids=[p["pid"] for p in same], _began=begun)  # a message may come from any of them
             one["formerNames"] = [f for p in same for f in p.get("formerNames") or []]  # as may an old registration
             live.append(one)
     # A registration its session made follows that session, whatever it is called now; one made without a session
