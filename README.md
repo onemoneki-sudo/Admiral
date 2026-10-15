@@ -95,7 +95,8 @@ snapshot.
 
 - **Independent sessions**, the ones no commander runs.
 - **Wrap-up**: which sessions can close, which must wrap up first, which are yours to decide.
-- **To tidy**: sessions not registered, renamed, idle for days, or still registered after their PR merged.
+- **To tidy**: sessions not registered, renamed, idle for days, open in more than one terminal, or still registered
+  after their PR merged; the plan of a batch that is over, to close.
 
 ### One click to the session that needs you
 
@@ -281,8 +282,8 @@ From a new project to a running fleet, once Admiral is installed:
 4. **Watch the board.** The status line and the sidebar show the batch: who works, who waits for you and why, every
    deliverable's stage, and CI. Decisions the commander can make, it makes and logs; the ones only you can make, it
    brings to you together.
-5. **Accept and close.** You accept what the brief asks you to; as PRs merge, the board tells you which sessions you
-   can close.
+5. **Accept and close.** You accept what you want to see, before its PR goes up or by using it once merged; as PRs
+   merge, the board tells you which sessions you can close.
 
 ## Working with it
 
@@ -383,12 +384,13 @@ Sessions still use subagents for small jobs inside them. Admiral is for keeping 
 Fifty sessions cannot share one memory, and should not lean on one. The playbook keeps what the work needs in files
 that you and every session can read:
 
-- **A task brief per task**: goal, real user and entry point, data, expected result, what is out of scope, how it will
-  be accepted. Whichever session takes the task, and after any restart or compaction, works from the same page.
+- **A task brief per task**: its goal, how it will be accepted and what is out of scope. Whichever session takes the
+  task, and after any restart or compaction, works from the same page.
 - **A folder per batch**: its briefs, a status note per session and the decision log: what was decided, by whom and
-  why. The low-risk calls a commander made for you are all there to read.
-- **Every kind of knowledge in its place**: lasting rules in the project's rule files, standing product principles in
-  files of their own, commands and environment notes beside the tools.
+  why. The low-risk calls a commander made for you are all there to read. When the batch ends, a short summary is the
+  one thing the next batch reads.
+- **Every kind of knowledge in its place**: what holds for every task in the project's rule files, one task's in its
+  brief, one batch's in its folder.
 
 Automatic memory is the opposite: you cannot see what it holds, notes from one task drift into unrelated ones, and
 stale facts stay. The fleet Admiral grew out of runs with Claude Code's automatic memory turned off

@@ -59,6 +59,9 @@ its cache, one copy per version, so a change to the sidebar or the playbook reac
   what is not in place and how to fix it, changes nothing, and asks GitHub once at most. The install script ends by
   pointing to it.
 
+**Docs**
+- The README's to-tidy list, first batch and records follow the board and the playbook as they now are.
+
 ## 0.2.4 (2026-10-15)
 
 **Sidebar**

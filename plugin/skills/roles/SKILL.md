@@ -35,6 +35,7 @@ Where the project's own rules differ from this playbook, the project's rules win
 ## Sizing a batch
 
 When asked how many sessions are needed, propose the batch before dispatching: one session per area of change that
-does not overlap another, plus an acceptance executor when it pays. For each, give a name by role, its duty, and the
-model and effort you suggest, harder or riskier work getting the stronger setting. Only the person sets a session's
-model and effort.
+does not overlap another, plus an acceptance executor when it pays. For each, give a name by role, its duty, the model
+and effort you suggest (harder or riskier work getting the stronger setting) and a command to start it, for the person
+to paste. Once they are open, the commander finds them and sends each its brief; the person types nothing in them.
+Only the person sets a session's model and effort.
