@@ -836,7 +836,8 @@ class Evidence(World):
 
 
 class FinishedBatches(World):
-    """A batch whose commander has gone: over once every deliverable merged and nobody of it runs, else still shown."""
+    """A batch whose commander has gone: over once every deliverable merged and nobody of it runs, and then no longer
+    shown, its plan left for `admiral plan close`; else still shown, marked commander not running."""
 
     def setUp(self):
         super().setUp()
@@ -850,19 +851,21 @@ class FinishedBatches(World):
     def lead_of(self, b):
         return next((g for g in b["groups"] if g["lead"] == "Commander-Gone"), None)
 
-    def test_a_batch_all_merged_with_nobody_running_closes_and_leaves_the_board(self):
+    def test_a_batch_all_merged_with_nobody_running_leaves_the_board_and_its_plan_stays(self):
         from admiral import registry, statusline
         import re
         b = self.gone(("feat/a", pr(1, "MERGED")), ("feat/b", pr(2, "MERGED")))
         self.assertIsNone(self.lead_of(b))
-        self.assertEqual(registry.plans(self.cfg), [])
-        self.assertEqual(len(os.listdir(self.cfg.sub("batches", "closed"))), 1)  # archived, as plan close does
+        self.assertEqual([p["lead"] for p in registry.plans(self.cfg)], ["Commander-Gone"])  # the board closes no plan
+        self.assertIn('the plan of Commander-Gone is all merged and nobody of its batch runs: no longer shown; '
+                      'admiral plan close --lead "Commander-Gone" puts it away', b["hints"])
+        self.assertEqual((b["prsMerged"], b["prs"]), (0, 0))  # not counted, as a closed plan is not
         board.write(self.cfg, b)
         shown = " ".join(re.sub(r"\x1b\[[0-9;]*m", "", ln)
                          for ln in statusline.admiral_lines(self.cfg.sub("board.json"), "s4", now=NOW))
         self.assertNotIn("Gone", shown)
         self.assertNotIn("commander not running", shown)
-        self.assertNotIn("Commander-Gone", board.markdown(b))
+        self.assertNotIn("## Commander-Gone", board.markdown(b))
 
     def test_a_batch_with_anything_unmerged_stays_marked_commander_not_running(self):
         for second in (pr(2, "OPEN"), pr(2, "CLOSED"), None):
@@ -893,12 +896,11 @@ class FinishedBatches(World):
         g = self.lead_of(self.gone(("feat/a", pr(1, "MERGED"))))
         self.assertEqual([m["name"] for m in g["members"]], ["worker"])
 
-    def test_two_builds_closing_the_same_plan_at_once_do_not_fail(self):
-        from unittest import mock
+    def test_once_the_plan_is_closed_the_hint_goes_too(self):
         from admiral import registry
-        with mock.patch.object(registry, "plan_close", side_effect=FileNotFoundError("closed by the other")):
-            b = self.gone(("feat/a", pr(1, "MERGED")))
-        self.assertIsNone(self.lead_of(b))
+        self.gone(("feat/a", pr(1, "MERGED")))
+        registry.plan_close(self.cfg, "Commander-Gone")
+        self.assertFalse([h for h in self.build()["hints"] if "Commander-Gone" in h])
 
 
 class Sources(World):
