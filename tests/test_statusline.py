@@ -4,6 +4,7 @@ import json
 import os
 import re
 import shutil
+import subprocess
 import sys
 import tempfile
 import time
@@ -38,6 +39,33 @@ def board(language="en", **over):
          "unassigned": [], "waiting": [workers[1]], "closable": {"close": [], "wrapup": [], "confirm": []}, "health": []}
     b.update(over)
     return b
+
+
+class Main(unittest.TestCase):
+    """`admiral statusline` as Claude Code runs it: a process reading the session's JSON."""
+
+    def run_line(self, base="", **env):
+        with tempfile.TemporaryDirectory() as d:
+            cfg = os.path.join(d, "config.toml")
+            with open(cfg, "w", encoding="utf-8") as fh:
+                fh.write(f'state_dir = "{d}"\n[statusline]\nbase = {json.dumps(base)}\n')
+            root = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+            r = subprocess.run([sys.executable, "-m", "admiral", "statusline"], input='{"session_id": ""}',
+                               capture_output=True, text=True, timeout=20,
+                               env=dict(os.environ, PYTHONPATH=root, ADMIRAL_CONFIG=cfg, **env))
+            return r.returncode, r.stdout
+
+    def test_it_leaves_the_mark_doctor_asks_for(self):
+        with tempfile.TemporaryDirectory() as d:
+            probe = os.path.join(d, "ran")
+            self.run_line(ADMIRAL_PROBE=probe)
+            self.assertTrue(os.path.exists(probe))
+
+    def test_a_base_that_runs_admiral_again_never_draws_admiral_inside_admiral(self):
+        code, out = self.run_line(base="printenv ADMIRAL_IN_BASE")  # the base runs knowing it is one
+        self.assertEqual((code, out.splitlines()[0]), (0, "1"))
+        code, out = self.run_line(base="echo hud", ADMIRAL_IN_BASE="1")  # Admiral run by such a base draws nothing
+        self.assertEqual((code, out), (0, ""))
 
 
 class Parts(unittest.TestCase):

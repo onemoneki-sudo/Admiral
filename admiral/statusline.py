@@ -209,6 +209,13 @@ def admiral_lines(board_file, session_id, now=None, cols=None):
 
 
 def main(cfg):
+    if os.environ.get("ADMIRAL_PROBE"):  # doctor asks whether a status line command reaches this one
+        try:
+            open(os.environ["ADMIRAL_PROBE"], "w").close()
+        except OSError:
+            pass
+    if os.environ.get("ADMIRAL_IN_BASE"):  # run by the base of an Admiral status line: that one draws Admiral
+        return
     raw = sys.stdin.read()
     try:
         data = json.loads(raw)
@@ -217,7 +224,8 @@ def main(cfg):
     out = []
     if cfg.statusline_base:
         try:
-            r = subprocess.run(["/bin/sh", "-c", cfg.statusline_base], input=raw, capture_output=True, text=True, timeout=5)
+            r = subprocess.run(["/bin/sh", "-c", cfg.statusline_base], input=raw, capture_output=True, text=True,
+                               timeout=5, env=dict(os.environ, ADMIRAL_IN_BASE="1"))  # never Admiral inside Admiral
             if r.stdout.strip():
                 out.append(r.stdout.rstrip("\n"))
         except subprocess.TimeoutExpired:

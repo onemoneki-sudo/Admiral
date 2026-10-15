@@ -13,6 +13,7 @@ import shlex
 import shutil
 import subprocess
 import sys
+import tempfile
 import time
 import tomllib
 
@@ -152,13 +153,13 @@ class Machine:
         self.path = os.environ.get("PATH", "") if path is None else path
         self.now = time.time() if now is None else now
 
-    def run(self, argv, cwd=None, input=None):
+    def run(self, argv, cwd=None, input=None, env=None):
         """(exit status, stdout, stderr); None when the command is not found. It runs with this machine's home and
-        PATH."""
+        PATH, and `env` added."""
         exe = shutil.which(argv[0], path=self.path)
         if not exe:
             return None
-        env = dict(os.environ, HOME=self.home, PATH=self.path)
+        env = dict(os.environ, HOME=self.home, PATH=self.path, **(env or {}))
         try:
             r = subprocess.run([exe, *argv[1:]], capture_output=True, text=True, cwd=cwd, timeout=30, input=input,
                                env=env)
@@ -193,8 +194,17 @@ def version(text):
         return ()
 
 
-def install_cmd(m):
-    return shlex.quote(os.path.join(m.here, "scripts", "install.sh"))
+def with_config(m, path, cmd):
+    """cmd, given the config in use when it is not the default one: launchd and cron start a job without the shell's
+    environment, so ADMIRAL_CONFIG has to go in the command."""
+    default = os.path.join(m.home, ".config", "admiral", "config.toml")
+    if path and os.path.abspath(path) != os.path.abspath(default):
+        return f"ADMIRAL_CONFIG={shlex.quote(path)} {cmd}"
+    return cmd
+
+
+def install_cmd(m, ctx):
+    return with_config(m, ctx.get("path"), shlex.quote(os.path.join(m.here, "scripts", "install.sh")))
 
 
 def read_settings(m):
@@ -317,13 +327,13 @@ def check_python(m, T, ctx):
     except OSError:
         py = ""
     if not py:
-        return [result(WARN, T["py_unrecorded"].format(here=m.here), T["fix_install"], install_cmd(m))]
+        return [result(WARN, T["py_unrecorded"].format(here=m.here), T["fix_install"], install_cmd(m, ctx))]
     r = m.run([py, "-c", "import sys; print('%d.%d.%d' % sys.version_info[:3])"])
     if r is None or r[0]:
-        return [result(FAIL, T["py_gone"].format(py=py), T["fix_install"], install_cmd(m))]
+        return [result(FAIL, T["py_gone"].format(py=py), T["fix_install"], install_cmd(m, ctx))]
     v = r[1].strip()
     if version(v)[:2] < (3, 11):
-        return [result(FAIL, T["py_old"].format(py=py, v=v), T["fix_install"], install_cmd(m))]
+        return [result(FAIL, T["py_old"].format(py=py, v=v), T["fix_install"], install_cmd(m, ctx))]
     return [result(OK, T["py_ok"].format(v=v, py=py))]
 
 
@@ -332,10 +342,10 @@ def check_link(m, T, ctx):
     link = os.path.join(bindir, "admiral")
     out = []
     if not os.path.lexists(link):
-        out.append(result(FAIL, T["link_missing"].format(link=link), T["fix_install"], install_cmd(m)))
+        out.append(result(FAIL, T["link_missing"].format(link=link), T["fix_install"], install_cmd(m, ctx)))
     elif os.path.realpath(link) != os.path.realpath(os.path.join(m.here, "bin", "admiral")):
         out.append(result(WARN, T["link_other"].format(link=link, to=os.path.realpath(link)),
-                          T["fix_link"].format(link=link), install_cmd(m)))
+                          T["fix_link"].format(link=link), install_cmd(m, ctx)))
     else:
         out.append(result(OK, T["link_ok"].format(link=link)))
     if bindir not in m.path.split(os.pathsep):
@@ -348,7 +358,7 @@ def check_config(m, T, ctx):
     if data is None:
         return [result(FAIL, T["config_broken"].format(path=path, error=error), T["fix_config"].format(path=path))]
     if not os.path.exists(path):
-        out = [result(WARN, T["config_none"].format(path=path), T["fix_config_new"], install_cmd(m))]
+        out = [result(WARN, T["config_none"].format(path=path), T["fix_config_new"], install_cmd(m, ctx))]
     else:
         out = [result(OK, T["config_ok"].format(path=path))]
     wrong = wrong_types(data)
@@ -411,8 +421,9 @@ def check_gh(m, T, ctx):
 def check_job(m, T, ctx):
     out = []
     macos = m.platform == "darwin"
-    cron = "* * * * * " + shlex.quote(os.path.join(m.here, "scripts", "refresh.sh")).replace("%", "\\%")
-    fix, cmd = (T["fix_install"], install_cmd(m)) if macos else \
+    cron = "* * * * * " + with_config(m, ctx.get("path"), shlex.quote(os.path.join(m.here, "scripts", "refresh.sh")))
+    cron = cron.replace("%", "\\%")  # cron reads % as a newline
+    fix, cmd = (T["fix_install"], install_cmd(m, ctx)) if macos else \
         (T["fix_cron"], f"(crontab -l 2>/dev/null; printf '%s\\n' {shlex.quote(cron)}) | crontab -")
     if macos:
         r = m.run(["launchctl", "print", f"gui/{os.getuid()}/{JOB}"])
@@ -471,13 +482,19 @@ def check_statusline(m, T, ctx):
     cmd = status.get("command", "")
     if not cmd:
         return [result(FAIL, T["status_none"].format(path=path), T["fix_status"].format(path=path, line=line))]
-    exe = admiral_in(cmd)
-    if exe is None:
+    if "admiral" not in cmd.lower():  # another status line: Admiral can run it first
         return [result(FAIL, T["status_other"].format(cmd=cmd), T["fix_status_keep"].format(path=path, line=line))]
-    # run as Claude Code runs it, through the shell with the session's JSON on stdin, so quoting, ~ and $ expand
-    # as they will there; a status line only reads
-    r = m.run(["/bin/sh", "-c", cmd], input=json.dumps({"session_id": ""}))
-    if r is None or r[0] or "Admiral" not in r[1]:
+    # Whether it runs Admiral, Admiral itself says: run as Claude Code runs it, through the shell with the session's
+    # JSON on stdin, its status line leaves a mark in $ADMIRAL_PROBE, however the command reaches it (a status line
+    # only reads). One from before the mark passes as it did: run as written, drawing Admiral's line. Never kept to
+    # run first: it names Admiral.
+    exe = admiral_in(cmd)
+    with tempfile.TemporaryDirectory() as d:
+        probe = os.path.join(d, "ran")
+        r = m.run(["/bin/sh", "-c", cmd], input=json.dumps({"session_id": ""}), env={"ADMIRAL_PROBE": probe})
+        ran = os.path.exists(probe) or (exe is not None and r is not None and "Admiral" in r[1])
+    exe = exe or cmd
+    if r is None or r[0] or not ran:
         said = first_line(r[2]) or first_line(r[1]) if r else "/bin/sh"
         return [result(FAIL, T["status_gone"].format(exe=exe, error=said), T["fix_status"].format(path=path, line=line))]
     return [result(OK, T["status_ok"].format(exe=exe))]

@@ -25,10 +25,10 @@ class FakeMachine(doctor.Machine):
         super().__init__(**kw)
         self.answers, self.ran = answers, []
 
-    def run(self, argv, cwd=None, input=None):
+    def run(self, argv, cwd=None, input=None, env=None):
         self.ran.append(list(argv))
         if argv[0] == "/bin/sh":  # the status line runs for real, in the made-up home and PATH
-            return super().run(argv, cwd, input)
+            return super().run(argv, cwd, input, env)
         for prefix, answer in self.answers.items():
             if tuple(argv[:len(prefix)]) == prefix:
                 if isinstance(answer, Exception):
@@ -46,7 +46,9 @@ class Doctor(unittest.TestCase):
         self.addCleanup(shutil.rmtree, self.root)
         self.here, self.home = self.dir(self.clone), self.dir("home")
         self.repo, self.state = self.dir("code/shop"), self.dir("state")
-        exe = self.write(f"{self.clone}/bin/admiral", '#!/bin/sh\n[ "$1" = statusline ] && echo "Admiral  20 working"\n')
+        # as the real one: its status line leaves the mark doctor asks for in $ADMIRAL_PROBE
+        exe = self.write(f"{self.clone}/bin/admiral", '#!/bin/sh\n[ "$1" = statusline ] || exit 0\n'
+                         '[ -n "$ADMIRAL_PROBE" ] && : > "$ADMIRAL_PROBE"\necho "Admiral  20 working"\n')
         os.chmod(exe, 0o755)
         self.write(f"{self.clone}/.python-path", "/py/python3\n")
         os.makedirs(os.path.join(self.home, ".local", "bin"))
@@ -85,8 +87,8 @@ class Doctor(unittest.TestCase):
     def statusline(self, command):
         self.settings({"statusLine": {"type": "command", "command": command}, "autoMemoryEnabled": False})
 
-    def config(self, text):
-        self.config_path = self.write("config.toml", text)
+    def config(self, text, rel="home/.config/admiral/config.toml"):
+        self.config_path = self.write(rel, text)
 
     def board(self, age, health=(), error=""):
         path = self.write("state/board.json", json.dumps({"health": list(health)}))
@@ -219,6 +221,10 @@ class Checks(Doctor):
                         (f"/bin/echo claude-hud\n'{exe}' statusline", True),  # a newline ends a command
                         (f"/bin/echo ';' '{exe}' statusline", False),  # a quoted ; is an argument
                         ("PATH=/nonexistent admiral statusline", False),  # the PATH it runs with has no admiral
+                        (f"exec '{exe}' statusline", True),
+                        (f"env '{exe}' statusline", True),
+                        (f"/bin/sh -c \"'{exe}' statusline\"", True),
+                        (f"exec /missing/admiral statusline", False),
                         ("/bin/echo '~'; ~/.local/bin/admiral statusline", True),  # this ~ is not quoted
                         (f"'{exe}' statusline \\\n  # the line goes on\n", True)):
             with self.subTest(cmd=cmd):
@@ -226,6 +232,27 @@ class Checks(Doctor):
                 code, out = self.doctor()
                 self.assertEqual("✓ status line runs Admiral" in out, ok, out)
                 self.assertEqual(code, 0 if ok else 1)
+
+    def test_a_script_that_runs_admiral_passes_whatever_it_is_called(self):
+        script = self.write("home/bin/my-admiral-line", f"#!/bin/sh\nexec {shlex.quote(self.here)}/bin/admiral \"$@\"\n")
+        os.chmod(script, 0o755)
+        self.statusline(f"{shlex.quote(script)} statusline")
+        code, out = self.doctor()
+        self.assertIn("✓ status line runs Admiral", out)
+
+    def test_an_admiral_from_before_the_mark_still_passes_as_it_did(self):
+        old = self.write("old/bin/admiral", '#!/bin/sh\n[ "$1" = statusline ] && echo "Admiral  20 working"\n')
+        os.chmod(old, 0o755)
+        self.statusline(f"'{old}' statusline")
+        self.assertIn("✓ status line runs Admiral", self.doctor()[1])
+
+    def test_a_command_naming_admiral_that_does_not_run_it_is_never_kept_to_run_first(self):
+        # kept as [statusline] base, it would run Admiral from inside Admiral's own status line
+        self.statusline("exec /missing/admiral statusline")
+        code, out = self.doctor()
+        self.assertEqual(code, 1, out)
+        self.assertNotIn("keep the command it runs now", out)
+        self.assertIn("statusLine", out)  # the fix sets Admiral's own command instead
 
     def test_settings_of_the_wrong_shape_are_reported_and_the_rest_still_checked(self):
         for data in ('{"statusLine": "admiral statusline"}', '{"statusLine": {"command": 1}}', "[1, 2]", "{"):
@@ -331,6 +358,18 @@ class SpacedClone(Doctor):
     def test_the_cron_command_adds_one_line_cron_reads_as_the_path(self):
         refresh = os.path.join(self.here, "scripts", "refresh.sh")
         self.assertEqual(self.cron_given(), "* * * * * '" + refresh.replace("%", "\\%") + "'\n")  # % as cron needs
+
+    def test_a_config_of_its_own_goes_with_the_job_it_fixes(self):
+        # cron and launchd start the job without the shell's environment: the config's path goes in the command
+        text = open(self.config_path, encoding="utf-8").read()
+        os.remove(self.config_path)
+        self.config(text, rel="my config.toml")
+        refresh = os.path.join(self.here, "scripts", "refresh.sh")
+        line = f"* * * * * ADMIRAL_CONFIG='{self.config_path}' '{refresh}'"
+        self.assertEqual(self.cron_given(), line.replace("%", "\\%") + "\n")  # % as cron needs
+        self.platform = "darwin"
+        out = self.fails(f"no board yet at {self.state}/board.json")
+        self.assertIn(f"    $ ADMIRAL_CONFIG='{self.config_path}' {self.install()}\n", out)
 
 
 class BackslashedClone(Doctor):

@@ -2,7 +2,9 @@
 
 import json
 import os
+import plistlib
 import subprocess
+import sys
 import tempfile
 import tomllib
 import unittest
@@ -46,6 +48,20 @@ class Install(unittest.TestCase):
             self.assertIn("would record the Python", r.stdout)
             self.assertIn('"autoMemoryEnabled": false', r.stdout)  # memory left on: recommended off
             self.assertEqual(recorded(), before)  # the dry run records no Python
+
+    @unittest.skipUnless(sys.platform == "darwin", "the background job is set up on macOS only")
+    def test_a_config_of_its_own_goes_into_the_background_job(self):
+        with tempfile.TemporaryDirectory() as d:
+            home, cfg = os.path.join(d, "home"), os.path.join(d, "R&D <a>", "config.toml")
+            os.makedirs(home)
+            r = subprocess.run(["bash", os.path.join(ROOT, "scripts", "install.sh"), "--dry-run"], capture_output=True,
+                               text=True, env=dict(os.environ, HOME=home, ADMIRAL_CONFIG=cfg))
+            self.assertEqual(r.returncode, 0, r.stderr)
+            plist = r.stdout.split("and load it:", 1)[1].split("</plist>", 1)[0] + "</plist>"
+            plist = "\n".join(line[4:] for line in plist.splitlines() if line.strip())
+            job = plistlib.loads(plist.encode())
+            self.assertEqual(job["EnvironmentVariables"], {"ADMIRAL_CONFIG": cfg})
+            self.assertEqual(job["StartInterval"], 60)
 
     def test_no_memory_advice_once_it_is_off(self):
         with tempfile.TemporaryDirectory() as d:

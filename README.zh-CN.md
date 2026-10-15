@@ -216,7 +216,7 @@ claude plugin marketplace update admiral && claude plugin update admiral@admiral
 
 ## 配置
 
-`~/.config/admiral/config.toml`（或 `$ADMIRAL_CONFIG`）。每一项都可以不写。
+`~/.config/admiral/config.toml`（或 `$ADMIRAL_CONFIG`，安装脚本会把它带进后台任务）。每一项都可以不写。
 
 ```toml
 language = "zh"                        # 或 "en"

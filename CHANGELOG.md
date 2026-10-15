@@ -6,6 +6,15 @@ its cache, one copy per version, so a change to the sidebar or the playbook reac
 
 ## Unreleased
 
+**Install**
+- `admiral doctor` asks Admiral whether the status line reaches it, rather than reading the command: one that runs it
+  through `exec`, `env` or a script of your own passes, and one that names Admiral but does not run it is never
+  offered to run first, inside Admiral's own status line. A status line run that way now draws nothing, so no setting
+  can make Admiral run itself.
+- A config of your own (`ADMIRAL_CONFIG`) goes with the background job: the install script writes it into the macOS
+  job, and doctor's fixes (the install command, the cron line) carry it, since launchd and cron start the job without
+  your shell's environment.
+
 ## 0.2.5 (2026-10-15)
 
 **Board**

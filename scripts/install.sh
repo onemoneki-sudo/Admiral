@@ -58,17 +58,24 @@ else
   echo "keeping $config"
 fi
 
-# 2. The background job: `admiral board --write` every minute.
+# 2. The background job: `admiral board --write` every minute. launchd starts it without the shell's environment, so
+# a config of its own (ADMIRAL_CONFIG) goes in the job, or the job would build another board than the sessions read.
 if [ "$(uname)" = Darwin ]; then
+  env_keys=""
+  if [ -n "${ADMIRAL_CONFIG:-}" ]; then
+    xml="$(printf '%s' "$ADMIRAL_CONFIG" | sed -e 's/&/\&amp;/g' -e 's/</\&lt;/g' -e 's/>/\&gt;/g')"
+    env_keys="
+  <key>EnvironmentVariables</key><dict><key>ADMIRAL_CONFIG</key><string>$xml</string></dict>"
+  fi
   job="<?xml version=\"1.0\" encoding=\"UTF-8\"?>
 <!DOCTYPE plist PUBLIC \"-//Apple//DTD PLIST 1.0//EN\" \"http://www.apple.com/DTDs/PropertyList-1.0.dtd\">
 <plist version=\"1.0\"><dict>
   <key>Label</key><string>$label</string>
   <key>ProgramArguments</key><array><string>/bin/bash</string><string>$here/scripts/refresh.sh</string></array>
   <key>StartInterval</key><integer>60</integer>
-  <key>RunAtLoad</key><true/>
+  <key>RunAtLoad</key><true/>$env_keys
 </dict></plist>"
-  if [ $dry -eq 1 ]; then echo "would write $plist and load it"
+  if [ $dry -eq 1 ]; then echo "would write $plist and load it:"; echo "$job" | sed 's/^/    /'
   else
     mkdir -p "$(dirname "$plist")"
     printf '%s\n' "$job" > "$plist"

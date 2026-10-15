@@ -238,7 +238,8 @@ changed is in [CHANGELOG.md](CHANGELOG.md).
 
 ## Config
 
-`~/.config/admiral/config.toml` (or `$ADMIRAL_CONFIG`). Every key is optional.
+`~/.config/admiral/config.toml` (or `$ADMIRAL_CONFIG`, which the install script carries into the background job).
+Every key is optional.
 
 ```toml
 language = "en"                        # or "zh"
