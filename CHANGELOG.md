@@ -19,9 +19,18 @@ its cache, one copy per version, so a change to the sidebar or the playbook reac
   the owner's last registration speaks only for the branches it named, under its old name or its session's new one.
 - A session that finished and deregistered reads as finished in `admiral board` and its own status line, not as
   unregistered.
-- A batch whose commander was closed before its plan closes itself once every deliverable has merged and no session
-  of it runs: it leaves the status line and the sidebar rather than showing "commander not running". A batch with
-  anything unmerged, or unknown, still shows, marked as before.
+- "Merged today" is the day where you are: GitHub read the bare date as a UTC day, so east of UTC it missed the
+  morning's merges, and west of UTC it counted the evening before.
+- A deliverable merged days ago keeps counting after it falls out of the 300 most recent PRs: the board remembers
+  merged PRs of branches still in use.
+- Past the newest 100 open PRs, a draft is still a draft, and the board says their CI is not shown, rather than
+  showing none.
+- The background job and a session building the board at once no longer trip over one temporary file, which could
+  fail a refresh or leave a cache broken.
+- A batch whose commander was closed before its plan leaves the status line and the sidebar once every
+  deliverable has merged and no session of it runs, rather than showing "commander not running"; its plan stays
+  until `admiral plan close`, which the board's to-tidy list suggests. A batch with anything unmerged, or unknown,
+  still shows, marked as before.
 
 **Sidebar**
 - A session or planned PR only reported done says so, and its last milestone is drawn dim: it no longer looks merged.
