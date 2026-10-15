@@ -25,8 +25,10 @@ class FakeMachine(doctor.Machine):
         super().__init__(**kw)
         self.answers, self.ran = answers, []
 
-    def run(self, argv, cwd=None):
+    def run(self, argv, cwd=None, input=None):
         self.ran.append(list(argv))
+        if argv[0] == "/bin/sh":  # the status line runs for real, in the made-up home and PATH
+            return super().run(argv, cwd, input)
         for prefix, answer in self.answers.items():
             if tuple(argv[:len(prefix)]) == prefix:
                 if isinstance(answer, Exception):
@@ -44,7 +46,7 @@ class Doctor(unittest.TestCase):
         self.addCleanup(shutil.rmtree, self.root)
         self.here, self.home = self.dir(self.clone), self.dir("home")
         self.repo, self.state = self.dir("code/shop"), self.dir("state")
-        exe = self.write(f"{self.clone}/bin/admiral", "#!/bin/sh\n")
+        exe = self.write(f"{self.clone}/bin/admiral", '#!/bin/sh\n[ "$1" = statusline ] && echo "Admiral  20 working"\n')
         os.chmod(exe, 0o755)
         self.write(f"{self.clone}/.python-path", "/py/python3\n")
         os.makedirs(os.path.join(self.home, ".local", "bin"))
@@ -108,6 +110,18 @@ class Doctor(unittest.TestCase):
             self.assertIn("    $ " + cmd, out)
         return out
 
+    def cron_given(self):
+        """What crontab is given when the cron fix doctor prints on Linux is pasted into a shell."""
+        self.platform = "linux"
+        os.remove(os.path.join(self.state, "board.json"))
+        cmd = next(ln[6:] for ln in self.doctor()[1].splitlines() if "crontab -" in ln)
+        fake = self.dir("fakecron")  # a crontab that keeps what it is given
+        self.write("fakecron/crontab", f'#!/bin/sh\n[ "$1" = - ] && cat > {shlex.quote(fake)}/given || exit 1\n')
+        os.chmod(os.path.join(fake, "crontab"), 0o755)
+        subprocess.run(["/bin/sh", "-c", cmd], env=dict(os.environ, PATH=fake + os.pathsep + "/usr/bin:/bin"), check=True)
+        with open(os.path.join(fake, "given"), encoding="utf-8") as fh:
+            return fh.read()
+
     def install(self):
         return shlex.quote(os.path.join(self.here, "scripts", "install.sh"))
 
@@ -151,6 +165,8 @@ class Checks(Doctor):
     def test_a_board_or_an_error_file_that_cannot_be_read_is_a_failed_check(self):
         self.write("state/board.json", "{invalid")
         self.fails(f"{self.state}/board.json is there but cannot be read", "the background job writes it each minute")
+        self.write("state/board.json", "[]")
+        self.fails(f"{self.state}/board.json is there but cannot be read: not a JSON object")
         self.board(age=30)
         os.remove(os.path.join(self.state, "last-error.txt"))
         os.mkdir(os.path.join(self.state, "last-error.txt"))
@@ -173,7 +189,7 @@ class Checks(Doctor):
         refresh = shlex.quote(os.path.join(self.here, "scripts", "refresh.sh"))
         os.remove(os.path.join(self.state, "board.json"))
         out = self.fails(f"no board yet at {self.state}/board.json", "run it every minute from cron or a systemd timer")
-        self.assertIn(f"    $ (crontab -l 2>/dev/null; echo {shlex.quote('* * * * * ' + refresh)}) | crontab -", out)
+        self.assertIn(f"    $ (crontab -l 2>/dev/null; printf '%s\\n' {shlex.quote('* * * * * ' + refresh)}) | crontab -", out)
         self.assertFalse([c for c in self.machine.ran if c[0] == "launchctl"])
         self.board(age=600, error="RuntimeError: gh is not signed in\n")
         out = self.fails("board last refreshed 10 min ago")
@@ -195,6 +211,9 @@ class Checks(Doctor):
                         ("admiral statusline", True),  # on the PATH, through ~/.local/bin
                         ("/bin/echo claude-hud; /missing/admiral statusline", False),
                         ("'~/.local/bin/admiral' statusline", False),  # quoted: the shell does not expand ~
+                        ("PATH=~/.local/bin admiral statusline", True),  # this ~ the shell expands
+                        ("PATH='$PATH' admiral statusline", False),  # a PATH of the four letters $PATH
+                        ('"$HOME/.local/bin/admiral" statusline', True),
                         ("/bin/echo admiral statusline", False),
                         (f"'{exe}' board", False),
                         (f"/bin/echo claude-hud\n'{exe}' statusline", True),  # a newline ends a command
@@ -309,12 +328,16 @@ class SpacedClone(Doctor):
         self.assertIn(f"    $ '{self.here}/scripts/install.sh'\n", out)
         self.assertIn(f"    $ claude plugin marketplace add '{self.here}' && claude plugin install admiral@admiral\n", out)
 
-    def test_a_cron_line_escapes_the_percent_sign_cron_would_take(self):
-        self.platform = "linux"
-        os.remove(os.path.join(self.state, "board.json"))
-        out = self.doctor()[1]
-        line = "* * * * * '" + os.path.join(self.here, "scripts", "refresh.sh").replace("%", "\\%") + "'"
-        self.assertIn(f"echo {shlex.quote(line)}) | crontab -", out)
+    def test_the_cron_command_adds_one_line_cron_reads_as_the_path(self):
+        refresh = os.path.join(self.here, "scripts", "refresh.sh")
+        self.assertEqual(self.cron_given(), "* * * * * '" + refresh.replace("%", "\\%") + "'\n")  # % as cron needs
+
+
+class BackslashedClone(Doctor):
+    clone = "tools\\new/admiral"  # echo would read \n as a newline
+
+    def test_a_backslash_in_the_path_survives_the_cron_command(self):
+        self.assertEqual(self.cron_given(), f"* * * * * '{self.here}/scripts/refresh.sh'\n")
 
 
 class Chinese(Doctor):

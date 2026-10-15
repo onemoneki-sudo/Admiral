@@ -63,7 +63,7 @@ TEXT = phrases({
         "fix_job_error": "it failed: read {errors}; then",
         "status_ok": "status line runs Admiral ({exe})", "status_none": "no status line set in {path}",
         "status_other": "the status line does not run admiral statusline: {cmd}",
-        "status_gone": "the status line runs {exe}, which is not there",
+        "status_gone": "the status line command does not draw Admiral's line ({exe}): {error}",
         "status_shape": "statusLine in {path} is not an object with a command",
         "fix_status": "in {path} set {line}",
         "fix_status_keep": "keep the command it runs now as [statusline] base in Admiral's config (it then runs first), and in {path} set {line}",
@@ -120,7 +120,7 @@ TEXT = phrases({
         "fix_job_error": "它失败了：先看 {errors}；然后",
         "status_ok": "状态栏运行的是 Admiral（{exe}）", "status_none": "{path} 里没有设置状态栏",
         "status_other": "状态栏运行的不是 admiral statusline：{cmd}",
-        "status_gone": "状态栏运行的 {exe} 不存在",
+        "status_gone": "状态栏命令画不出 Admiral 那一行（{exe}）：{error}",
         "status_shape": "{path} 里的 statusLine 不是带 command 的对象",
         "fix_status": "在 {path} 里设置 {line}",
         "fix_status_keep": "把它现在运行的命令写进 Admiral 配置的 [statusline] base（之后会先运行它），再在 {path} 里设置 {line}",
@@ -152,13 +152,16 @@ class Machine:
         self.path = os.environ.get("PATH", "") if path is None else path
         self.now = time.time() if now is None else now
 
-    def run(self, argv, cwd=None):
-        """(exit status, stdout, stderr); None when the command is not found."""
+    def run(self, argv, cwd=None, input=None):
+        """(exit status, stdout, stderr); None when the command is not found. It runs with this machine's home and
+        PATH."""
         exe = shutil.which(argv[0], path=self.path)
         if not exe:
             return None
+        env = dict(os.environ, HOME=self.home, PATH=self.path)
         try:
-            r = subprocess.run([exe, *argv[1:]], capture_output=True, text=True, cwd=cwd, timeout=30)
+            r = subprocess.run([exe, *argv[1:]], capture_output=True, text=True, cwd=cwd, timeout=30, input=input,
+                               env=env)
         except (OSError, subprocess.TimeoutExpired) as e:
             return 1, "", str(e)
         return r.returncode, r.stdout, r.stderr
@@ -296,32 +299,15 @@ def simple_commands(cmd):
 
 
 def admiral_in(cmd):
-    """(the program a status line command runs as `admiral statusline`, whether it began quoted, the VAR=value set
-    for it), or None: the first word of one of its simple commands, past any assignment, named admiral and
-    followed by statusline."""
+    """The program a status line command runs as `admiral statusline`, as written, or None: the first word of one
+    of its simple commands, past any assignment, named admiral and followed by statusline. Whether it runs, the
+    shell itself says (check_statusline)."""
     for words in simple_commands(cmd) or []:
-        env = {}
         while words and not words[0][1] and ASSIGNMENT.match(words[0][0]):
-            k, v = words[0][0].split("=", 1)
-            env[k], words = v, words[1:]
+            words = words[1:]
         if len(words) >= 2 and os.path.basename(words[0][0]) == "admiral" and words[1][0] == "statusline":
-            return words[0][0], words[0][1], env
+            return words[0][0]
     return None
-
-
-def runnable(exe, quoted, env, m):
-    """Whether the shell would find `exe`: a path as written (a ~ it began with expands only unquoted), else a name
-    on the PATH the command sets for it, or on the PATH here."""
-    path = env.get("PATH", m.path).replace("${PATH}", m.path).replace("$PATH", m.path)
-    if "$" in path:  # an expansion only the shell can make: the PATH here stands in
-        path = m.path
-    if "/" not in exe:
-        return bool(shutil.which(exe, path=path))
-    if exe.startswith("~"):
-        if quoted or not (exe == "~" or exe.startswith("~/")):
-            return False
-        exe = m.home + exe[1:]
-    return os.path.isfile(exe) and os.access(exe, os.X_OK)
 
 
 def check_python(m, T, ctx):
@@ -427,7 +413,7 @@ def check_job(m, T, ctx):
     macos = m.platform == "darwin"
     cron = "* * * * * " + shlex.quote(os.path.join(m.here, "scripts", "refresh.sh")).replace("%", "\\%")
     fix, cmd = (T["fix_install"], install_cmd(m)) if macos else \
-        (T["fix_cron"], f"(crontab -l 2>/dev/null; echo {shlex.quote(cron)}) | crontab -")
+        (T["fix_cron"], f"(crontab -l 2>/dev/null; printf '%s\\n' {shlex.quote(cron)}) | crontab -")
     if macos:
         r = m.run(["launchctl", "print", f"gui/{os.getuid()}/{JOB}"])
         out.append(result(OK, T["job_ok"].format(job=JOB)) if r is not None and not r[0]
@@ -450,7 +436,8 @@ def check_job(m, T, ctx):
         return out
     try:
         with open(board, encoding="utf-8") as fh:
-            json.load(fh)
+            if not isinstance(json.load(fh), dict):
+                raise ValueError("not a JSON object")
     except (OSError, ValueError) as e:
         out.append(result(FAIL, T["unreadable"].format(path=board, error=first_line(str(e)) or type(e).__name__),
                           T["fix_unreadable"]))
@@ -484,12 +471,15 @@ def check_statusline(m, T, ctx):
     cmd = status.get("command", "")
     if not cmd:
         return [result(FAIL, T["status_none"].format(path=path), T["fix_status"].format(path=path, line=line))]
-    found = admiral_in(cmd)
-    if found is None:
+    exe = admiral_in(cmd)
+    if exe is None:
         return [result(FAIL, T["status_other"].format(cmd=cmd), T["fix_status_keep"].format(path=path, line=line))]
-    exe, quoted, env = found
-    if not runnable(exe, quoted, env, m):
-        return [result(FAIL, T["status_gone"].format(exe=exe), T["fix_status"].format(path=path, line=line))]
+    # run as Claude Code runs it, through the shell with the session's JSON on stdin, so quoting, ~ and $ expand
+    # as they will there; a status line only reads
+    r = m.run(["/bin/sh", "-c", cmd], input=json.dumps({"session_id": ""}))
+    if r is None or r[0] or "Admiral" not in r[1]:
+        said = first_line(r[2]) or first_line(r[1]) if r else "/bin/sh"
+        return [result(FAIL, T["status_gone"].format(exe=exe, error=said), T["fix_status"].format(path=path, line=line))]
     return [result(OK, T["status_ok"].format(exe=exe))]
 
 
@@ -537,8 +527,11 @@ def check_health(m, T, ctx):
         return []
     try:
         with open(cfg.sub("board.json"), encoding="utf-8") as fh:
-            health = json.load(fh).get("health") or []
-    except (OSError, ValueError, AttributeError):
+            b = json.load(fh)
+    except (OSError, ValueError):
+        return []  # check_job reports a board it cannot read
+    health = b.get("health") if isinstance(b, dict) else None
+    if not isinstance(health, list):
         return []
     return [result(WARN, T["health"].format(h=h), T["fix_health"], f"git -C {shlex.quote(m.here)} pull")
             for h in health]
