@@ -39,7 +39,8 @@ decide whether it works:
   the ones only you can make, it gathers and brings to you together, each with options and a recommendation. You
   decide in a handful of commanders, not across fifty sessions.
 
-All of it inside Claude Code, without asking any session anything and without spending a single model token.
+Admiral shows all of it inside Claude Code without asking any session anything, and spends no model tokens doing so
+([why](#why-it-spends-no-tokens)).
 
 ## Who it's for
 
@@ -267,6 +268,29 @@ admiral where                                   the state directory
   background job, the `~/.local/bin/admiral` link and `.python-path` in the clone.
 - **Sends**: only the `gh` calls to GitHub, as you, listing PRs and checks. No model is called and nothing is uploaded.
 
+## Why it spends no tokens
+
+A model charges tokens for the text it reads and writes. Admiral sends no text to any model, so building and showing
+the board costs none:
+
+- **There is no model in it.** Admiral is Python's standard library and the `gh` CLI: no API key, no model client, no
+  `claude -p`. The background job reads files and counts; no step of it asks a model anything. It calls out only to
+  `gh`, `git` and `ps`, and reaches the network only through `gh` (`admiral/github.py`).
+- **It reads instead of asking.** Claude Code already writes every session's registry entry and transcript to
+  `~/.claude` as it works. Asking a session how it is doing would take one of its turns, and a turn costs tokens;
+  reading the file it has already written costs nothing, and the session never notices.
+- **What it shows stays on your screen.** Claude Code runs the status line command and draws its output under the
+  prompt; the plugin draws the sidebar from the board file. Neither is put into any conversation, so no model reads
+  them.
+
+What does take tokens is your sessions' own work with Admiral, and it is small:
+
+- **The playbook.** It is instructions for your sessions, so it sits in their context like any rules: the six skill
+  descriptions, about 2 KB in all, in every session, and a skill's full text, 3 to 11 KB, once a session opens it.
+- **A few commands.** Registering (`admiral register`), taking a lock or a commander reading `board.md` is an ordinary
+  command, and the session reads its few lines of output.
+- **`/admiral`** leaves one line in the conversation, saying the sidebar opened or closed.
+
 ## Why sessions, not subagents
 
 Subagents are good at a bounded job inside one session: search the code, review a diff, report back. A deliverable
@@ -319,8 +343,9 @@ Status: early, maintained on a best-effort basis.
 
 ## FAQ
 
-**Does it cost anything?** No. Admiral is free (MIT) and calls no model, so it spends none of your tokens. Its only
-traffic is `gh` asking GitHub for your PRs and checks, under a tenth of GitHub's hourly allowance.
+**Does it cost anything?** No. Admiral is free (MIT) and calls no model, so the board spends none of your tokens
+([why](#why-it-spends-no-tokens)). Its only traffic is `gh` asking GitHub for your PRs and checks, under a tenth of
+GitHub's hourly allowance.
 
 **Does my code or data leave my machine?** No. It reads Claude Code's files, `ps` and `git` locally, and sends nothing
 but those `gh` calls, as you. See [What it reads](#what-it-reads-and-where-data-goes).

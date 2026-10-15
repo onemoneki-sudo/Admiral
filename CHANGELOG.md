@@ -6,6 +6,9 @@ folder is read from it, but one installed from a repository is updated by Claude
 
 ## Unreleased
 
+**Docs**
+- The README says why the board spends no model tokens, and what in your sessions does.
+
 ## 0.2.1 (2026-10-15)
 
 **Playbook**
