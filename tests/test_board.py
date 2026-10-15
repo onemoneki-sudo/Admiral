@@ -390,6 +390,23 @@ class PutAway(World):
         self.assertEqual(sorted(self.kept(None)), ["w1", "w2"])
         self.assertEqual(len(os.listdir(os.path.join(self.root, "state", "registry-archive"))), 1)
 
+    def test_one_its_session_made_is_said_nothing_of_once_that_session_ended(self):
+        from admiral import registry
+        self.session(4, "keeper")
+        self.register("worker", branch="feat/a")
+        reg = registry.read_json(registry.reg_path(self.cfg, "worker"))
+        os.remove(registry.reg_path(self.cfg, "worker"))
+        registry.write_json(registry.session_path(self.cfg, "s9"), dict(reg, sessionId="s9"))
+        self.prs = {"feat/a": pr(1, "MERGED")}
+        self.assertFalse([h for h in self.build()["hints"] if "worker" in h])
+
+    def test_a_lock_held_under_a_name_with_a_space_keeps_it(self):
+        self.session(4, "keeper")
+        self.register("worker two", branch="feat/a")
+        self.prs = {"feat/a": pr(1, "MERGED")}
+        self.lock("heavy", "worker two")
+        self.assertTrue([h for h in self.build()["hints"] if "has ended: worker two" in h])
+
     def test_a_worktree_left_keeps_it(self):
         wt = self.root  # still there
         b = self.ended_with(worktree=wt)

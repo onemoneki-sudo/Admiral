@@ -596,7 +596,7 @@ def build(cfg, use_gh=True, now=None, starts=sessions.proc_starts, fetch=github.
             bs, wt, names = branches_of(r.get("branch")), first(r.get("worktree")), registry.names_of(r)
             if gh_ok and bs and all((prs.get(b) or {}).get("state") == "MERGED" for b in bs) \
                     and not (wt and os.path.isdir(wt)) \
-                    and not any(who.split(" ")[0] in names or who in names for who in locks.values()):
+                    and not any(who == n or who.startswith(n + " ") for who in locks.values() for n in names):
                 over.append(r)
                 continue
             hints.append(T["h_gone"].format(who=r["who"]))
