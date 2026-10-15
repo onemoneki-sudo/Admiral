@@ -788,6 +788,72 @@ class Evidence(World):
         self.assertTrue(self.status_lines(b, "s3")[1][-1].startswith("this session  ▰▰▰▰▰ reported done"))
 
 
+class FinishedBatches(World):
+    """A batch whose commander has gone: over once every deliverable merged and nobody of it runs, else still shown."""
+
+    def setUp(self):
+        super().setUp()
+        self.session(4, "elsewhere")  # some session runs, so the board is built and GitHub asked
+
+    def gone(self, *prs_by_branch):
+        self.plan("Commander-Gone", *[(b, b, "worker") for b, _ in prs_by_branch])
+        self.prs = {b: p for b, p in prs_by_branch if p}
+        return self.build()
+
+    def lead_of(self, b):
+        return next((g for g in b["groups"] if g["lead"] == "Commander-Gone"), None)
+
+    def test_a_batch_all_merged_with_nobody_running_closes_and_leaves_the_board(self):
+        from admiral import registry, statusline
+        import re
+        b = self.gone(("feat/a", pr(1, "MERGED")), ("feat/b", pr(2, "MERGED")))
+        self.assertIsNone(self.lead_of(b))
+        self.assertEqual(registry.plans(self.cfg), [])
+        self.assertEqual(len(os.listdir(self.cfg.sub("batches", "closed"))), 1)  # archived, as plan close does
+        board.write(self.cfg, b)
+        shown = " ".join(re.sub(r"\x1b\[[0-9;]*m", "", ln)
+                         for ln in statusline.admiral_lines(self.cfg.sub("board.json"), "s4", now=NOW))
+        self.assertNotIn("Gone", shown)
+        self.assertNotIn("commander not running", shown)
+        self.assertNotIn("Commander-Gone", board.markdown(b))
+
+    def test_a_batch_with_anything_unmerged_stays_marked_commander_not_running(self):
+        for second in (pr(2, "OPEN"), pr(2, "CLOSED"), None):
+            with self.subTest(second=second):
+                self.tearDown()
+                self.setUp()
+                g = self.lead_of(self.gone(("feat/a", pr(1, "MERGED")), ("feat/b", second)))
+                self.assertIsNotNone(g)
+                self.assertIsNone(g["leadRow"])
+
+    def test_a_deliverable_only_reported_done_keeps_the_batch(self):
+        self.register("worker", branch="feat/b", phase="done")  # its session has closed; no PR
+        self.assertIsNotNone(self.lead_of(self.gone(("feat/a", pr(1, "MERGED")), ("feat/b", None))))
+
+    def test_with_github_down_the_batch_is_kept(self):
+        self.gh_down = True
+        self.assertIsNotNone(self.lead_of(self.gone(("feat/a", pr(1, "MERGED")))))
+
+    def test_a_running_commander_closes_its_own_plan(self):
+        self.session(1, "Commander-Gone")
+        g = self.lead_of(self.gone(("feat/a", pr(1, "MERGED"))))
+        self.assertIsNotNone(g)
+        self.assertEqual(g["leadRow"]["close"], "wrapup")  # "plan all merged: close the plan and report done"
+
+    def test_a_member_still_running_keeps_the_batch(self):
+        self.session(3, "worker")
+        self.register("worker", branch="feat/a", lead="Commander-Gone")
+        g = self.lead_of(self.gone(("feat/a", pr(1, "MERGED"))))
+        self.assertEqual([m["name"] for m in g["members"]], ["worker"])
+
+    def test_two_builds_closing_the_same_plan_at_once_do_not_fail(self):
+        from unittest import mock
+        from admiral import registry
+        with mock.patch.object(registry, "plan_close", side_effect=FileNotFoundError("closed by the other")):
+            b = self.gone(("feat/a", pr(1, "MERGED")))
+        self.assertIsNone(self.lead_of(b))
+
+
 class Sources(World):
     def test_no_session_means_no_github_call(self):
         self.register("gone", branch="feat/a")

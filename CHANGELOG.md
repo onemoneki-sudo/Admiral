@@ -20,6 +20,10 @@ its cache, one copy per version, so a change to the sidebar or the playbook reac
 - A session that finished and deregistered reads as finished in `admiral board` and its own status line, not as
   unregistered.
 
+- A batch whose commander was closed before its plan closes itself once every deliverable has merged and no session
+  of it runs: it leaves the status line and the sidebar rather than showing "commander not running". A batch with
+  anything unmerged, or unknown, still shows, marked as before.
+
 **Sidebar**
 - A session or planned PR only reported done says so, and its last milestone is drawn dim: it no longer looks merged.
 

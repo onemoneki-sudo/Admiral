@@ -435,10 +435,7 @@ def build(cfg, use_gh=True, now=None, starts=sessions.proc_starts, fetch=github.
             mem_by_who[n] = m
     for p in plans:
         lead = alias.get(p["lead"], p["lead"])
-        g = next((g for g in groups if g["lead"] == lead), None)
-        if g is None:  # the commander is not running; its plan still counts
-            g = {"lead": lead, "leadRow": None, "members": []}
-            groups.append(g)
+        g = next((g for g in groups if g["lead"] == lead), None)  # None: neither the commander nor a member runs
         items = []
         for it in p["items"]:
             pr = prs.get(it["branch"])
@@ -450,6 +447,17 @@ def build(cfg, use_gh=True, now=None, starts=sessions.proc_starts, fetch=github.
             items.append({"branch": it["branch"], "title": it.get("title", ""), "owner": it.get("owner", ""),
                           "stage": st, "reportedDone": st == 5 and not merged(pr),
                           "pr": github.pr_label(pr, cfg.language), "ci": ci_text, "ciLevel": ci_level})
+        if g is None and items and all((i["pr"] or {}).get("state") == "MERGED" for i in items):
+            # the batch is over: every deliverable merged, and nobody of it runs. Its plan is closed for it, as the
+            # commander would have (`admiral plan close`), rather than shown with its commander not running
+            try:
+                registry.plan_close(cfg, p["lead"])
+            except OSError:  # closed by another build at the same moment
+                pass
+            continue
+        if g is None:  # the commander is not running and the batch is not over: its plan still counts
+            g = {"lead": lead, "leadRow": None, "members": []}
+            groups.append(g)
         g["batch"] = {"items": items}
 
     for g in groups:

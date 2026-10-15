@@ -299,6 +299,9 @@ admiral plan add   --lead "<commander>" --branch <branch> --title "<deliverable>
 admiral plan close --lead "<commander>"
 ```
 
+A commander closes its plan when the batch is over. If it was closed first, the board closes the plan for it once every
+deliverable has merged and no session of the batch runs; until then the batch shows, marked commander not running.
+
 **Commands.**
 
 ```
