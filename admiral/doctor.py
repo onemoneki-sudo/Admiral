@@ -57,7 +57,9 @@ TEXT = phrases({
         "board_stale": "board last refreshed {age} ago: the background job is not running",
         "board_error": "the last refresh wrote an error: {error}",
         "fix_board_error": "read {errors}, the last refresh's own words, and check that {state} is writable",
-        "fix_cron": "run it every minute from cron or a systemd timer; for cron, add this line (crontab -e): * * * * * {refresh}",
+        "fix_cron": "run it every minute from cron or a systemd timer; for cron, this adds the line",
+        "unreadable": "{path} is there but cannot be read: {error}",
+        "fix_unreadable": "the background job writes it each minute: remove it, and it is written afresh",
         "fix_job_error": "it failed: read {errors}; then",
         "status_ok": "status line runs Admiral ({exe})", "status_none": "no status line set in {path}",
         "status_other": "the status line does not run admiral statusline: {cmd}",
@@ -112,7 +114,9 @@ TEXT = phrases({
         "board_stale": "看板上次刷新在 {age}前：后台任务没在运行",
         "board_error": "上次刷新留下了错误：{error}",
         "fix_board_error": "查看 {errors}（上次刷新自己的输出），并确认 {state} 可写",
-        "fix_cron": "用 cron 或 systemd 定时器每分钟运行一次；用 cron 的话，加上这一行（crontab -e）：* * * * * {refresh}",
+        "fix_cron": "用 cron 或 systemd 定时器每分钟运行一次；用 cron 的话，下面这条命令会加上那一行",
+        "unreadable": "{path} 存在但读不了：{error}",
+        "fix_unreadable": "它由后台任务每分钟写一次：删掉它，下次会重新写",
         "fix_job_error": "它失败了：先看 {errors}；然后",
         "status_ok": "状态栏运行的是 Admiral（{exe}）", "status_none": "{path} 里没有设置状态栏",
         "status_other": "状态栏运行的不是 admiral statusline：{cmd}",
@@ -210,7 +214,7 @@ def read_toml(path):
             return tomllib.load(fh), ""
     except FileNotFoundError:
         return {}, ""
-    except (OSError, tomllib.TOMLDecodeError) as e:
+    except (OSError, ValueError) as e:  # TOMLDecodeError and UnicodeDecodeError are ValueErrors
         return None, first_line(str(e)) or type(e).__name__
 
 
@@ -246,38 +250,77 @@ def matches_a_directory(prefix):
 
 
 ASSIGNMENT = re.compile(r"[A-Za-z_][A-Za-z0-9_]*=")
+SEPARATORS = ";&|()\n"
+
+
+def simple_commands(cmd):
+    """A status line command split as the shell splits it: simple commands, each a list of (word, whether the word
+    began quoted). Quotes, backslashes, comments and newlines count as the shell counts them; None when a quote does
+    not close. Expansions ($, backquotes) are left as written."""
+    commands, words, word, quoted, inside, i = [], [], "", False, False, 0
+    while i < len(cmd):
+        ch = cmd[i]
+        if ch in "'\"":
+            j = i + 1
+            while j < len(cmd) and cmd[j] != ch:
+                j += 2 if ch == '"' and cmd[j] == "\\" else 1
+            if j >= len(cmd):
+                return None
+            text = cmd[i + 1:j] if ch == "'" else re.sub(r'\\(["\\$`])', r"\1", cmd[i + 1:j])
+            if not inside:
+                quoted, inside = True, True
+            word, i = word + text, j + 1
+        elif ch == "\\" and i + 1 < len(cmd):
+            if cmd[i + 1] != "\n":  # a backslash before a newline joins the lines
+                if not inside:
+                    quoted, inside = True, True
+                word += cmd[i + 1]
+            i += 2
+        elif ch.isspace() or ch in SEPARATORS:
+            if inside:
+                words.append((word, quoted))
+                word, inside = "", False
+            if ch in SEPARATORS and words:
+                commands.append(words)
+                words = []
+            i += 1
+        elif ch == "#" and not inside:  # a comment, to the end of the line
+            i = cmd.find("\n", i) if "\n" in cmd[i:] else len(cmd)
+        else:
+            if not inside:
+                quoted, inside = False, True
+            word, i = word + ch, i + 1
+    if inside:
+        words.append((word, quoted))
+    return commands + [words] if words else commands
 
 
 def admiral_in(cmd):
-    """The program a status line command runs as `admiral statusline`, as the shell would see it, or None: the first
-    word of one of its simple commands, past any VAR=value, named admiral and followed by statusline."""
-    try:
-        lex = shlex.shlex(cmd, posix=True, punctuation_chars=True)
-        lex.whitespace_split = True
-        tokens = list(lex)
-    except ValueError:
-        return None
-    words = []
-    for tok in tokens + [";"]:
-        if tok and set(tok) <= set(";&|()"):
-            while words and ASSIGNMENT.match(words[0]):
-                words.pop(0)
-            if len(words) >= 2 and os.path.basename(words[0]) == "admiral" and words[1] == "statusline":
-                return words[0]
-            words = []
-        else:
-            words.append(tok)
+    """(the program a status line command runs as `admiral statusline`, whether it began quoted, the VAR=value set
+    for it), or None: the first word of one of its simple commands, past any assignment, named admiral and
+    followed by statusline."""
+    for words in simple_commands(cmd) or []:
+        env = {}
+        while words and not words[0][1] and ASSIGNMENT.match(words[0][0]):
+            k, v = words[0][0].split("=", 1)
+            env[k], words = v, words[1:]
+        if len(words) >= 2 and os.path.basename(words[0][0]) == "admiral" and words[1][0] == "statusline":
+            return words[0][0], words[0][1], env
     return None
 
 
-def runnable(exe, cmd, m):
-    """Whether the shell would find `exe`: a path as written (a quoted ~ is not expanded), else a name on the PATH."""
+def runnable(exe, quoted, env, m):
+    """Whether the shell would find `exe`: a path as written (a ~ it began with expands only unquoted), else a name
+    on the PATH the command sets for it, or on the PATH here."""
+    path = env.get("PATH", m.path).replace("${PATH}", m.path).replace("$PATH", m.path)
+    if "$" in path:  # an expansion only the shell can make: the PATH here stands in
+        path = m.path
     if "/" not in exe:
-        return bool(shutil.which(exe, path=m.path))
+        return bool(shutil.which(exe, path=path))
     if exe.startswith("~"):
-        if re.search(r"['\"]~", cmd):
+        if quoted or not (exe == "~" or exe.startswith("~/")):
             return False
-        exe = os.path.expanduser(exe)
+        exe = m.home + exe[1:]
     return os.path.isfile(exe) and os.access(exe, os.X_OK)
 
 
@@ -350,7 +393,9 @@ def check_config(m, T, ctx):
     return out
 
 
-GH_AUTH = re.compile(r"auth login|bad credentials|http 401|authenticat|token", re.I)
+GH_ACCESS = re.compile(r"not accessible|http 403|forbidden|could not resolve to a repository|http 404", re.I)
+GH_AUTH = re.compile(r"auth login|bad credentials|http 401|authentication (required|failed)|not logged in|"
+                     r"token (is )?(invalid|expired)", re.I)
 GH_NETWORK = re.compile(r"error connecting|could not resolve host|no such host|dial tcp|timed? ?out|unreachable|"
                         r"proxy|tls handshake|connection (refused|reset)", re.I)
 
@@ -365,7 +410,9 @@ def check_gh(m, T, ctx):
     if r[0]:
         said = r[2] + "\n" + r[1]
         error = first_line(r[2]) or first_line(r[1])
-        if GH_AUTH.search(said):
+        if GH_ACCESS.search(said):
+            fix, cmd = T["fix_gh_access"], f"cd {shlex.quote(cfg.repo_dir)} && gh repo view"
+        elif GH_AUTH.search(said):
             fix, cmd = T["fix_gh_login"], "gh auth login"
         elif GH_NETWORK.search(said):
             fix, cmd = T["fix_gh_network"], ""
@@ -378,8 +425,9 @@ def check_gh(m, T, ctx):
 def check_job(m, T, ctx):
     out = []
     macos = m.platform == "darwin"
-    refresh = shlex.quote(os.path.join(m.here, "scripts", "refresh.sh"))
-    fix, cmd = (T["fix_install"], install_cmd(m)) if macos else (T["fix_cron"].format(refresh=refresh), "")
+    cron = "* * * * * " + shlex.quote(os.path.join(m.here, "scripts", "refresh.sh")).replace("%", "\\%")
+    fix, cmd = (T["fix_install"], install_cmd(m)) if macos else \
+        (T["fix_cron"], f"(crontab -l 2>/dev/null; echo {shlex.quote(cron)}) | crontab -")
     if macos:
         r = m.run(["launchctl", "print", f"gui/{os.getuid()}/{JOB}"])
         out.append(result(OK, T["job_ok"].format(job=JOB)) if r is not None and not r[0]
@@ -391,17 +439,28 @@ def check_job(m, T, ctx):
     try:
         with open(errors, encoding="utf-8") as fh:
             error = [ln.strip() for ln in fh if ln.strip()]
-    except OSError:
+    except FileNotFoundError:
+        error = []
+    except (OSError, ValueError) as e:
+        out.append(result(FAIL, T["unreadable"].format(path=errors, error=first_line(str(e)) or type(e).__name__),
+                          T["fix_unreadable"]))
         error = []
     if not os.path.exists(board):
         out.append(result(FAIL, T["board_none"].format(path=board), fix, cmd))
-    else:
-        age = m.now - os.path.getmtime(board)
-        if age > STALE_S:
-            why = T["fix_job_error"].format(errors=errors) + " " if error else ""
-            out.append(result(FAIL, T["board_stale"].format(age=ago(age, cfg.language)), why + fix, cmd))
-            return out
-        out.append(result(OK, T["board_ok"].format(age=ago(age, cfg.language))))
+        return out
+    try:
+        with open(board, encoding="utf-8") as fh:
+            json.load(fh)
+    except (OSError, ValueError) as e:
+        out.append(result(FAIL, T["unreadable"].format(path=board, error=first_line(str(e)) or type(e).__name__),
+                          T["fix_unreadable"]))
+        return out
+    age = m.now - os.path.getmtime(board)
+    if age > STALE_S:
+        why = T["fix_job_error"].format(errors=errors) + " " if error else ""
+        out.append(result(FAIL, T["board_stale"].format(age=ago(age, cfg.language)), why + fix, cmd))
+        return out
+    out.append(result(OK, T["board_ok"].format(age=ago(age, cfg.language))))
     if error:
         out.append(result(WARN, T["board_error"].format(error=error[-1][:160]),
                           T["fix_board_error"].format(errors=errors, state=cfg.state_dir)))
@@ -425,10 +484,11 @@ def check_statusline(m, T, ctx):
     cmd = status.get("command", "")
     if not cmd:
         return [result(FAIL, T["status_none"].format(path=path), T["fix_status"].format(path=path, line=line))]
-    exe = admiral_in(cmd)
-    if exe is None:
+    found = admiral_in(cmd)
+    if found is None:
         return [result(FAIL, T["status_other"].format(cmd=cmd), T["fix_status_keep"].format(path=path, line=line))]
-    if not runnable(exe, cmd, m):
+    exe, quoted, env = found
+    if not runnable(exe, quoted, env, m):
         return [result(FAIL, T["status_gone"].format(exe=exe), T["fix_status"].format(path=path, line=line))]
     return [result(OK, T["status_ok"].format(exe=exe))]
 
@@ -442,7 +502,7 @@ def check_plugin(m, T, ctx):
     except ValueError:
         plugins = None
     if not isinstance(plugins, list):
-        return [result(WARN, T["plugin_unread"].format(error=first_line(r[2]) or first_line(r[1])),
+        return [result(FAIL, T["plugin_unread"].format(error=first_line(r[2]) or first_line(r[1])),
                        T["fix_claude_update"], "claude update")]
     p = next((p for p in plugins if isinstance(p, dict) and p.get("id") == "admiral@admiral"), None)
     if p is None:
@@ -465,7 +525,7 @@ def check_claude(m, T, ctx):
     if r is None:
         return []  # check_plugin has said Claude Code is missing
     if r[0]:
-        return [result(WARN, T["claude_version_failed"].format(error=first_line(r[2]) or first_line(r[1])),
+        return [result(FAIL, T["claude_version_failed"].format(error=first_line(r[2]) or first_line(r[1])),
                        T["fix_claude_update"], "claude update"),
                 result(NOTE, T["claude_note"].format(v="?"))]
     return [result(NOTE, T["claude_note"].format(v=r[1].split()[0] if r[1].split() else "?"))]

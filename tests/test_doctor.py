@@ -129,6 +129,9 @@ class Checks(Doctor):
                                ("HTTP 401: Bad credentials (https://api.github.com/graphql)", "sign gh in again",
                                 "gh auth login"),
                                ("error connecting to api.github.com", "check the network or the proxy", None),
+                               ("GraphQL: Resource not accessible by personal access token (repository)",
+                                "check that your gh account can read this repository",
+                                f"cd {shlex.quote(self.repo)} && gh repo view"),
                                ("GraphQL: Could not resolve to a Repository with the name 'acme/shop'.",
                                 "check that your gh account can read this repository",
                                 f"cd {shlex.quote(self.repo)} && gh repo view")):
@@ -145,6 +148,20 @@ class Checks(Doctor):
         out = self.fails("board last refreshed 10 min ago: the background job is not running",
                          f"it failed: read {self.state}/last-error.txt; then run the install script again")
 
+    def test_a_board_or_an_error_file_that_cannot_be_read_is_a_failed_check(self):
+        self.write("state/board.json", "{invalid")
+        self.fails(f"{self.state}/board.json is there but cannot be read", "the background job writes it each minute")
+        self.board(age=30)
+        os.remove(os.path.join(self.state, "last-error.txt"))
+        os.mkdir(os.path.join(self.state, "last-error.txt"))
+        self.fails(f"{self.state}/last-error.txt is there but cannot be read")
+
+    def test_a_config_that_is_not_utf8_is_reported_and_the_rest_still_checked(self):
+        with open(self.config_path, "wb") as fh:
+            fh.write(b'language = "zh"\n#\xff\n')
+        out = self.fails(f"config {self.config_path} does not load")
+        self.assertIn("✓ plugin admiral@admiral", out)
+
     def test_an_error_the_last_refresh_left_says_what_to_do(self):
         self.board(age=30, error="PermissionError: cannot write board\n")
         code, out = self.doctor()
@@ -156,7 +173,7 @@ class Checks(Doctor):
         refresh = shlex.quote(os.path.join(self.here, "scripts", "refresh.sh"))
         os.remove(os.path.join(self.state, "board.json"))
         out = self.fails(f"no board yet at {self.state}/board.json", "run it every minute from cron or a systemd timer")
-        self.assertIn(f"* * * * * {refresh}", out)
+        self.assertIn(f"    $ (crontab -l 2>/dev/null; echo {shlex.quote('* * * * * ' + refresh)}) | crontab -", out)
         self.assertFalse([c for c in self.machine.ran if c[0] == "launchctl"])
         self.board(age=600, error="RuntimeError: gh is not signed in\n")
         out = self.fails("board last refreshed 10 min ago")
@@ -179,7 +196,12 @@ class Checks(Doctor):
                         ("/bin/echo claude-hud; /missing/admiral statusline", False),
                         ("'~/.local/bin/admiral' statusline", False),  # quoted: the shell does not expand ~
                         ("/bin/echo admiral statusline", False),
-                        (f"'{exe}' board", False)):
+                        (f"'{exe}' board", False),
+                        (f"/bin/echo claude-hud\n'{exe}' statusline", True),  # a newline ends a command
+                        (f"/bin/echo ';' '{exe}' statusline", False),  # a quoted ; is an argument
+                        ("PATH=/nonexistent admiral statusline", False),  # the PATH it runs with has no admiral
+                        ("/bin/echo '~'; ~/.local/bin/admiral statusline", True),  # this ~ is not quoted
+                        (f"'{exe}' statusline \\\n  # the line goes on\n", True)):
             with self.subTest(cmd=cmd):
                 self.statusline(cmd)
                 code, out = self.doctor()
@@ -210,16 +232,16 @@ class Checks(Doctor):
         self.assertIn(f"! plugin admiral@admiral is 0.1.0, this clone is {__version__}", out)
         self.assertIn("    $ claude plugin marketplace update admiral && claude plugin update admiral@admiral\n", out)
 
-    def test_a_plugin_list_that_fails_says_what_to_do(self):
-        self.answers[("claude", "plugin", "list")] = (1, "", "error: unknown option '--json'")
-        code, out = self.doctor()
-        self.assertIn("! claude plugin list failed: error: unknown option '--json'", out)
-        self.assertIn("    fix: update Claude Code\n    $ claude update\n", out)
+    def test_a_plugin_list_that_fails_or_does_not_parse_is_a_failed_check(self):
+        for answer, said in (((1, "", "error: unknown option '--json'"), "error: unknown option '--json'"),
+                             ((0, "{invalid", ""), "{invalid")):
+            with self.subTest(answer=answer):
+                self.answers[("claude", "plugin", "list")] = answer
+                out = self.fails(f"claude plugin list failed: {said}", "update Claude Code", "claude update")
 
     def test_claude_code_missing_or_its_version_unread(self):
         self.answers[("claude", "--version")] = (1, "", "segfault")
-        code, out = self.doctor()
-        self.assertIn("! claude --version failed: segfault", out)
+        out = self.fails("claude --version failed: segfault", "update Claude Code", "claude update")
         self.assertIn("· Claude Code ?: the sidebar needs plugin function hooks", out)
         del self.answers[("claude", "plugin", "list")], self.answers[("claude", "--version")]
         self.fails("Claude Code (claude) is not on the PATH")
@@ -278,7 +300,7 @@ class Checks(Doctor):
 
 
 class SpacedClone(Doctor):
-    clone = "my tools/admiral"
+    clone = "my tools 100%/admiral"
 
     def test_commands_quote_a_path_with_a_space(self):
         self.answers[("launchctl",)] = (113, "", "")
@@ -286,6 +308,13 @@ class SpacedClone(Doctor):
         out = self.doctor()[1]
         self.assertIn(f"    $ '{self.here}/scripts/install.sh'\n", out)
         self.assertIn(f"    $ claude plugin marketplace add '{self.here}' && claude plugin install admiral@admiral\n", out)
+
+    def test_a_cron_line_escapes_the_percent_sign_cron_would_take(self):
+        self.platform = "linux"
+        os.remove(os.path.join(self.state, "board.json"))
+        out = self.doctor()[1]
+        line = "* * * * * '" + os.path.join(self.here, "scripts", "refresh.sh").replace("%", "\\%") + "'"
+        self.assertIn(f"echo {shlex.quote(line)}) | crontab -", out)
 
 
 class Chinese(Doctor):
@@ -312,8 +341,10 @@ class Command(unittest.TestCase):
         self.addCleanup(shutil.rmtree, d)
         with open(os.path.join(d, "config.toml"), "w") as fh:
             fh.write("language = \n")
+        os.mkdir(os.path.join(d, "bin"))  # an empty PATH: no gh, claude or launchctl of the real machine runs
         r = subprocess.run([sys.executable, "-m", "admiral", "doctor"], capture_output=True, text=True,
-                           env=dict(os.environ, ADMIRAL_CONFIG=os.path.join(d, "config.toml"), PYTHONPATH=ROOT))
+                           env=dict(os.environ, ADMIRAL_CONFIG=os.path.join(d, "config.toml"), PYTHONPATH=ROOT,
+                                    HOME=d, PATH=os.path.join(d, "bin")))
         self.assertEqual(r.returncode, 1, r.stderr)
         self.assertIn("does not load", r.stdout)
         self.assertNotIn("Traceback", r.stderr)
