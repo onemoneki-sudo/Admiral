@@ -907,6 +907,17 @@ class FinishedBatches(World):
                 self.assertIsNotNone(self.lead_of(b))
                 self.assertFalse([h for h in b["hints"] if "nobody of its batch runs" in h])
 
+    def test_a_member_that_only_heard_from_the_commander_keeps_the_batch(self):
+        self.session(1, "Commander-Gone")
+        self.session(3, "reviewer")  # no --lead, owns no planned PR: its batch is known from the commander's message
+        self.transcript(3, (1, "Commander-Gone"))
+        self.assertEqual([m["name"] for m in self.lead_of(self.gone(("feat/a", pr(1, "MERGED"))))["members"]],
+                         ["reviewer"])
+        os.remove(os.path.join(self.root, "sessions", "1.json"))  # the commander exits; the reviewer runs on
+        b = self.build()
+        self.assertIsNotNone(self.lead_of(b))
+        self.assertFalse([h for h in b["hints"] if "nobody of its batch runs" in h])
+
     def test_an_empty_plan_is_not_taken_for_a_finished_one(self):
         self.plan("Commander-Gone", ("feat/a", "a", "worker"))
         from admiral import registry

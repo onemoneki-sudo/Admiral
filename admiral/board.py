@@ -372,7 +372,8 @@ def build(cfg, use_gh=True, now=None, starts=sessions.proc_starts, fetch=github.
     registry.write_json(cfg.sub("guessed.json"), {c["sessionId"]: c["guessed"] for c in convs if c["guessed"]})
     memory = remember(cfg, convs)
 
-    inferred, read = sessions.infer_leads(cfg, convs) if convs else ({}, {"missing": 0, "read": 0, "found": False})
+    inferred, read = sessions.infer_leads(cfg, convs) if convs else ({}, {"missing": 0, "read": 0, "found": False,
+                                                                           "heard": {}})
     # Who waits for the person: Claude Code blocks the session (a prompt or a question), the session reported
     # needs_you, or (maybe) an idle session's last turn ended asking the person something.
     for c in convs:
@@ -442,6 +443,7 @@ def build(cfg, use_gh=True, now=None, starts=sessions.proc_starts, fetch=github.
     reg_by_who = {r["who"]: r for r in regs}
     finished = []  # plans of batches over, with nobody of them running: not shown, left to `admiral plan close`
     running = {n for c in convs for n in [c["name"]] + c["former"]}  # a planned PR's owner may run ungrouped
+    heard = set(read["heard"].values())  # commanders a running session last heard from, gone or not
     mem_by_who = {}  # owners that deregistered since, by the name each registered under and its session's name now
     for c in convs:
         m = memory.get(c["sessionId"])
@@ -462,7 +464,7 @@ def build(cfg, use_gh=True, now=None, starts=sessions.proc_starts, fetch=github.
                           "stage": st, "reportedDone": st == 5 and not merged(pr),
                           "pr": github.pr_label(pr, cfg.language), "ci": ci_text, "ciLevel": ci_level})
         if g is None and items and all((i["pr"] or {}).get("state") == "MERGED" for i in items) \
-                and not any(i["owner"] in running for i in items):
+                and not any(i["owner"] in running for i in items) and p["lead"] not in heard and lead not in heard:
             # the batch is over: every deliverable merged, and nobody of it runs. It leaves the board rather than show
             # its commander not running; its plan is the commander's or the person's to close, never the board's
             finished.append(p["lead"])

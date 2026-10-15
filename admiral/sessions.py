@@ -75,7 +75,8 @@ def transcript(cfg, cwd, session_id):
 
 def infer_leads(cfg, convs):
     """(sessionId -> the commander, by current name, whose message the session received last, for non-commanders;
-    stats: transcripts missing, transcripts read, whether any commander message was ever found).
+    stats: transcripts missing, transcripts read, whether any commander message was ever found, and "heard":
+    sessionId -> the name that last commander message came from, whether that commander still runs or not).
     Only the bytes added since the last run are read; <state_dir>/lead-cache.json keeps where each live session's
     scan stopped and the last commander it found, and only live sessions are kept, so it stays bounded."""
     path = cfg.sub("lead-cache.json")
@@ -84,7 +85,7 @@ def infer_leads(cfg, convs):
     by_pid = {c["pid"]: c["name"] for c in commanders}
     by_name = {n: c["name"] for c in commanders for n in [c["name"]] + c["former"]}
     fresh, out = {}, {}
-    stats = {"missing": 0, "read": 0, "found": False}
+    stats = {"missing": 0, "read": 0, "found": False, "heard": {}}
     for c in convs:
         if c["isCommander"] or not c["sessionId"]:
             continue
@@ -107,6 +108,8 @@ def infer_leads(cfg, convs):
         except OSError:
             pass
         stats["found"] = stats["found"] or bool(entry["name"])
+        if entry["name"]:
+            stats["heard"][c["sessionId"]] = entry["name"]
         fresh[c["sessionId"]] = entry
         lead = by_pid.get(entry["pid"]) or by_name.get(entry["name"])
         if lead:
