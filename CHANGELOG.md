@@ -6,6 +6,8 @@ folder is read from it, but one installed from a repository is updated by Claude
 
 ## Unreleased
 
+## 0.2.2 (2026-10-15)
+
 **Playbook**
 - A session given work that spans several areas proposes splitting it and being named a commander, rather than doing
   it all alone; a commander given a requirement proposes the batch without being asked.
