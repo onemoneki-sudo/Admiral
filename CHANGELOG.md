@@ -6,6 +6,18 @@ its cache, one copy per version, so a change to the sidebar or the playbook reac
 
 ## Unreleased
 
+## 0.2.4 (2026-10-15)
+
+**Sidebar**
+- A commander's planned PRs are led by the session that owns each, like every other row, and a click on it brings
+  that session forward; the PR's title and number sit under it. The list is headed "planned PRs".
+- A long title no longer pushes a row's milestone onto a second line.
+- The sidebar and the playbook reminder have tests that run against Claude Code itself (`claude plugin test plugin`).
+
+**Docs**
+- The README opens with six things rather than four: records rather than memory, and a fleet that costs nothing to
+  watch; each session is a real one, not a subagent.
+
 ## 0.2.3 (2026-10-15)
 
 **Playbook**

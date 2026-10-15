@@ -18,6 +18,7 @@ git clone https://github.com/onemoneki-sudo/Admiral.git
 cd Admiral
 python3 -m unittest discover -s tests      # Python 3.11 or newer; the same run GitHub Actions does on Linux and macOS
 claude plugin validate plugin              # if you touch the sidebar or the playbook
+claude plugin test plugin                  # the sidebar's and the reminder's tests, run against Claude Code itself
 claude --plugin-dir plugin                 # a session with the sidebar loaded from your working tree
 admiral demo                               # a made-up fleet of 54 sessions to try changes on (bin/admiral from the clone)
 ```

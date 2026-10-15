@@ -261,7 +261,7 @@ export const register: Register = on => {
 
     // A conversation's or deliverable's milestone as five pips, deepening from faint to full green like the bar.
     const pips = (n: number) => (
-      <Box marginLeft={1}>
+      <Box marginLeft={1} flexShrink={0}>
         {Array.from({ length: n }, (_, i) => (
           <Text key={`p${i}`} color={shade((i + 1) / 5)}>▰</Text>
         ))}
@@ -281,7 +281,7 @@ export const register: Register = on => {
 
     // A failed CI is one red mark in a column of its own; which job failed is on the PR.
     const ciMark = (ciLevel: string) => (
-      <Box width={2} justifyContent="flex-end">
+      <Box width={2} flexShrink={0} justifyContent="flex-end">
         <Text color="error">{ciLevel === 'fail' ? '✗' : ' '}</Text>
       </Box>
     )
@@ -299,7 +299,7 @@ export const register: Register = on => {
             </Box>
             {x.stage ? pips(x.stage) : null}
             {ciMark(x.ciLevel)}
-            <Box width={10} justifyContent="flex-end">
+            <Box width={10} flexShrink={0} justifyContent="flex-end">
               <Text dimColor>{lastActive(nowS, x)}</Text>
             </Box>
           </Box>
@@ -308,23 +308,32 @@ export const register: Register = on => {
       )
     }
 
-    // A planned deliverable: its owner's run mark, its title and stage; under it the owner, PR and failing CI.
+    // A planned PR, led like every other row by the session that owns it: its run mark, its name (a click brings its
+    // terminal forward), the PR's stage and when the session was last active; under it, gray, the PR's title and
+    // number. With no live owner the title leads instead, and the line under it says whose it was, or that it has
+    // no owner.
     const deliverable = (it: Item, owner: Row | undefined) => {
       const run = owner ? RUN[owner.status] ?? IDLE : IDLE
+      const title = it.title || it.branch
+      const pr = it.pr?.label ?? ''
       return (
         <Box key={`i-${it.branch}`} flexDirection="column" paddingLeft={1}>
           <Box>
             <Text color={run.color}>{run.mark} </Text>
             <Box flexGrow={1} flexShrink={1}>
-              <Text wrap="truncate-end" dimColor={it.stage === 4}>{it.title || it.branch}</Text>
+              {owner ? (
+                <Button key={`fo-${it.branch}`} label={owner.name} plain dimColor={owner.status === 'idle'} onPress={() => focus($, owner)} />
+              ) : (
+                <Text wrap="truncate-end" dimColor={it.stage === 4}>{title}</Text>
+              )}
             </Box>
             {pips(it.stage)}
             {ciMark(it.ciLevel)}
-            <Box width={10} justifyContent="flex-end">
+            <Box width={10} flexShrink={0} justifyContent="flex-end">
               <Text dimColor>{owner ? lastActive(nowS, owner) : ''}</Text>
             </Box>
           </Box>
-          {detail(`d-${it.branch}`, it.pr?.label ?? '', it.owner || fmt('no_owner'))}
+          {owner ? detail(`d-${it.branch}`, pr, title) : detail(`d-${it.branch}`, pr, it.owner || fmt('no_owner'))}
         </Box>
       )
     }

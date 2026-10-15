@@ -87,8 +87,9 @@ snapshot.
   - **blocked**: Claude Code is asking your permission (the command is shown);
   - **reported**: the session said what it needs from you (`admiral state --phase needs_you --note "…"`);
   - **asked**: its last turn ended on a question, and you have not answered.
-- **Every batch**, under its commander: progress, PRs merged, and each deliverable of its plan with its owner, PR,
-  five-step milestone, failing CI and last activity. A deliverable nobody has started shows as such.
+- **Every batch**, under its commander: progress, PRs merged, and each PR in its plan, led by the session that owns
+  it (a click brings it forward), with its five-step milestone, title, failing CI and last activity. A planned PR
+  nobody has started shows as such.
 
   <img src="docs/media/batch.png" alt="A commander's batch: its plan, each deliverable's milestone, owner and PR" width="100%">
 
