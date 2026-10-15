@@ -6,6 +6,11 @@ its cache, one copy per version, so a change to the sidebar or the playbook reac
 
 ## Unreleased
 
+**Status line**
+- On a board of several projects, the status line names a session or a commander without its project unless another
+  project has the name too, as the project is there to tell two apart: with it, batch names were cut short. The board
+  and the sidebar still give every name its project.
+
 ## 0.2.6 (2026-10-15)
 
 **Board**

@@ -154,6 +154,66 @@ class Lines(unittest.TestCase):
         self.assertIn("10 min ago", line)
         self.assertIn("(RuntimeError: gh is not signed in)", line)
 
+    def test_names_leave_their_project_out_unless_another_project_has_the_name(self):
+        def two_projects(lead, worker):
+            b = board(projects=["Shop", "Tools"])
+            g = b["groups"][0]
+            g["project"], g["lead"] = "Shop", "Commander-A [Shop]"
+            for x in [g["leadRow"]] + g["members"]:
+                x["project"], x["name"], x["lead"] = "Shop", x["name"] + " [Shop]", x["lead"] and x["lead"] + " [Shop]"
+            cmd = dict(row(f"{lead} [Tools]", "s5", commander=True), project="Tools")
+            w = dict(row(f"{worker} [Tools]", "s6", status="waiting", lead=f"{lead} [Tools]"), project="Tools")
+            s = dict(g["summary"], total=1, busy=0, waiting=1, ciFail=0)
+            b["groups"].append({"project": "Tools", "lead": f"{lead} [Tools]", "leadRow": cmd, "members": [w],
+                                "summary": s})
+            return b
+
+        lines = self.lines(two_projects("Commander-B", "three"), "s3")
+        self.assertIn("(two, three)", lines[0])
+        self.assertEqual(sorted(x.split()[0] for x in lines[1:3]), ["A", "B"])
+        self.assertIn("under Commander-A", lines[-1])
+        self.assertNotIn("[", "".join(lines))
+        lines = self.lines(two_projects("Commander-A", "two"), "s3")
+        self.assertIn("(two [Shop], two [Tools])", lines[0])
+        self.assertEqual(sorted(x.split()[1] for x in lines[1:3]), ["[Shop]", "[Tools]"])
+        self.assertIn("under Commander-A [Shop]", lines[-1])
+
+    def test_a_name_left_without_its_project_is_never_shown_like_another(self):
+        def team(lead, project, members):
+            cmd = dict(row(f"{lead} [{project}]", lead + project, commander=True), project=project)
+            ws = [dict(row(f"{m} [{project}]", m + project, status="waiting", lead=f"{lead} [{project}]"),
+                       project=project) for m in members]
+            s = dict(board()["groups"][0]["summary"], total=len(ws), busy=0, waiting=len(ws), ciFail=0)
+            return {"project": project, "lead": f"{lead} [{project}]", "leadRow": cmd, "members": ws, "summary": s}
+
+        b = board(projects=["A", "B"],
+                  groups=[team("Commander-x", "A", ["x"]), team("Commander_x", "B", ["x", "x [A]"])])
+        lines = self.lines(b, "x [A]B")
+        self.assertIn("(x [A], x [B], x [A] [B])", lines[0])
+        self.assertEqual(sorted(x.split("  ")[1] for x in lines[1:3]), ["x [A]", "x [B]"])
+        self.assertIn("under Commander_x", lines[-1])
+        b = board(projects=["A", "B"], groups=[team("Commander-x", "A", ["one"]), team("Commander-x", "B", [])])
+        self.assertIn("x [A]", self.lines(b, "nobody")[1])  # a batch not on the line still has the name
+        b = board(projects=["A", "B"], groups=[team("Commander-x", "A", ["one"]), team("Commander-x ", "B", ["two"])])
+        self.assertEqual(sorted(x.split()[1] for x in self.lines(b, "nobody")[1:3]), ["[A]", "[B]"])  # padded alike
+        b = board(projects=["A", "B"], groups=[team("Commander-x", "A", ["one"])],
+                  unassigned=[dict(row("x [B]", "s9", status="waiting"), project="B")])
+        lines = self.lines(b, "nobody")
+        self.assertIn("(one, x [B])", lines[0])
+        self.assertIn("x [A]", lines[1])  # not the batch of the session waiting
+
+    def test_a_batch_not_on_the_line_leaves_the_names_column_as_it_was(self):
+        b = board()
+        quiet = dict(b["groups"][0]["summary"], total=0, busy=0, waiting=0, ciFail=0)
+        b["groups"].append({"lead": "Commander-LongerName", "members": [], "summary": quiet,
+                            "leadRow": row("Commander-LongerName", "s9", commander=True)})
+        self.assertTrue(self.lines(b, "nobody")[1].startswith("  A  █"))
+
+    def test_a_name_with_brackets_of_its_own_is_left_as_it_is(self):
+        b = board()
+        b["groups"][0]["members"][1]["name"] = "two [Shop]"
+        self.assertIn("(two [Shop])", self.lines(b, "nobody")[0])
+
     def test_the_first_line_breaks_every_session_down(self):
         first = self.lines(board(), "nobody")[0]
         self.assertIn("3 sessions: ◆ 1 waiting for you (two) · ● 1 working · ○ 1 idle", first)

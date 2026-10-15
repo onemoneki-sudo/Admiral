@@ -70,6 +70,33 @@ def columns():
     return max(20, int(v) - 4)
 
 
+def unprojected(rows, groups):
+    """A name without its project: on a board of several projects every name says its project, which the line, short,
+    leaves out where it can (see told_apart)."""
+    project = {}
+    for name, p in ([(x["name"], x.get("project")) for x in rows] + [(x["lead"], x.get("project")) for x in rows]
+                    + [(g["lead"], g.get("project")) for g in groups]):
+        if name and p and name.endswith(f" [{p}]"):
+            project[name] = p
+    return lambda name: name[:-len(project[name]) - 3] if name in project else name
+
+
+def told_apart(ways):
+    """What the line shows for each (place, name): `ways` gives it short and as it always was. A name shown like
+    another name anywhere on the line (padded to a column, so spaces at the ends do not tell two apart) is shown as it
+    always was instead."""
+    shown = {k: short for k, (short, _) in ways.items()}
+    while True:
+        alike = {}
+        for k, s in shown.items():
+            alike.setdefault(s.strip(), set()).add(k)
+        back = [k for ks in alike.values() if len({n for _, n in ks}) > 1 for k in ks if shown[k] != ways[k][1]]
+        if not back:
+            return shown
+        for k in back:
+            shown[k] = ways[k][1]
+
+
 class Lines:
     def __init__(self, b):
         self.b, self.W = b, phrases(b["words"])  # the snapshot's words, with their singular/plural forms
@@ -113,10 +140,19 @@ class Lines:
         b, W = self.b, self.W
         label = c(ORANGE, "Admiral")
         rows = [x for g in b["groups"] for x in ([g["leadRow"]] if g["leadRow"] else []) + g["members"]] + b["unassigned"]
+        bare, prefix = unprojected(rows, b["groups"]), b.get("commanderPrefix", "")
+
+        def unprefixed(n):
+            return (n[len(prefix):].lstrip("-_ ") if prefix and n.startswith(prefix) else n) or n
+        shown = told_apart({**{("name", n): (bare(n), n) for x in rows for n in (x["name"], x["lead"]) if n},
+                            **{("name", g["lead"]): (bare(g["lead"]), g["lead"]) for g in b["groups"]},
+                            **{("batch", g["lead"]): (unprefixed(bare(g["lead"])), unprefixed(g["lead"]))
+                               for g in b["groups"]}})
+        short = lambda n: shown.get(("name", n), n)  # noqa: E731
         waiting = [x for x in rows if x["status"] == "waiting"]
         busy = sum(x["status"] in ("busy", "shell") for x in rows)
         zh = b.get("language") == "zh"
-        names = ("、" if zh else ", ").join(x["name"] for x in waiting[:3]) + ("…" if len(waiting) > 3 else "")
+        names = ("、" if zh else ", ").join(short(x["name"]) for x in waiting[:3]) + ("…" if len(waiting) > 3 else "")
         who = c(YELLOW, ("（" if zh else " (") + names + ("）" if zh else ")")) if waiting else ""
         d = b["dist"]
         if b.get("mine") is not None:  # the person's own PRs as GitHub has them, whatever the registrations say
@@ -136,9 +172,7 @@ class Lines:
         me = next((x for x in rows if x.get("sessionId") and x["sessionId"] == session_id), None)
         teams = [g for g in b["groups"] if g["summary"]["total"] or g.get("batch")]
         teams.sort(key=lambda g: (-g["summary"]["waiting"], -g["summary"]["ciFail"], g["lead"]))
-        prefix = b.get("commanderPrefix", "")
-        names = {g["lead"]: (g["lead"][len(prefix):].lstrip("-_ ") if prefix and g["lead"].startswith(prefix) else g["lead"]) or g["lead"]
-                 for g in teams}
+        names = {g["lead"]: shown[("batch", g["lead"])] for g in teams}
         cells = min(14, max((width(n) for n in names.values()), default=0))
         for g in teams[:TEAMS]:
             s = g["summary"]
@@ -164,7 +198,7 @@ class Lines:
                 parts.append(me["pr"]["label"])
             if me["ciLevel"] == "fail":
                 parts.append(f"{DIM}{W['ci']} {RESET}{RED}✗{RESET}")
-            tail = c(DIM, "  · " + W["lead_of"].format(lead=me["lead"])) if me.get("lead") else ""
+            tail = c(DIM, "  · " + W["lead_of"].format(lead=short(me["lead"]))) if me.get("lead") else ""
             lines.append(c(DIM, W["this_session"]) + "  " + SEP.join(parts) + tail)
         elif me and not me["isCommander"]:
             lines.append(c(DIM, f"{W['this_session']}  {W['unregistered']}"))
