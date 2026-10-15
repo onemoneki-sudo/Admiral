@@ -647,6 +647,25 @@ class CurrentNamesFirst(World):
         self.assertEqual(self.group(b, "Commander-B")["members"], [])
 
 
+class CurrentNamesFirstToo(World):
+    def test_a_message_signed_with_a_name_goes_to_the_commander_that_has_it_now(self):
+        self.session(1, "Commander-A")
+        self.session(2, "Commander-B", former=("Commander-A",))
+        self.session(3, "worker", status="busy")
+        self.transcript(3, (99, "Commander-A"))  # from a process gone since, signed with the name
+        b = self.build(use_gh=False)
+        self.assertEqual([m["name"] for m in self.group(b, "Commander-A")["members"]], ["worker"])
+
+    def test_a_session_elsewhere_with_the_name_now_keeps_it_from_one_that_had_it(self):
+        self.session(9, "Worker", cwd="/w/other", status="busy")
+        self.session(4, "Renamed", former=("Worker",))
+        self.register("Worker", branch="feat/current")
+        self.prs = {"feat/current": pr(1, "MERGED")}
+        x = next(x for x in self.build()["unassigned"] if x["name"] == "Renamed")
+        self.assertFalse(x["registered"])
+        self.assertNotEqual(x["close"], "close")
+
+
 class OutsideTheProjects(World):
     """Sessions outside the configured projects are not shown, but a name running there is never taken for one that
     ended, nor its batch for one with nobody running."""

@@ -462,7 +462,7 @@ def build_one(cfg, use_gh=True, now=None, starts=sessions.proc_starts, fetch=git
             by_name.setdefault(r["who"], r)
 
     convs, matched = [], set()
-    current = {s.get("name") for s in live if s.get("name")}
+    current = {s.get("name") for s in live + elsewhere if s.get("name")}  # wherever a session runs
     for s in live:
         name = s.get("name") or s.get("sessionId", "?")[:8]
         former = [f.get("name", "") for f in s.get("formerNames") or []]
