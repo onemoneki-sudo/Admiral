@@ -345,6 +345,30 @@ class Checks(Doctor):
         self.assertEqual(before, after)
 
 
+class SeveralProjects(Doctor):
+    def test_each_project_is_checked_by_its_name(self):
+        tool = self.dir("code/tool")
+        self.config(f'language = "en"\nstate_dir = "{self.state}"\n'
+                    f'[[projects]]\nname = "Shop"\ndirs = ["{self.repo}"]\nrepo_dir = "{self.repo}"\n'
+                    f'[[projects]]\nname = "Tool"\ndirs = ["{tool}"]\n')
+        code, out = self.doctor()
+        self.assertIn("✓ Shop: gh reads acme/shop", out)
+        self.assertIn("! Tool: the project has no repo_dir: no PR or CI for it on the board", out)
+        self.assertIn('set dirs and repo_dir of the project "Tool"', out)
+        self.assertNotIn("project_dirs is empty", out)
+        self.assertEqual(len([c for c in self.machine.ran if c[:3] == ["gh", "repo", "view"]]), 1)
+
+
+class SeveralProjectsNamedTwice(Doctor):
+    def test_a_name_given_twice_is_reported(self):
+        tool = self.dir("code/tool")
+        self.config(f'language = "en"\nstate_dir = "{self.state}"\n'
+                    f'[[projects]]\nname = "Same"\ndirs = ["{self.repo}"]\nrepo_dir = "{self.repo}"\n'
+                    f'[[projects]]\nname = "Same"\ndirs = ["{tool}"]\nrepo_dir = "{self.repo}"\n')
+        out = self.doctor()[1]
+        self.assertIn('! two projects are named "Same": the second reads as "Same (2)"', out)
+
+
 class SpacedClone(Doctor):
     clone = "my tools 100%/admiral"
 

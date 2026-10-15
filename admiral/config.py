@@ -35,7 +35,9 @@ all Admiral shows every Claude Code session on the machine and reads no GitHub.
 """
 
 import copy
+import hashlib
 import os
+import re
 import tomllib
 
 DEFAULTS = {
@@ -94,12 +96,47 @@ class Config:
         self.idle_flag_s = c["idle_flag_days"] * 86400
         self.stale_phase_s = c["stale_phase_hours"] * 3600
         self.ask_fresh_s = data["waiting"]["ask_fresh_hours"] * 3600
+        # Several projects on one board, each with its directories and repository; none: the one project that
+        # [sessions] project_dirs and [github] repo_dir describe, as always.
+        self.projects, self.renamed = [], []  # a name given twice is told apart, and doctor says so
+        for i, p in enumerate(p for p in data.get("projects") or [] if isinstance(p, dict)):
+            name = given = str(p.get("name") or f"project {i + 1}")
+            n = 1
+            while name in {q["name"] for q in self.projects}:
+                n += 1
+                name = f"{given} ({n})"
+            if name != given:
+                self.renamed.append((given, name))
+            self.projects.append({"name": name, "dirs": [path(d) for d in p.get("dirs") or []],
+                                  "repo_dir": path(p.get("repo_dir") or ""),
+                                  "summary_checks": tuple(p.get("summary_checks") or self.summary_checks)})
+        self.project = ""  # the one this view of the config is for, when there are several
+        self.cache_dir = ""
+        self.claims = [(d, p["name"]) for p in self.projects for d in p["dirs"]]  # every project's directories
 
     def sub(self, *parts):
         """A path under the state directory."""
         return os.path.join(self.state_dir, *parts)
 
+    def cache(self, name):
+        """A file of the board's own memory: one set per project when there are several, else where it always was."""
+        return os.path.join(self.cache_dir, name) if self.cache_dir else self.sub(name)
+
+    def for_project(self, p):
+        """This config as one of its projects sees it: its directories, its repository, its own caches."""
+        c = copy.copy(self)
+        c.project, c.projects = p["name"], []
+        c.project_dirs, c.repo_dir, c.summary_checks = p["dirs"], p["repo_dir"], p["summary_checks"]
+        safe = re.sub(r"[^A-Za-z0-9._-]", "_", p["name"]) + "_" + hashlib.sha1(p["name"].encode()).hexdigest()[:10]
+        c.cache_dir = self.sub("projects", safe)
+        return c
+
     def in_project(self, cwd):
+        """Whether a session working in `cwd` is this config's: with no directories set, every session, unless this
+        is one of several projects, which then has none."""
+        if self.project:  # one of several: a session is the project's whose directory holds it most closely
+            hits = [(len(d), name) for d, name in self.claims if str(cwd).startswith(d)]
+            return bool(hits) and max(hits)[1] == self.project
         return not self.project_dirs or any(str(cwd).startswith(p) for p in self.project_dirs)
 
 

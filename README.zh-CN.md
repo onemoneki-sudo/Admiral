@@ -243,6 +243,24 @@ ci = 80
 merged = 100
 ```
 
+**一块看板管多个项目。** 同时开发好几个仓库时，不用 `[sessions] project_dirs` 和 `[github] repo_dir`，而是把每个
+写成一个项目。每个项目各算各的（它的对话、它的 PR 和 CI、它的缓存），看板再合在一起，每个批次和对话都标着属于哪个
+项目：
+
+```toml
+[[projects]]
+name = "Shop"
+dirs = ["~/code/shop", "~/code/shop-worktrees"]
+repo_dir = "~/code/shop"
+
+[[projects]]
+name = "Tools"
+dirs = ["~/code/tools"]
+repo_dir = "~/code/tools"
+```
+
+锁、总指挥前缀和其他设置仍是整台机器一份。`admiral doctor` 会逐个项目检查。
+
 ## 第一个批次
 
 装好 Admiral 之后，从一个新项目到开起整支舰队：

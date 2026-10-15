@@ -456,6 +456,216 @@ class PutAway(World):
         self.assertEqual(self.kept(self.ended_with()), ["worker"])
 
 
+class SeveralProjects(World):
+    """[[projects]]: one board for several projects, each with its directories and repository."""
+
+    def setUp(self):
+        super().setUp()
+        self.cfg = config.Config(config.merge(self.cfg.data, {"projects": [
+            {"name": "Shop", "dirs": ["/w/app"], "repo_dir": "/w/app"},
+            {"name": "Tool", "dirs": ["/w/tool"], "repo_dir": "/w/tool"}]}))
+        self.asked = []
+
+    def build(self, use_gh=True, now=NOW):
+        def fetch(cfg, branches):
+            self.asked.append((cfg.repo_dir, set(branches)))
+            return {b: p for b, p in self.prs.items() if b in branches}
+        return board.build(self.cfg, use_gh=use_gh, now=now,
+                           starts=lambda pids: {p: (START, f"ttys{p:03d}") for p in pids}, fetch=fetch,
+                           commits=lambda wt: None, fetch_mine=lambda cfg, now: {"open": [{"number": 1, "headRefName": "x"}], "mergedToday": []},
+                           checked_out=lambda wt: "", worktrees=lambda cfg: {})
+
+    def test_every_projects_sessions_are_on_one_board_saying_their_project(self):
+        self.session(3, "shop-worker")
+        self.session(5, "tool-worker", cwd="/w/tool", status="waiting")
+        b = self.build(use_gh=False)
+        self.assertEqual(b["count"], 2)
+        self.assertEqual(sorted((x["name"], x["project"]) for x in b["unassigned"]),
+                         [("shop-worker [Shop]", "Shop"), ("tool-worker [Tool]", "Tool")])
+        self.assertEqual([x["name"] for x in b["waiting"]], ["tool-worker [Tool]"])
+        self.assertIn("Tool: running but not registered: tool-worker", b["hints"])
+
+    def test_each_project_asks_its_own_repository_for_its_own_branches(self):
+        self.session(3, "shop-worker")
+        self.session(5, "tool-worker", cwd="/w/tool")
+        self.register("shop-worker", branch="feat/shop")
+        self.register("tool-worker", branch="feat/tool")
+        b = self.build()
+        self.assertEqual(sorted((r, sorted(bs)) for r, bs in self.asked), [("/w/app", ["feat/shop"]), ("/w/tool", ["feat/tool"])])
+        self.assertEqual(b["mine"], {"open": 2, "mergedToday": 0})  # the person's own PRs, in both repositories
+
+    def test_a_registration_belongs_to_where_its_session_runs(self):
+        self.session(5, "tool-worker", cwd="/w/tool")
+        self.session(3, "shop-worker")
+        self.register("tool-worker", branch="feat/tool")
+        b = self.build(use_gh=False)
+        x = next(x for x in b["unassigned"] if x["name"] == "tool-worker [Tool]")
+        self.assertEqual((x["project"], x["registered"]), ("Tool", True))
+        self.assertFalse([h for h in b["hints"] if "has ended" in h], b["hints"])
+
+    def test_a_plan_belongs_to_its_commanders_project(self):
+        self.session(8, "Commander-T", cwd="/w/tool")
+        self.session(3, "shop-worker")
+        self.plan("Commander-T", ("feat/t", "a tool deliverable", ""))
+        b = self.build(use_gh=False)
+        self.assertEqual([(g["lead"], g["project"], bool(g["leadRow"])) for g in b["groups"]],
+                         [("Commander-T [Tool]", "Tool", True)])
+
+    def test_the_markdown_board_says_each_ones_project(self):
+        self.session(8, "Commander-T", cwd="/w/tool")
+        self.session(3, "shop-worker")
+        md = board.markdown(self.build(use_gh=False))
+        self.assertIn("Commander-T [Tool]", md)
+        self.assertIn("| shop-worker [Shop] |", md)
+
+    def test_a_project_with_no_directories_has_no_sessions(self):
+        self.cfg = config.Config(config.merge(self.cfg.data, {"projects": [
+            {"name": "Shop", "dirs": ["/w/app"], "repo_dir": "/w/app"}, {"name": "Empty", "repo_dir": "/w/x"}]}))
+        self.session(3, "shop-worker")
+        b = self.build(use_gh=False)
+        self.assertEqual([(x["name"], x["project"]) for x in b["unassigned"]], [("shop-worker [Shop]", "Shop")])
+
+    def test_a_name_given_twice_is_told_apart_and_each_keeps_its_own_repository(self):
+        self.cfg = config.Config(config.merge(self.cfg.data, {"projects": [
+            {"name": "Same", "dirs": ["/w/app"], "repo_dir": "/w/app"},
+            {"name": "Same", "dirs": ["/w/tool"], "repo_dir": "/w/tool"}]}))
+        self.session(3, "a")
+        self.session(5, "b", cwd="/w/tool")
+        self.register("a", branch="feat/shared")
+        self.register("b", branch="feat/shared")
+        b = self.build()
+        self.assertEqual(sorted(x["project"] for x in b["unassigned"]), ["Same", "Same (2)"])
+        self.assertEqual(sorted(r for r, _ in self.asked), ["/w/app", "/w/tool"])
+
+    def test_a_plan_goes_where_its_owner_works_when_its_commander_is_away(self):
+        self.session(3, "shop-worker")
+        self.session(5, "owner", cwd="/w/tool")  # not registered
+        self.plan("Commander-T", ("feat/t", "a tool deliverable", "owner"))
+        b = self.build()
+        self.assertEqual([(g["lead"], g["project"]) for g in b["groups"]], [("Commander-T [Tool]", "Tool")])
+        self.assertIn(("/w/tool", {"feat/t"}), [(r, bs) for r, bs in self.asked if "feat/t" in bs])
+
+    def test_a_project_with_no_session_running_is_still_asked_while_the_board_is_read(self):
+        self.session(3, "shop-worker")
+        self.register("tool-worker", branch="feat/tool", worktree="/w/tool/wt")  # its session has exited
+        self.build()
+        self.assertIn("/w/tool", [r for r, _ in self.asked])
+
+    def test_nested_directories_give_a_session_to_the_closer_project_only(self):
+        self.cfg = config.Config(config.merge(self.cfg.data, {"projects": [
+            {"name": "Parent", "dirs": ["/w"], "repo_dir": "/w/app"},
+            {"name": "Child", "dirs": ["/w/tool"], "repo_dir": "/w/tool"}]}))
+        self.session(5, "tool-worker", cwd="/w/tool", status="waiting")
+        b = self.build(use_gh=False)
+        self.assertEqual([(x["name"], x["project"]) for x in b["unassigned"]], [("tool-worker [Child]", "Child")])
+        self.assertEqual(b["count"], 1)
+
+    def test_a_current_name_wins_over_another_sessions_former_one(self):
+        self.session(3, "Worker")
+        self.session(5, "Renamed", cwd="/w/tool", former=("Worker",))
+        self.register("Worker", branch="feat/shop")
+        b = self.build()
+        x = next(x for x in b["unassigned"] if x["sessionId"] == "s3")
+        self.assertEqual((x["project"], x["registered"]), ("Shop", True))
+        self.assertIn(("/w/app", {"feat/shop"}), self.asked)
+
+    def test_two_sessions_of_one_name_in_two_projects_are_told_apart_everywhere(self):
+        self.session(3, "same", status="waiting")
+        self.session(5, "same", cwd="/w/tool", status="waiting")
+        b = self.build(use_gh=False)
+        self.assertEqual(sorted(x["name"] for x in b["waiting"]), ["same [Shop]", "same [Tool]"])
+        md = board.markdown(b)
+        self.assertIn("same [Shop]", md)
+        self.assertIn("same [Tool]", md)
+
+    def test_a_repository_that_is_not_there_stops_only_its_project(self):
+        self.cfg = config.Config(config.merge(self.cfg.data, {"projects": [
+            {"name": "Shop", "dirs": ["/w/app"], "repo_dir": self.root},
+            {"name": "Gone", "dirs": ["/w/tool"], "repo_dir": "/no/such/dir"}]}))
+        self.session(3, "shop-worker")
+        self.session(5, "tool-worker", cwd="/w/tool")
+        self.register("tool-worker", branch="feat/t")
+        def fetch(cfg, branches):  # as the real query does: gh run in a directory that is not there
+            if not os.path.isdir(cfg.repo_dir):
+                raise FileNotFoundError(cfg.repo_dir)
+            return {}
+        b = board.build(self.cfg, now=NOW, starts=lambda pids: {p: (START, f"ttys{p:03d}") for p in pids},
+                        fetch=fetch, commits=lambda wt: None, checked_out=lambda wt: "", worktrees=lambda cfg: {},
+                        fetch_mine=lambda cfg, now: {"open": [], "mergedToday": []})
+        self.assertEqual(b["count"], 2)
+        self.assertTrue([h for h in b["health"] if h.startswith("Gone: ")], b["health"])
+
+    def test_names_given_again_take_the_next_free_number(self):
+        self.cfg = config.Config(config.merge(self.cfg.data, {"projects": [
+            {"name": "A", "dirs": ["/w/a"]}, {"name": "A (3)", "dirs": ["/w/b"]}, {"name": "A", "dirs": ["/w/c"]},
+            {"name": "A", "dirs": ["/w/d"]}]}))
+        self.assertEqual([p["name"] for p in self.cfg.projects], ["A", "A (3)", "A (2)", "A (4)"])
+
+    def test_a_deliverable_finds_its_owner_by_the_name_the_board_shows(self):
+        self.session(1, "Commander-A")
+        self.session(3, "worker")
+        self.register("worker", lead="Commander-A")
+        self.plan("Commander-A", ("feat/a", "a", "worker"))
+        g = self.group(self.build(use_gh=False), "Commander-A [Shop]")
+        self.assertEqual([it["owner"] for it in g["batch"]["items"]], [m["name"] for m in g["members"]])
+
+    def test_a_plan_skips_an_owner_outside_every_project_for_one_inside(self):
+        self.session(3, "shop-worker")
+        self.session(6, "stray", cwd="/w/other")
+        self.session(5, "owner", cwd="/w/tool")
+        self.plan("Commander-Gone", ("feat/a", "a", "stray"), ("feat/b", "b", "owner"))
+        b = self.build()
+        self.assertEqual([(g["lead"], g["project"]) for g in b["groups"]], [("Commander-Gone [Tool]", "Tool")])
+
+    def test_each_project_keeps_its_own_caches(self):
+        self.session(3, "shop-worker")
+        self.session(5, "tool-worker", cwd="/w/tool")
+        self.build(use_gh=False)
+        kept = os.listdir(os.path.join(self.root, "state", "projects"))
+        self.assertEqual(sorted(k.split("_")[0] for k in kept), ["Shop", "Tool"])
+
+
+class CurrentNamesFirst(World):
+    """A name a session has now is that session's: another that once had it does not take its registration, nor a
+    commander that once had it its members."""
+
+    def test_a_registration_goes_to_the_session_with_that_name_now(self):
+        self.session(3, "Worker")
+        self.session(4, "Renamed", former=("Worker",))
+        self.register("Worker", branch="feat/shop")
+        b = self.build(use_gh=False)
+        regd = {x["name"]: x["registered"] for x in b["unassigned"]}
+        self.assertEqual(regd, {"Worker": True, "Renamed": False})
+
+    def test_members_stay_with_the_commander_that_has_the_name_now(self):
+        self.session(1, "Commander-A")
+        self.session(2, "Commander-B", former=("Commander-A",))
+        self.session(3, "worker")
+        self.register("worker", lead="Commander-A")
+        b = self.build(use_gh=False)
+        self.assertEqual([m["name"] for m in self.group(b, "Commander-A")["members"]], ["worker"])
+        self.assertEqual(self.group(b, "Commander-B")["members"], [])
+
+
+class CurrentNamesFirstToo(World):
+    def test_a_message_signed_with_a_name_goes_to_the_commander_that_has_it_now(self):
+        self.session(1, "Commander-A")
+        self.session(2, "Commander-B", former=("Commander-A",))
+        self.session(3, "worker", status="busy")
+        self.transcript(3, (99, "Commander-A"))  # from a process gone since, signed with the name
+        b = self.build(use_gh=False)
+        self.assertEqual([m["name"] for m in self.group(b, "Commander-A")["members"]], ["worker"])
+
+    def test_a_session_elsewhere_with_the_name_now_keeps_it_from_one_that_had_it(self):
+        self.session(9, "Worker", cwd="/w/other", status="busy")
+        self.session(4, "Renamed", former=("Worker",))
+        self.register("Worker", branch="feat/current")
+        self.prs = {"feat/current": pr(1, "MERGED")}
+        x = next(x for x in self.build()["unassigned"] if x["name"] == "Renamed")
+        self.assertFalse(x["registered"])
+        self.assertNotEqual(x["close"], "close")
+
+
 class OutsideTheProjects(World):
     """Sessions outside the configured projects are not shown, but a name running there is never taken for one that
     ended, nor its batch for one with nobody running."""

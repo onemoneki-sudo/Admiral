@@ -18,6 +18,7 @@ live members. Grouping: a registered `--lead` wins; otherwise the commander whos
 received last.
 """
 
+import copy
 import math
 import os
 import time
@@ -310,7 +311,7 @@ def branches_of(cell):
 def remember(cfg, convs):
     """sessionId -> the last registration seen for that live session. A session that wrapped up deregisters;
     remembering what it worked on lets the board still tell it finished. Only live sessions are kept."""
-    memory = registry.read_json(cfg.sub("reg-memory.json")) or {}
+    memory = registry.read_json(cfg.cache("reg-memory.json")) or {}
     fresh = {}
     for c in convs:
         r = c["reg"]
@@ -321,17 +322,113 @@ def remember(cfg, convs):
                                      "registered": branches_of(r.get("branch"))}
         elif c["sessionId"] in memory:
             fresh[c["sessionId"]] = memory[c["sessionId"]]
-    registry.write_json(cfg.sub("reg-memory.json"), fresh)
+    registry.write_json(cfg.cache("reg-memory.json"), fresh)
     return fresh
 
 
 def build(cfg, use_gh=True, now=None, starts=sessions.proc_starts, fetch=github.prs_by_branch,
           commits=sessions.last_commit, fetch_mine=github.my_prs, checked_out=sessions.worktree_branch,
           worktrees=sessions.worktrees):
+    """The board. With several projects, each is built on its own (its sessions, its repository, its caches) from
+    the registrations and plans that are its, and the boards are put together, each row and batch saying its
+    project; with one, as it always was."""
+    kw = dict(use_gh=use_gh, now=now, starts=starts, fetch=fetch, commits=commits, fetch_mine=fetch_mine,
+              checked_out=checked_out, worktrees=worktrees)
+    if not cfg.projects:
+        return build_one(cfg, **kw)
+    views = [cfg.for_project(p) for p in cfg.projects]
+    regs, plans, anyone = owned(cfg, views, starts)
+    # while any project has a session running, the board is read: every project's GitHub is asked as always
+    return combine(cfg, views, [build_one(v, regs=regs[v.project], plans=plans[v.project], read=anyone, **kw)
+                                for v in views])
+
+
+def owned(cfg, views, starts):
+    """(project -> its registrations, project -> its plans, whether any project's session runs). A registration is
+    its session's project, where that session runs (found by the session it records, else by name: a name a session
+    has now before one another had), else its worktree's; a plan, its commander's, else its owners'. One that says
+    nothing goes to the first project."""
+    every = copy.copy(cfg)
+    every.project_dirs = []  # every running session, wherever it runs
+    live = sessions.load(every, starts)[0]
+    by_sid = {s.get("sessionId"): s for s in live}
+    by_name = {s["name"]: s for s in live if s.get("name")}
+    for s in live:
+        for f in s.get("formerNames") or []:
+            if f.get("name"):
+                by_name.setdefault(f["name"], s)
+
+    def project_of(path):
+        hits = [(len(d), name) for d, name in cfg.claims if path and str(path).startswith(d)]
+        return max(hits)[1] if hits else None
+
+    def of_reg(r):
+        s = by_sid.get(r["sessionId"]) if r.get("sessionId") else \
+            next((by_name[n] for n in registry.names_of(r) if n in by_name), None)
+        return project_of(s and s.get("cwd")) or project_of(first(r.get("worktree")))
+
+    regs = {v.project: [] for v in views}
+    home = {}
+    for r in registry.registrations(cfg):
+        p = of_reg(r) or views[0].project
+        regs[p].append(r)
+        for n in registry.names_of(r):
+            home.setdefault(n, p)
+    plans = {v.project: [] for v in views}
+    for pl in registry.plans(cfg):
+        lead = by_name.get(pl["lead"])
+        owners = [it.get("owner") for it in pl["items"] if it.get("owner")]
+        p = project_of(lead and lead.get("cwd")) \
+            or next((p for p in (project_of(by_name[o].get("cwd")) for o in owners if o in by_name) if p), None) \
+            or next((home[o] for o in owners if o in home), None) or home.get(pl["lead"])
+        plans[p or views[0].project].append(pl)
+    anyone = any(project_of(s.get("cwd")) for s in live)
+    return regs, plans, anyone
+
+
+def combine(cfg, views, boards):
+    """One board of each project's: counts summed, progress over all, every row and batch saying its project, and
+    each project's notes and source problems led by its name."""
+    out = dict(boards[0])
+
+    def named(name, project):  # every name says its project, so two of one name in two projects are told apart
+        return f"{name} [{project}]" if name else name
+    for v, b in zip(views, boards):
+        rows = b["unassigned"] + [x for g in b["groups"] for x in ([g["leadRow"]] if g["leadRow"] else []) + g["members"]]
+        for x in rows:
+            x["project"], x["name"], x["lead"] = v.project, named(x["name"], v.project), named(x["lead"], v.project)
+        for g in b["groups"]:
+            g["project"], g["lead"] = v.project, named(g["lead"], v.project)
+            for it in (g.get("batch") or {}).get("items", []):  # a deliverable finds its owner by name
+                it["owner"] = named(it["owner"], v.project)
+        for xs in b["closable"].values():
+            for x in xs:
+                x["project"], x["name"], x["lead"] = v.project, named(x["name"], v.project), named(x["lead"], v.project)
+    dist = [sum(b["dist"][i] for b in boards) for i in range(len(boards[0]["dist"]))]
+    gh = [b["gh"] for b in boards]
+    mine = [b["mine"] for b in boards if b["mine"]]
+    out.update(
+        count=sum(b["count"] for b in boards), gh=False if False in gh else (True if True in gh else None),
+        ghReused=all(b["ghReused"] for b in boards), dist=dist, pct=pct(dist, cfg.weights),
+        reported=sum(b["reported"] for b in boards), waiting=[x for b in boards for x in b["waiting"]],
+        prsMerged=sum(b["prsMerged"] for b in boards), prs=sum(b["prs"] for b in boards),
+        mine={k: sum(m[k] for m in mine) for k in ("open", "mergedToday")} if mine else None,
+        groups=[g for b in boards for g in b["groups"]], unassigned=[x for b in boards for x in b["unassigned"]],
+        closable={k: [x for b in boards for x in b["closable"].get(k, [])] for b0 in boards[:1] for k in b0["closable"]},
+        health=[f"{v.project}: {h}" for v, b in zip(views, boards) for h in b["health"]],
+        hints=[f"{v.project}: {h}" for v, b in zip(views, boards) for h in b["hints"]],
+        projects=[v.project for v in views])
+    return out
+
+
+def build_one(cfg, use_gh=True, now=None, starts=sessions.proc_starts, fetch=github.prs_by_branch,
+              commits=sessions.last_commit, fetch_mine=github.my_prs, checked_out=sessions.worktree_branch,
+              worktrees=sessions.worktrees, regs=None, plans=None, read=None):
     now = time.time() if now is None else now
     T, W = TEXT[cfg.language], words(cfg.language)
     live, broken, shapeless, elsewhere = sessions.load(cfg, starts)
-    regs, plans = registry.registrations(cfg), registry.plans(cfg)
+    regs = registry.registrations(cfg) if regs is None else regs
+    plans = registry.plans(cfg) if plans is None else plans
     # Sessions outside the configured projects are not shown, but they run: a name running anywhere is never taken
     # for a session that ended, nor its batch for one with nobody of it running.
     running_elsewhere = {n for s in elsewhere for n in [s.get("name")] + [f.get("name") for f in s.get("formerNames") or []]
@@ -365,10 +462,13 @@ def build(cfg, use_gh=True, now=None, starts=sessions.proc_starts, fetch=github.
             by_name.setdefault(r["who"], r)
 
     convs, matched = [], set()
+    current = {s.get("name") for s in live + elsewhere if s.get("name")}  # wherever a session runs
     for s in live:
         name = s.get("name") or s.get("sessionId", "?")[:8]
         former = [f.get("name", "") for f in s.get("formerNames") or []]
-        reg = by_session.get(s.get("sessionId")) or next((by_name[n] for n in [s.get("name") or ""] + former
+        # a name another session has now is that session's, not this one's that once had it
+        former_own = [f for f in former if f not in current]
+        reg = by_session.get(s.get("sessionId")) or next((by_name[n] for n in [s.get("name") or ""] + former_own
                                                           if n in by_name), None)
         if reg:
             matched.add(reg["who"])
@@ -385,11 +485,11 @@ def build(cfg, use_gh=True, now=None, starts=sessions.proc_starts, fetch=github.
         bs = branches_of(r.get("branch")) if r else []
         now_on = checked_out(first(r.get("worktree"))) if r else ""
         c["branches"] = bs + ([now_on] if now_on and now_on not in bs and now_on not in ("main", "master") else [])
-    kept = registry.read_json(cfg.sub("guessed.json")) or {}  # branches attached by work on earlier runs
+    kept = registry.read_json(cfg.cache("guessed.json")) or {}  # branches attached by work on earlier runs
     for c in convs:
         c["kept"] = [b for b in kept.get(c["sessionId"], []) if b not in c["branches"]]
         c["branches"] = c["branches"] + c["kept"]
-    known = registry.read_json(cfg.sub("reg-memory.json")) or {}
+    known = registry.read_json(cfg.cache("reg-memory.json")) or {}
     claimed = ({b for c in convs for b in c["branches"]} | {it["branch"] for p in plans for it in p["items"]}
                | {b for m in known.values() for b in m.get("branches", [])}) - {""}
     # A branch no session claims goes to the session that pushed it (its `git push` output says so), else, for a
@@ -411,10 +511,14 @@ def build(cfg, use_gh=True, now=None, starts=sessions.proc_starts, fetch=github.
     branches = claimed | {b for bs in guessed.values() for b in bs}
     prs, gh_ok, reused, mine = {}, None, False, None
     quiet = all(c["status"] not in ("busy", "shell", "waiting") and now - c["statusSince"] > cfg.quiet_s for c in convs)
-    if use_gh and live and cfg.repo_dir:  # with no session running nothing reads the board, so GitHub is left alone
+    # with no session running nothing reads the board, so GitHub is left alone; `read` says so for several projects
+    if use_gh and (live if read is None else read) and cfg.repo_dir:
         # a registration whose session is not running keeps its branches in use, so their merges stay remembered
         in_use = branches | {b for r in regs for b in branches_of(r.get("branch"))}
-        prs, mine, reused = github.prs_paced(cfg, in_use, quiet, now, fetch, fetch_mine)
+        try:
+            prs, mine, reused = github.prs_paced(cfg, in_use, quiet, now, fetch, fetch_mine)
+        except (FileNotFoundError, NotADirectoryError):  # a repository that is not there: as GitHub not answering,
+            prs, mine, reused = None, None, False  # rather than stopping the whole board
         gh_ok = prs is not None and mine is not None
         prs = prs or {}
     unknown = gh_ok is False  # GitHub failed: a branch with no PR found may still have one
@@ -422,7 +526,7 @@ def build(cfg, use_gh=True, now=None, starts=sessions.proc_starts, fetch=github.
         new = [b for b in guessed.get(c["sessionId"], []) if (prs.get(b) or {}).get("state") == "OPEN"]
         c["branches"] = c["branches"] + new
         c["guessed"] = c["kept"] + new
-    registry.write_json(cfg.sub("guessed.json"), {c["sessionId"]: c["guessed"] for c in convs if c["guessed"]})
+    registry.write_json(cfg.cache("guessed.json"), {c["sessionId"]: c["guessed"] for c in convs if c["guessed"]})
     memory = remember(cfg, convs)
 
     inferred, read = sessions.infer_leads(cfg, convs) if convs else ({}, {"missing": 0, "read": 0, "found": False,
@@ -481,7 +585,8 @@ def build(cfg, use_gh=True, now=None, starts=sessions.proc_starts, fetch=github.
 
     commanders = [x for x in rows if x["isCommander"]]
     names = {x["name"] for x in commanders}
-    alias = {f: c["name"] for c in convs if c["isCommander"] for f in c["former"]}
+    # a commander's former name leads to it, unless another commander has that name now
+    alias = {f: c["name"] for c in convs if c["isCommander"] for f in c["former"] if f not in names}
     groups = []
     for cmd in sorted(commanders, key=lambda x: x["name"]):
         members = [x for x in rows if not x["isCommander"] and alias.get(x["lead"], x["lead"]) == cmd["name"]]
