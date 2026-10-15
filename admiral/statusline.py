@@ -70,18 +70,29 @@ def columns():
     return max(20, int(v) - 4)
 
 
-def shortened(rows, groups):
-    """How the line names a session or commander: on a board of several projects, where every name says its project,
-    without it when no other project has the name, since the line is short and the project is there to tell two
-    apart."""
-    said = {}  # a name without its project: the names it stands for
-    for name, project in ([(x["name"], x.get("project")) for x in rows] + [(x["lead"], x.get("project")) for x in rows]
-                          + [(g["lead"], g.get("project")) for g in groups]):
-        tag = f" [{project}]"
-        if name and project and name.endswith(tag):
-            said.setdefault(name[:-len(tag)], set()).add(name)
-    alone = {next(iter(full)): bare for bare, full in said.items() if len(full) == 1}
-    return lambda name: alone.get(name, name)
+def unprojected(rows, groups):
+    """A name without its project: on a board of several projects every name says its project, which the line, short,
+    leaves out where it can (see told_apart)."""
+    project = {}
+    for name, p in ([(x["name"], x.get("project")) for x in rows] + [(x["lead"], x.get("project")) for x in rows]
+                    + [(g["lead"], g.get("project")) for g in groups]):
+        if name and p and name.endswith(f" [{p}]"):
+            project[name] = p
+    return lambda name: name[:-len(project[name]) - 3] if name in project else name
+
+
+def told_apart(names, short, full):
+    """Each name as `short` shows it, unless that shows it like another: then as `full` does, as it always was."""
+    shown = {n: short(n) for n in names}
+    while True:
+        alike = {}
+        for n, s in shown.items():
+            alike.setdefault(s, []).append(n)
+        back = [n for ns in alike.values() if len(ns) > 1 for n in ns if shown[n] != full(n)]
+        if not back:
+            return shown
+        for n in back:
+            shown[n] = full(n)
 
 
 class Lines:
@@ -127,7 +138,10 @@ class Lines:
         b, W = self.b, self.W
         label = c(ORANGE, "Admiral")
         rows = [x for g in b["groups"] for x in ([g["leadRow"]] if g["leadRow"] else []) + g["members"]] + b["unassigned"]
-        short = shortened(rows, b["groups"])
+        bare = unprojected(rows, b["groups"])
+        shown = told_apart({n for x in rows for n in (x["name"], x["lead"]) if n} | {g["lead"] for g in b["groups"]},
+                           bare, lambda n: n)
+        short = lambda n: shown.get(n, n)  # noqa: E731
         waiting = [x for x in rows if x["status"] == "waiting"]
         busy = sum(x["status"] in ("busy", "shell") for x in rows)
         zh = b.get("language") == "zh"
@@ -152,8 +166,9 @@ class Lines:
         teams = [g for g in b["groups"] if g["summary"]["total"] or g.get("batch")]
         teams.sort(key=lambda g: (-g["summary"]["waiting"], -g["summary"]["ciFail"], g["lead"]))
         prefix = b.get("commanderPrefix", "")
-        names = {g["lead"]: (n[len(prefix):].lstrip("-_ ") if prefix and n.startswith(prefix) else n) or n
-                 for g in teams for n in [short(g["lead"])]}
+        def unprefixed(n):
+            return (n[len(prefix):].lstrip("-_ ") if prefix and n.startswith(prefix) else n) or n
+        names = told_apart([g["lead"] for g in teams], lambda n: unprefixed(bare(n)), unprefixed)
         cells = min(14, max((width(n) for n in names.values()), default=0))
         for g in teams[:TEAMS]:
             s = g["summary"]

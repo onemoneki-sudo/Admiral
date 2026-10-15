@@ -178,6 +178,21 @@ class Lines(unittest.TestCase):
         self.assertEqual(sorted(x.split()[1] for x in lines[1:3]), ["[Shop]", "[Tools]"])
         self.assertIn("under Commander-A [Shop]", lines[-1])
 
+    def test_a_name_left_without_its_project_is_never_shown_like_another(self):
+        def team(lead, project, members):
+            cmd = dict(row(f"{lead} [{project}]", lead + project, commander=True), project=project)
+            ws = [dict(row(f"{m} [{project}]", m + project, status="waiting", lead=f"{lead} [{project}]"),
+                       project=project) for m in members]
+            s = dict(board()["groups"][0]["summary"], total=len(ws), busy=0, waiting=len(ws), ciFail=0)
+            return {"project": project, "lead": f"{lead} [{project}]", "leadRow": cmd, "members": ws, "summary": s}
+
+        b = board(projects=["A", "B"],
+                  groups=[team("Commander-x", "A", ["x"]), team("Commander_x", "B", ["x", "x [A]"])])
+        lines = self.lines(b, "x [A]B")
+        self.assertIn("(x [A], x [B], x [A] [B])", lines[0])
+        self.assertEqual(sorted(x.split("  ")[1] for x in lines[1:3]), ["x [A]", "x [B]"])
+        self.assertIn("under Commander_x", lines[-1])
+
     def test_a_name_with_brackets_of_its_own_is_left_as_it_is(self):
         b = board()
         b["groups"][0]["members"][1]["name"] = "two [Shop]"
