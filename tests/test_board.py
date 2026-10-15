@@ -979,6 +979,20 @@ class OneConversation(World):
         self.assertEqual([[m["name"] for m in g["members"]] for g in b["groups"]], [["worker"]])
         self.assertFalse([h for h in b["hints"] if "not running" in h])
 
+    def test_processes_of_one_conversation_that_differ_in_name_or_directory_lose_nothing(self):
+        self.session(1, "Commander-New", status="waiting")
+        self.session(2, "Commander-Old", sessionId="s1")  # renamed in one terminal only
+        self.session(3, "worker")
+        self.session(5, "helper", cwd="/w/app/wt")
+        self.session(6, "helper", cwd="/w/app", sessionId="s5")  # resumed from another directory
+        self.transcript(5, (1, "Commander-New"), cwd="/w/app/wt")
+        self.register("worker", lead="Commander-Old")
+        b = self.build(use_gh=False)
+        self.assertFalse([h for h in b["hints"] if "not running" in h or "share the name" in h], b["hints"])
+        self.assertEqual([m["name"] for m in self.group(b, "Commander-Old")["members"]], ["worker"])
+        self.assertEqual([m["name"] for m in self.group(b, "Commander-New")["members"]], ["helper", "helper"])
+        self.assertEqual(len([h for h in b["hints"] if "open 2 times" in h]), 2)  # still told it is open twice
+
     def test_a_member_open_twice_is_one_member(self):
         self.session(1, "Commander-A")
         self.session(3, "worker", status="idle")

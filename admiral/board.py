@@ -314,20 +314,25 @@ def build(cfg, use_gh=True, now=None, starts=sessions.proc_starts, fetch=github.
     now = time.time() if now is None else now
     T, W = TEXT[cfg.language], words(cfg.language)
     live, broken, shapeless = sessions.load(cfg, starts)
-    # One conversation resumed in several terminals runs as several processes: it is one session, shown as its most
-    # pressing process (waiting before working before idle, then the latest change), the others named in a hint.
+    # One conversation resumed in another terminal runs as another process, named in a hint. Processes alike in all
+    # but their terminal are one session, shown as its most pressing process (waiting before working before idle, then
+    # the latest change); those that differ in name or directory are rare and stay apart, so nothing of them is lost.
     by_sid = {}
     for s in live:
         by_sid.setdefault(s.get("sessionId") or f"pid {s['pid']}", []).append(s)
     live, open_twice = [], []
     for procs in by_sid.values():
         procs.sort(key=lambda s: (ORDER.get(s.get("status"), 9), -(s.get("statusUpdatedAt") or 0)))
-        one = dict(procs[0], _pids=[p["pid"] for p in procs])  # a message may come from any of them
-        one["formerNames"] = [f for p in procs for f in p.get("formerNames") or []]  # as may an old registration
-        live.append(one)
         if len(procs) > 1:
             where = list(dict.fromkeys(p.get("_tty") or f"pid {p['pid']}" for p in procs))
-            open_twice.append((one.get("name") or one.get("sessionId", "?")[:8], len(procs), where))
+            open_twice.append((procs[0].get("name") or procs[0].get("sessionId", "?")[:8], len(procs), where))
+        alike = {}
+        for p in procs:
+            alike.setdefault((p.get("name"), p.get("cwd")), []).append(p)
+        for same in alike.values():
+            one = dict(same[0], _pids=[p["pid"] for p in same])  # a message may come from any of them
+            one["formerNames"] = [f for p in same for f in p.get("formerNames") or []]  # as may an old registration
+            live.append(one)
     regs = registry.registrations(cfg)
     by_name = {}
     for r in regs:
@@ -535,8 +540,8 @@ def build(cfg, use_gh=True, now=None, starts=sessions.proc_starts, fetch=github.
     hints += [T["h_twice"].format(name=name, n=n, where=", ".join(where)) for name, n, where in open_twice]
     shared = {}
     for x in rows:
-        shared[x["name"]] = shared.get(x["name"], 0) + 1
-    hints += [T["h_same_name"].format(name=name, n=n) for name, n in sorted(shared.items()) if n > 1]
+        shared.setdefault(x["name"], set()).add(x["sessionId"])
+    hints += [T["h_same_name"].format(name=name, n=len(ids)) for name, ids in sorted(shared.items()) if len(ids) > 1]
     hints += [T["h_plan_finished"].format(lead=lead) for lead in finished]
     for r in regs:
         if r["who"] not in matched:
