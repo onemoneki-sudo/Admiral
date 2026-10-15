@@ -182,8 +182,16 @@ git clone https://github.com/onemoneki-sudo/Admiral.git ~/admiral
 最后，在 `~/.config/admiral/config.toml` 里设置 `project_dirs` 和 `[github] repo_dir`。
 `scripts/install.sh --uninstall` 会移除后台任务和链接。
 
-**更新**：`git -C ~/admiral pull`，然后在开着的对话里运行 `/reload-plugins`，一切都从克隆目录运行。
-改了什么见 [CHANGELOG.md](CHANGELOG.md)。
+**更新**：
+
+```sh
+git -C ~/admiral pull                                                        # 总览和状态栏
+claude plugin marketplace update admiral && claude plugin update admiral@admiral   # 侧边栏和协作规则
+```
+
+总览和状态栏从克隆目录运行，下次运行就用上新版。插件由 Claude Code 存在自己的缓存里，每个版本一份，所以侧边栏和
+协作规则只随新版本更新：更新之后新开的对话加载新版，已经开着的对话继续用原来加载的那份，重启后才换。改了什么见
+[CHANGELOG.md](CHANGELOG.md)。
 
 ## 配置
 

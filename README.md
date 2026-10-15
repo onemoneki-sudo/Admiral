@@ -195,7 +195,16 @@ Then two steps that are yours, since Admiral never edits Claude Code's settings 
 Last, set `project_dirs` and `[github] repo_dir` in `~/.config/admiral/config.toml`. `scripts/install.sh --uninstall`
 removes the background job and the link.
 
-**Update** with `git -C ~/admiral pull`, then `/reload-plugins` in open sessions: everything runs from the clone. What
+**Update**:
+
+```sh
+git -C ~/admiral pull                                                        # the board and the status line
+claude plugin marketplace update admiral && claude plugin update admiral@admiral   # the sidebar and the playbook
+```
+
+The board and the status line run from the clone and pick the update up on their next run. Claude Code keeps the
+plugin in its own cache, one copy per version, so the sidebar and the playbook move only with a new version: a session
+started after the update loads it, while sessions already running keep the copy they loaded until they restart. What
 changed is in [CHANGELOG.md](CHANGELOG.md).
 
 ## Config

@@ -2,7 +2,8 @@
 
 ## Supported versions
 
-Security fixes go into the latest release. Update with `git -C ~/admiral pull`.
+Security fixes go into the latest release. Update as the README's [Install](README.md#install) section says: pull the
+clone, then update the plugin.
 
 ## Reporting a vulnerability
 

@@ -1,8 +1,8 @@
 # Changelog
 
 Each version says what changed for someone using Admiral. The version lives in `admiral/__init__.py`, and
-`plugin/.claude-plugin/plugin.json` carries the same one (the tests check): a plugin installed from the clone's
-folder is read from it, but one installed from a repository is updated by Claude Code only when its version moves.
+`plugin/.claude-plugin/plugin.json` carries the same one (the tests check): Claude Code keeps an installed plugin in
+its cache, one copy per version, so a change to the sidebar or the playbook reaches people only when the version moves.
 
 ## Unreleased
 
