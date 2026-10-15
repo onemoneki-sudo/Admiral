@@ -102,7 +102,7 @@ Next, by hand:
        claude plugin marketplace add '$here'
        claude plugin install admiral@admiral
 
-  3. Check: '$here/bin/admiral' board   (prints the board as Markdown)
+  3. Check: '$here/bin/admiral' doctor   (what is in place, and how to fix the rest)
 NEXT
 
 # Automatic memory, read and never changed: recommended off, so what a session knows comes from files you can read.

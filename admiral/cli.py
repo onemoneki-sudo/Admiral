@@ -12,6 +12,7 @@
     admiral statusline           the Claude Code status line (reads the session's JSON on stdin)
     admiral lock ...             shared-resource locks (`admiral lock status`; see admiral/lock.sh)
     admiral focus TTY            bring the terminal tab on TTY to the front (macOS)
+    admiral doctor               whether each piece Admiral needs is in place, and how to fix the rest
     admiral where                print the state directory (the board files live there)
     admiral demo [--lang zh] [--tty NAME=TTY] [--once]   a made-up fleet, to see Admiral without one
 
@@ -74,12 +75,16 @@ def main(argv=None):
     f = sub.add_parser("focus")
     f.add_argument("tty")
     sub.add_parser("where")
+    sub.add_parser("doctor", help="whether each piece Admiral needs is in place, and how to fix the rest")
     dm = sub.add_parser("demo", help="a made-up fleet to try Admiral without running dozens of sessions")
     dm.add_argument("--lang", choices=["en", "zh"], default="en")
     dm.add_argument("--tty", action="append", default=[], metavar="NAME=TTY",
                     help="tie a demo session to a real terminal tab, so a click focuses it")
     dm.add_argument("--once", action="store_true", help="build the demo board once and exit")
     a = ap.parse_args(argv)
+    if a.cmd == "doctor":  # before the config loads: a config that does not is one of the things it reports
+        from . import doctor
+        sys.exit(doctor.main())
     cfg = config.load()
 
     if a.cmd == "register":
