@@ -179,7 +179,7 @@ showing wrong numbers quietly.
 
 Requirements: macOS for the background job and the click-to-focus (elsewhere, run `scripts/refresh.sh` every minute
 from cron or a systemd timer; everything else works the same); Python 3.11 or newer; the GitHub CLI `gh`, signed in;
-for the sidebar, a Claude Code with plugin function hooks (early access, developed against 2.1.299).
+for the sidebar, a Claude Code with plugin function hooks (early access, developed against 2.1.299 and tested on 2.1.300).
 
 ```sh
 git clone https://github.com/onemoneki-sudo/Admiral.git ~/admiral
@@ -313,9 +313,11 @@ admiral where                                   the state directory
 
 - **Reads**, on your machine only: Claude Code's session registry and transcripts (`~/.claude`); `ps`, for each
   session's start time and terminal; `git`, read-only, in your repository and the registered worktrees; the lock
-  owners; `~/.claude/settings.json` once, at install, to keep your status line.
+  owners; `~/.claude/settings.json` once, at install, to keep your status line and see whether automatic memory is on.
 - **Writes**: its state directory (`~/.local/state/admiral`) and the locks you take; at install, its config, the
   background job, the `~/.local/bin/admiral` link and `.python-path` in the clone.
+- **Adds**: one thing to what your sessions read, the playbook's reminder at the end of the system prompt, about 1 KB;
+  `[playbook] remind = false` turns it off.
 - **Sends**: only the `gh` calls to GitHub, as you, listing PRs and checks. No model is called and nothing is uploaded.
 
 ## Why it spends no tokens

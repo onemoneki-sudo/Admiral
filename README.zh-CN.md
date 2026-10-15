@@ -163,7 +163,7 @@ GitHub（gh：PR、检查）────┤      每分钟一次                
 
 要求：后台任务和一键跳转需要 macOS（其他系统用 cron 或 systemd 定时器每分钟运行 `scripts/refresh.sh`，其余功能
 都一样）；Python 3.11 或更新；已登录的 GitHub 命令行 `gh`；侧边栏需要支持插件函数钩子的 Claude Code
-（抢先体验功能，按 2.1.299 开发）。
+（抢先体验功能，按 2.1.299 开发，在 2.1.300 上测试过）。
 
 ```sh
 git clone https://github.com/onemoneki-sudo/Admiral.git ~/admiral
@@ -289,9 +289,11 @@ admiral where                                   状态目录
 
 - **读取**，只在你的电脑上：Claude Code 的对话注册表和对话记录（`~/.claude`）；`ps`，用来获取每个对话的启动时间
   和终端；`git`，只读，在你的仓库和登记过的工作区里；锁的持有者；安装时读一次 `~/.claude/settings.json`，
-  用来保留你的状态栏。
+  用来保留你的状态栏、看自动记忆是否开着。
 - **写入**：它的状态目录（`~/.local/state/admiral`）和你拿的锁；安装时写入它的配置、后台任务、
   `~/.local/bin/admiral` 链接和克隆目录里的 `.python-path`。
+- **添加**：只往对话读到的内容里加一样东西，就是系统提示末尾约 1 KB 的协作规则提醒；`[playbook] remind = false`
+  可以关掉。
 - **发送**：只有以你的身份调用 `gh` 向 GitHub 查询 PR 和检查。不调用任何模型，不上传任何东西。
 
 ## 为什么不花 token
