@@ -357,6 +357,105 @@ class OnlyWhoShouldRegister(World):
         self.assertTrue([h for h in self.build(use_gh=False)["health"] if "no transcript" in h])
 
 
+class PutAway(World):
+    """A registration whose session has ended, every branch merged on GitHub, its worktree gone and no lock held, is
+    said nothing of: its work is over. Any of them missing, or any session file unread, the person decides."""
+
+    def ended_with(self, branch="feat/a,feat/b", worktree="", states=("MERGED", "MERGED")):
+        self.session(4, "keeper")  # keeps the board refreshing
+        self.register("worker", branch=branch, worktree=worktree)
+        self.prs = {b: pr(i + 1, st) for i, (b, st) in enumerate(zip(branch.split(","), states))}
+        return self.build()
+
+    def kept(self, b):
+        from admiral import registry
+        return [r["who"] for r in registry.registrations(self.cfg)]
+
+    def test_a_session_ended_with_its_work_over_and_wrapped_up_is_said_nothing_of(self):
+        b = self.ended_with(worktree=os.path.join(self.root, "gone"))
+        self.assertFalse([h for h in b["hints"] if "worker" in h], b["hints"])
+        self.assertEqual(self.kept(b), ["worker"])  # kept: a session that comes back still reads as finished
+
+    def test_one_its_session_made_is_said_nothing_of_once_that_session_ended(self):
+        from admiral import registry
+        self.session(4, "keeper")
+        self.register("worker", branch="feat/a")
+        reg = registry.read_json(registry.reg_path(self.cfg, "worker"))
+        os.remove(registry.reg_path(self.cfg, "worker"))
+        registry.write_json(registry.session_path(self.cfg, "s9"), dict(reg, sessionId="s9"))
+        self.prs = {"feat/a": pr(1, "MERGED")}
+        self.assertFalse([h for h in self.build()["hints"] if "worker" in h])
+
+    def test_a_lock_held_under_a_name_with_a_space_keeps_it(self):
+        self.session(4, "keeper")
+        self.register("worker two", branch="feat/a")
+        self.prs = {"feat/a": pr(1, "MERGED")}
+        self.lock("heavy", "worker two")
+        self.assertTrue([h for h in self.build()["hints"] if "has ended: worker two" in h])
+
+    def test_a_session_file_that_did_not_read_keeps_it(self):
+        with open(os.path.join(self.root, "sessions", "77.json"), "w") as fh:
+            fh.write("{ half written")
+        b = self.ended_with(worktree=os.path.join(self.root, "gone"))
+        self.assertTrue([h for h in b["hints"] if "has ended: worker" in h], b["hints"])
+
+    def test_a_session_file_missing_a_field_keeps_it(self):
+        with open(os.path.join(self.root, "sessions", "77.json"), "w") as fh:
+            json.dump({"sessionId": "s9", "name": "worker", "status": "busy", "cwd": "/w/app"}, fh)  # no pid
+        b = self.ended_with(worktree=os.path.join(self.root, "gone"))
+        self.assertTrue([h for h in b["hints"] if "has ended: worker" in h], b["hints"])
+
+    def test_a_worktree_with_a_comma_in_its_path_is_seen_whole(self):
+        wt = os.path.join(self.root, "work,tree")
+        os.makedirs(wt)
+        b = self.ended_with(worktree=wt)
+        self.assertTrue([h for h in b["hints"] if "has ended: worker" in h], b["hints"])
+
+    def test_a_worktree_left_keeps_it(self):
+        wt = self.root  # still there
+        b = self.ended_with(worktree=wt)
+        self.assertTrue([h for h in b["hints"] if "has ended: worker" in h])
+        self.assertEqual(self.kept(b), ["worker"])
+
+    def test_a_branch_not_merged_keeps_it(self):
+        b = self.ended_with(states=("MERGED", "OPEN"))
+        self.assertTrue([h for h in b["hints"] if "has ended: worker" in h], b["hints"])
+
+    def test_a_session_with_no_name_keeps_them_all(self):
+        with open(os.path.join(self.root, "sessions", "7.json"), "w") as fh:
+            json.dump({"pid": 7, "sessionId": "s7", "status": "busy", "cwd": "/w/app", "procStart": START}, fh)
+        b = self.ended_with()
+        self.assertTrue([h for h in b["hints"] if "has ended: worker" in h], b["hints"])
+
+    def test_one_made_by_hand_for_a_running_session_known_by_another_registration_stays(self):
+        self.register_as_session("task-name", "s9", branch="feat/new")
+        self.session(9, "worker")  # runs; its own registration is under its task's name
+        b = self.ended_with(branch="feat/a", states=("MERGED",))  # and worker, by hand, for its merged branch
+        self.assertTrue([h for h in b["hints"] if "still registered: worker" in h], b["hints"])  # to wrap up, not hidden
+
+    def register_as_session(self, who, sid, **kw):
+        from admiral import registry
+        self.register(who, **kw)
+        reg = registry.read_json(registry.reg_path(self.cfg, who))
+        os.remove(registry.reg_path(self.cfg, who))
+        registry.write_json(registry.session_path(self.cfg, sid), dict(reg, sessionId=sid))
+
+    def test_a_lock_still_held_keeps_it(self):
+        self.lock("heavy", "worker")
+        self.assertEqual(self.kept(self.ended_with()), ["worker"])
+
+    def test_no_branch_keeps_it(self):
+        self.assertEqual(self.kept(self.ended_with(branch="", states=())), ["worker"])
+
+    def test_github_not_answering_keeps_it(self):
+        self.gh_down = True
+        self.assertEqual(self.kept(self.ended_with()), ["worker"])
+
+    def test_a_session_still_running_is_left_to_its_wrap_up(self):
+        self.session(3, "worker")
+        self.assertEqual(self.kept(self.ended_with()), ["worker"])
+
+
 class OutsideTheProjects(World):
     """Sessions outside the configured projects are not shown, but a name running there is never taken for one that
     ended, nor its batch for one with nobody running."""
