@@ -6,9 +6,28 @@ its cache, one copy per version, so a change to the sidebar or the playbook reac
 
 ## Unreleased
 
+**Board**
+- Not seen among the projects' sessions is no proof a session has ended. A registered session running outside
+  `project_dirs` is not shown, as before, but no longer reads as ended, and a batch with anyone of it working there
+  (an owner, its commander, a member) is not taken for one that is over.
+- A PR list that comes back full may leave a branch's PR out: those branches are asked for by name, one more call
+  for every 50, which gives each its open PR, else its newest. So an old PR past both lists is found rather than
+  taken for none, a session that reported done with its draft still open stays at accept, and an open PR wins over
+  a newer one of its branch closed or merged. If that call fails too, the PRs read as unknown, as when GitHub does
+  not answer.
+
 **Status line and sidebar**
 - A batch with no plan and no member registered reads "progress unknown: no member registered" rather than "no
   progress yet", which read as nothing done.
+
+**Install**
+- `admiral doctor` asks Admiral whether the status line reaches it, rather than reading the command: one that runs it
+  through `exec`, `env`, `sh -c` or a script named in the command passes, and one that names Admiral but does not run
+  it is never offered to run first, inside Admiral's own status line. A status line run that way draws nothing, so no
+  setting can make Admiral run itself.
+- A config of your own (`ADMIRAL_CONFIG`) goes with the background job, as the full path Admiral reads it as: the
+  install script writes it into the macOS job and its note for Linux, and doctor's fixes (the install command, the
+  cron line) carry it, since launchd and cron start the job without your shell's environment or directory.
 
 ## 0.2.5 (2026-10-15)
 

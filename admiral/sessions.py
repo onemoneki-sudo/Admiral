@@ -39,8 +39,8 @@ def proc_starts(pids):
 
 
 def load(cfg, starts=proc_starts):
-    """(running sessions of the configured projects, files that did not parse, files missing a needed field).
-    A pid that is gone, or now belongs to another process, is not a session."""
+    """(running sessions of the configured projects, files that did not parse, files missing a needed field, running
+    sessions outside the projects). A pid that is gone, or now belongs to another process, is not a session."""
     raw, broken, shapeless = [], 0, 0
     for f in glob.glob(os.path.join(cfg.sessions_dir, "*.json")):
         d = None
@@ -58,15 +58,13 @@ def load(cfg, starts=proc_starts):
                 continue
         raw.append(d)
     procs = starts([d["pid"] for d in raw])
-    live = []
+    live, elsewhere = [], []
     for d in raw:
         start, tty = procs.get(d["pid"], (None, ""))
         if start is None or (d.get("procStart") and norm(d["procStart"]) != start):
             continue
-        if not cfg.in_project(d.get("cwd", "")):
-            continue
-        live.append(dict(d, _tty=tty))
-    return live, broken, shapeless
+        (live if cfg.in_project(d.get("cwd", "")) else elsewhere).append(dict(d, _tty=tty))
+    return live, broken, shapeless, elsewhere
 
 
 def transcript(cfg, cwd, session_id):
