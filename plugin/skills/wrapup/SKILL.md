@@ -22,9 +22,9 @@ The board (`admiral board`, and the sidebar's wrap-up section) sorts every sessi
 
 | Verdict | When |
 |---|---|
-| can close | its PR merged (or it reported `done`) and it has wrapped up: worktree gone, no lock held |
+| can close | its PR merged, as GitHub has it, and it has wrapped up: worktree gone, no lock held |
 | wrap up first | its PR merged but its worktree remains or it still holds locks: it must do the steps above |
-| for the person to confirm | its PR closed without merging; or it is unregistered, has no PR and has been idle over a day; or it is a commander with no running members and no plan (it may be planning, or deferred) |
+| for the person to confirm | it reported `done` with no merged PR to show it (shown as reported done); its PR closed without merging; or it is unregistered, has no PR and has been idle over a day; or it is a commander with no running members and no plan (it may be planning, or deferred) |
 | keep | working, waiting for the person, PR still open, or still developing |
 
 A commander can close once no member is still running and it has wrapped up its batch: with its plan all merged, it

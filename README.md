@@ -130,7 +130,7 @@ counts, and the board asks the owner to register it.
 
 Every session gets a verdict with its reason: **can close** (its PR merged and it wrapped up), **wrap up first**
 (merged, but its worktree or a lock is left), **for you to confirm** (a commander with nothing running, a session idle
-for a day with no PR), or keep. Closing is always yours.
+for a day with no PR, a session that only reported done, with no merged PR), or keep. Closing is always yours.
 
 ### A playbook, and locks
 

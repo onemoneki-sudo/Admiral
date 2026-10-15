@@ -89,8 +89,11 @@ class Lines:
         prs = c(DIM, "  " + self.W["prs_merged"].format(done=merged, n=n)) if n else ""  # no PR yet: nothing to count
         return f"{cells}{RESET}{DIM}{'░' * (BAR - filled)}{RESET} {p:>3}%" + prs
 
-    def pips(self, stage):
-        return "".join(f"{self.shade((i + 1) / 5)}▰" for i in range(stage)) + f"{RESET}{DIM}{'▱' * (5 - stage)}{RESET}"
+    def pips(self, stage, reported=False):
+        """Filled to the milestone; reported done fills the last one dim, as the session's word, not a merge."""
+        lit = stage - 1 if reported else stage
+        return ("".join(f"{self.shade((i + 1) / 5)}▰" for i in range(lit)) + (f"{RESET}{DIM}▰" if reported else "")
+                + f"{RESET}{DIM}{'▱' * (5 - stage)}{RESET}")
 
     def count(self, n, mark, word, color):
         return c(color if n else DIM, f"{mark} {n} {word}")
@@ -156,7 +159,7 @@ class Lines:
         if me and not me["isCommander"] and me["registered"]:
             st = me.get("stage") or 0
             word = W["reported_done"] if me.get("reportedDone") else W["stages"][st]
-            parts = [self.pips(st) + " " + word + (f" {me['note']}" if me.get("note") else "")]
+            parts = [self.pips(st, me.get("reportedDone")) + " " + word + (f" {me['note']}" if me.get("note") else "")]
             if me.get("pr"):
                 parts.append(me["pr"]["label"])
             if me["ciLevel"] == "fail":

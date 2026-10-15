@@ -158,7 +158,8 @@ def merged(pr):
     return bool(pr) and pr["state"] == "MERGED"
 
 
-def stage_of(phase, pr):
+def stage_of(phase, pr, unknown=False):
+    """`unknown`: GitHub did not answer this time, so finding no PR does not mean there is none."""
     # a PR is opened ready only once everything local is done (one push, straight to ready), so it outranks the
     # phases; a draft does not, and a session's `done` is its word against a PR GitHub has not merged
     if merged(pr):
@@ -166,7 +167,7 @@ def stage_of(phase, pr):
     if pr and pr["state"] == "OPEN" and not pr.get("isDraft"):
         return 4
     if phase == "done":
-        return 3 if pr else 5
+        return 3 if pr or unknown else 5
     if phase == "accepting":
         return 3
     if phase == "review":
@@ -174,16 +175,16 @@ def stage_of(phase, pr):
     return 1
 
 
-def stage(reg, pr):
+def stage(reg, pr, unknown=False):
     """A registered session's milestone; 0 when it is not registered."""
-    return stage_of(reg.get("phase"), pr) if reg else 0
+    return stage_of(reg.get("phase"), pr, unknown) if reg else 0
 
 
-def item_stage(owner_reg, pr):
+def item_stage(owner_reg, pr, unknown=False):
     """A deliverable's milestone: 0 (not started) while it has neither a PR nor a registered owner."""
     if pr is None and not owner_reg:
         return 0
-    return stage_of((owner_reg or {}).get("phase"), pr)
+    return stage_of((owner_reg or {}).get("phase"), pr, unknown)
 
 
 def pr_count(group):
@@ -222,6 +223,9 @@ def closing(x, locks, groups, now, cfg, T):
     if x["status"] == "waiting":
         return "keep", T["waiting"]
     held = sorted(n for n, who in locks.items() if who == x["name"] or who.startswith(x["name"] + " "))
+    pr = x["pr"]
+    if pr and pr["state"] == "OPEN":  # a commander's own PR too
+        return "keep", T["pr_open"]
     if x["isCommander"]:
         g = next((g for g in groups if g["lead"] == x["name"]), None)
         members = (g or {}).get("members") or []
@@ -246,9 +250,6 @@ def closing(x, locks, groups, now, cfg, T):
             return "close", T["members_done"].format(n=len(members))
         # no members is not the same as done: a commander may be planning, or deferred until others finish
         return "confirm", T["no_members"]
-    pr = x["pr"]
-    if pr and pr["state"] == "OPEN":
-        return "keep", T["pr_open"]
     if x["done"]:
         left = ([T["worktree"]] if x["worktree"] and not x["worktreeGone"] else []) + \
                ([T["holds"].format(n=len(held))] if held else []) + ([T["registered"]] if x["registered"] else [])
@@ -348,6 +349,7 @@ def build(cfg, use_gh=True, now=None, starts=sessions.proc_starts, fetch=github.
         prs, mine, reused = github.prs_paced(cfg, branches, quiet, now, fetch, fetch_mine)
         gh_ok = prs is not None and mine is not None
         prs = prs or {}
+    unknown = gh_ok is False  # GitHub failed: a branch with no PR found may still have one
     for c in convs:
         new = [b for b in guessed.get(c["sessionId"], []) if (prs.get(b) or {}).get("state") == "OPEN"]
         c["branches"] = c["branches"] + new
@@ -380,11 +382,11 @@ def build(cfg, use_gh=True, now=None, starts=sessions.proc_starts, fetch=github.
         own = [b for b in bs if b not in c["guessed"]
                or (not c["isCommander"] and (prs.get(b) or {}).get("state") == "OPEN")]
         pr, lead, finished = github.pick(own, prs), (r or {}).get("lead", ""), False
-        st = stage(r, pr)
+        st = stage(r, pr, unknown and bool(own))
         mem = memory.get(c["sessionId"]) if not r else None
         if mem:  # deregistered since: finished if what it last worked on reached the last milestone, as above
             mpr = github.pick(mem.get("branches", []), prs)
-            if stage_of(mem.get("phase"), mpr) == 5:
+            if stage_of(mem.get("phase"), mpr, unknown and bool(mem.get("branches"))) == 5:
                 finished, bs, pr, st, wt, lead = True, mem.get("branches", []), mpr, 5, mem.get("worktree", ""), mem.get("lead", "")
         ci_text, ci_level = github.ci(pr, cfg.summary_checks)
         lc = commits(wt) if wt else None
@@ -420,6 +422,7 @@ def build(cfg, use_gh=True, now=None, starts=sessions.proc_starts, fetch=github.
     unassigned = [x for x in rows if not x["isCommander"] and not x["lead"]]
 
     reg_by_who = {r["who"]: r for r in regs}
+    mem_by_who = {m["who"]: m for m in memory.values() if m.get("who")}  # an owner that deregistered since
     for p in plans:
         lead = alias.get(p["lead"], p["lead"])
         g = next((g for g in groups if g["lead"] == lead), None)
@@ -430,7 +433,8 @@ def build(cfg, use_gh=True, now=None, starts=sessions.proc_starts, fetch=github.
         for it in p["items"]:
             pr = prs.get(it["branch"])
             ci_text, ci_level = github.ci(pr, cfg.summary_checks)
-            st = item_stage(reg_by_who.get(it.get("owner", "")), pr)
+            owner = it.get("owner", "")
+            st = item_stage(reg_by_who.get(owner) or mem_by_who.get(owner), pr, unknown)
             items.append({"branch": it["branch"], "title": it.get("title", ""), "owner": it.get("owner", ""),
                           "stage": st, "reportedDone": st == 5 and not merged(pr),
                           "pr": github.pr_label(pr, cfg.language), "ci": ci_text, "ciLevel": ci_level})

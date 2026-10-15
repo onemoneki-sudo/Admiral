@@ -260,12 +260,13 @@ export const register: Register = on => {
     }
 
     // A conversation's or deliverable's milestone as five pips, deepening from faint to full green like the bar.
-    const pips = (n: number) => (
+    // Filled to the milestone; reported done (the session's word, with no merged PR) fills the last one dim.
+    const pips = (n: number, reported = false) => (
       <Box marginLeft={1} flexShrink={0}>
-        {Array.from({ length: n }, (_, i) => (
+        {Array.from({ length: reported ? n - 1 : n }, (_, i) => (
           <Text key={`p${i}`} color={shade((i + 1) / 5)}>▰</Text>
         ))}
-        <Text dimColor>{'▱'.repeat(5 - n)}</Text>
+        <Text dimColor>{(reported ? '▰' : '') + '▱'.repeat(5 - n)}</Text>
       </Box>
     )
 
@@ -297,13 +298,13 @@ export const register: Register = on => {
             <Box flexGrow={1} flexShrink={1}>
               <Button key={`f-${x.name}`} label={x.name} plain dimColor={x.status === 'idle'} onPress={() => focus($, x)} />
             </Box>
-            {x.stage ? pips(x.stage) : null}
+            {x.stage ? pips(x.stage, x.reportedDone) : null}
             {ciMark(x.ciLevel)}
             <Box width={10} flexShrink={0} justifyContent="flex-end">
               <Text dimColor>{lastActive(nowS, x)}</Text>
             </Box>
           </Box>
-          {detail(`d-${x.name}`, x.pr && x.pr.state === 'OPEN' ? x.pr.label : '')}
+          {detail(`d-${x.name}`, x.reportedDone ? fmt('reported_done') : x.pr && x.pr.state === 'OPEN' ? x.pr.label : '')}
         </Box>
       )
     }
@@ -315,7 +316,7 @@ export const register: Register = on => {
     const deliverable = (it: Item, owner: Row | undefined) => {
       const run = owner ? RUN[owner.status] ?? IDLE : IDLE
       const title = it.title || it.branch
-      const pr = it.pr?.label ?? ''
+      const pr = it.pr?.label ?? (it.reportedDone ? fmt('reported_done') : '')
       return (
         <Box key={`i-${it.branch}`} flexDirection="column" paddingLeft={1}>
           <Box>
@@ -327,7 +328,7 @@ export const register: Register = on => {
                 <Text wrap="truncate-end" dimColor={it.stage === 4}>{title}</Text>
               )}
             </Box>
-            {pips(it.stage)}
+            {pips(it.stage, it.reportedDone)}
             {ciMark(it.ciLevel)}
             <Box width={10} flexShrink={0} justifyContent="flex-end">
               <Text dimColor>{owner ? lastActive(nowS, owner) : ''}</Text>

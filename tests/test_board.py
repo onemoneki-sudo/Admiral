@@ -655,12 +655,39 @@ class Evidence(World):
         self.assertEqual(self.verdicts(b)["worker"], "close")
         self.assertIn("progress 100% (merged 1)", board.markdown(b))
 
-    def test_with_github_down_a_done_session_is_neither_merged_nor_closable(self):
-        self.gh_down = True
-        b, g, x = self.batch("done", pr(1, "MERGED"))  # merged, but GitHub cannot say so this time
+    def test_with_github_down_done_is_not_taken_as_done_without_a_pr(self):
+        b, g, x = self.batch("done", pr(1, "OPEN"))
+        self.assertEqual(g["summary"]["pct"], 80)
+        self.gh_down = True  # GitHub does not answer: the open PR is unknown, not gone
+        b = self.build()
+        g = self.group(b, "Commander-A")
+        x = next(x for x in g["members"] if x["name"] == "worker")
         self.assertIn("gh failed", " ".join(b["health"]))
-        self.assertEqual((x["reportedDone"], g["summary"]["prsMerged"]), (True, 0))
-        self.assertEqual(self.verdicts(b)["worker"], "confirm")
+        self.assertEqual((x["stage"], x["reportedDone"], g["batch"]["items"][0]["stage"]), (3, False, 3))
+        self.assertEqual((g["summary"]["pct"], g["summary"]["prsMerged"]), (70, 0))
+        self.assertNotIn("worker", self.verdicts(b))
+
+    def test_with_github_down_a_task_with_no_branch_still_ends_on_its_report(self):
+        self.gh_down = True
+        self.session(3, "investigation")
+        self.register("investigation", phase="done")  # no branch: no PR could speak for it
+        x = self.build()["unassigned"][0]
+        self.assertEqual((x["stage"], x["reportedDone"]), (5, True))
+
+    def test_a_commander_with_its_own_pr_open_is_kept(self):
+        self.session(1, "Commander-A")
+        self.register("Commander-A", branch="chore/a", phase="done")
+        self.prs = {"chore/a": pr(5, "OPEN")}
+        self.assertNotIn("Commander-A", self.verdicts(self.build()))
+
+    def test_a_deliverable_keeps_its_owners_report_after_the_owner_deregisters(self):
+        from admiral import registry
+        self.batch("done")
+        registry.done(self.cfg, "worker")  # wrapped up; its session still runs
+        g = self.group(self.build(), "Commander-A")
+        it = g["batch"]["items"][0]
+        self.assertEqual((it["stage"], it["reportedDone"], g["summary"]["pct"], g["summary"]["prsMerged"]),
+                         (5, True, 100, 0))
 
     def test_a_plan_finished_only_by_reports_is_for_the_person_to_confirm(self):
         self.session(1, "Commander-A")
