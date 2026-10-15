@@ -489,8 +489,10 @@ def build(cfg, use_gh=True, now=None, starts=sessions.proc_starts, fetch=github.
             items.append({"branch": it["branch"], "title": it.get("title", ""), "owner": it.get("owner", ""),
                           "stage": st, "reportedDone": st == 5 and not merged(pr),
                           "pr": github.pr_label(pr, cfg.language), "ci": ci_text, "ciLevel": ci_level})
+        # of the batch: its owners, its commander, and the sessions registered under it, wherever they run
+        ours = {i["owner"] for i in items} | {p["lead"], lead} | {r["who"] for r in regs if r.get("lead") in (p["lead"], lead)}
         if g is None and items and all((i["pr"] or {}).get("state") == "MERGED" for i in items) \
-                and not any(i["owner"] in running for i in items) and p["lead"] not in heard and lead not in heard:
+                and not ours & running and p["lead"] not in heard and lead not in heard:
             # the batch is over: every deliverable merged, and nobody of it runs. It leaves the board rather than show
             # its commander not running; its plan is the commander's or the person's to close, never the board's
             finished.append(p["lead"])

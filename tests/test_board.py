@@ -206,6 +206,25 @@ class OutsideTheProjects(World):
         self.assertEqual([g["lead"] for g in b["groups"]], ["Commander-A"])  # its owner still runs: not over
         self.assertFalse([h for h in b["hints"] if "all merged" in h], b["hints"])
 
+    def batch_over_but_for(self, *outside):
+        """A batch whose one deliverable merged and whose owner is gone, with `outside` running outside the projects."""
+        self.session(3, "keeper")  # keeps the board refreshing
+        self.plan("Commander-A", ("feat/a", "merged one", "gone-owner"))
+        self.prs = {"feat/a": pr(1, "MERGED")}
+        for pid, name in outside:
+            self.session(pid, name, cwd="/w/other")
+        return self.build()
+
+    def test_a_commander_running_outside_the_projects_keeps_its_batch_on_the_board(self):
+        b = self.batch_over_but_for((8, "Commander-A"))
+        self.assertEqual([g["lead"] for g in b["groups"]], ["Commander-A"])
+        self.assertFalse([h for h in b["hints"] if "all merged" in h], b["hints"])
+
+    def test_a_member_running_outside_the_projects_keeps_its_batch_on_the_board(self):
+        self.register("helper", lead="Commander-A")
+        b = self.batch_over_but_for((9, "helper"))
+        self.assertEqual([g["lead"] for g in b["groups"]], ["Commander-A"])
+
     def test_sessions_outside_the_projects_stay_out(self):
         self.session(1, "Commander-A")
         self.session(9, "elsewhere", cwd="/w/other")
