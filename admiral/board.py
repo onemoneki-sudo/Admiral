@@ -55,6 +55,8 @@ TEXT = words_mod.phrases({
         "h_renamed": "registered under the old name \"{old}\"; the session is now \"{new}\": register again under the new name and `done` the old one",
         "h_idle": "idle over {days} days: {name}; close it if its work is over",
         "h_lead_gone": "--lead names a commander that is not running: {lead}",
+        "h_plan_finished": "the plan of {lead} is all merged and nobody of its batch runs: no longer shown; "
+                           "admiral plan close --lead \"{lead}\" puts it away",
         "h_gone": "registered but the session has ended: {who} (`admiral done --who \"{who}\"` once confirmed)",
         "h_worktree_gone": "worktree no longer exists: {who} -> {wt}",
         "h_pr_done": "{label}, still registered: {who}; wrap it up",
@@ -107,6 +109,8 @@ TEXT = words_mod.phrases({
         "h_renamed": "登记名仍为旧名「{old}」，对话已改名为「{new}」：请用新名重新登记，并 done 旧名",
         "h_idle": "空闲超过 {days} 天：{name}，任务已结束的请按收尾规则关闭",
         "h_lead_gone": "--lead 指定的总指挥未运行：{lead}",
+        "h_plan_finished": "{lead} 的交付清单已全部合并，批次里也没有对话在运行：已不再显示；"
+                           "用 admiral plan close --lead \"{lead}\" 收起它",
         "h_gone": "已登记但对话已结束：{who}（确认后 admiral done --who \"{who}\"）",
         "h_worktree_gone": "worktree 已不存在：{who} → {wt}",
         "h_pr_done": "{label}，但仍在登记中：{who}，可以收尾",
@@ -368,7 +372,8 @@ def build(cfg, use_gh=True, now=None, starts=sessions.proc_starts, fetch=github.
     registry.write_json(cfg.sub("guessed.json"), {c["sessionId"]: c["guessed"] for c in convs if c["guessed"]})
     memory = remember(cfg, convs)
 
-    inferred, read = sessions.infer_leads(cfg, convs) if convs else ({}, {"missing": 0, "read": 0, "found": False})
+    inferred, read = sessions.infer_leads(cfg, convs) if convs else ({}, {"missing": 0, "read": 0, "found": False,
+                                                                           "heard": {}})
     # Who waits for the person: Claude Code blocks the session (a prompt or a question), the session reported
     # needs_you, or (maybe) an idle session's last turn ended asking the person something.
     for c in convs:
@@ -436,6 +441,9 @@ def build(cfg, use_gh=True, now=None, starts=sessions.proc_starts, fetch=github.
     unassigned = [x for x in rows if not x["isCommander"] and not x["lead"]]
 
     reg_by_who = {r["who"]: r for r in regs}
+    finished = []  # plans of batches over, with nobody of them running: not shown, left to `admiral plan close`
+    running = {n for c in convs for n in [c["name"]] + c["former"]}  # a planned PR's owner may run ungrouped
+    heard = set(read["heard"].values())  # commanders a running session last heard from, gone or not
     mem_by_who = {}  # owners that deregistered since, by the name each registered under and its session's name now
     for c in convs:
         m = memory.get(c["sessionId"])
@@ -443,10 +451,7 @@ def build(cfg, use_gh=True, now=None, starts=sessions.proc_starts, fetch=github.
             mem_by_who.setdefault(n, []).append(m)
     for p in plans:
         lead = alias.get(p["lead"], p["lead"])
-        g = next((g for g in groups if g["lead"] == lead), None)
-        if g is None:  # the commander is not running; its plan still counts
-            g = {"lead": lead, "leadRow": None, "members": []}
-            groups.append(g)
+        g = next((g for g in groups if g["lead"] == lead), None)  # None: neither the commander nor a member runs
         items = []
         for it in p["items"]:
             pr = prs.get(it["branch"])
@@ -458,6 +463,15 @@ def build(cfg, use_gh=True, now=None, starts=sessions.proc_starts, fetch=github.
             items.append({"branch": it["branch"], "title": it.get("title", ""), "owner": it.get("owner", ""),
                           "stage": st, "reportedDone": st == 5 and not merged(pr),
                           "pr": github.pr_label(pr, cfg.language), "ci": ci_text, "ciLevel": ci_level})
+        if g is None and items and all((i["pr"] or {}).get("state") == "MERGED" for i in items) \
+                and not any(i["owner"] in running for i in items) and p["lead"] not in heard and lead not in heard:
+            # the batch is over: every deliverable merged, and nobody of it runs. It leaves the board rather than show
+            # its commander not running; its plan is the commander's or the person's to close, never the board's
+            finished.append(p["lead"])
+            continue
+        if g is None:  # the commander is not running and the batch is not over: its plan still counts
+            g = {"lead": lead, "leadRow": None, "members": []}
+            groups.append(g)
         g["batch"] = {"items": items}
 
     for g in groups:
@@ -498,6 +512,7 @@ def build(cfg, use_gh=True, now=None, starts=sessions.proc_starts, fetch=github.
         if c["status"] == "idle" and c["statusSince"] and now - c["statusSince"] > cfg.idle_flag_s:
             hints.append(T["h_idle"].format(days=cfg.idle_flag_s // 86400, name=c["name"]))
     hints += [T["h_lead_gone"].format(lead=lead) for lead in orphans]
+    hints += [T["h_plan_finished"].format(lead=lead) for lead in finished]
     for r in regs:
         if r["who"] not in matched:
             hints.append(T["h_gone"].format(who=r["who"]))

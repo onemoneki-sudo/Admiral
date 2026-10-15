@@ -835,6 +835,111 @@ class Evidence(World):
         self.assertTrue(self.status_lines(b, "s3")[1][-1].startswith("this session  ▰▰▰▰▰ reported done"))
 
 
+class FinishedBatches(World):
+    """A batch whose commander has gone: over once every deliverable merged and nobody of it runs, and then no longer
+    shown, its plan left for `admiral plan close`; else still shown, marked commander not running."""
+
+    def setUp(self):
+        super().setUp()
+        self.session(4, "elsewhere")  # some session runs, so the board is built and GitHub asked
+
+    def gone(self, *prs_by_branch):
+        self.plan("Commander-Gone", *[(b, b, "worker") for b, _ in prs_by_branch])
+        self.prs = {b: p for b, p in prs_by_branch if p}
+        return self.build()
+
+    def lead_of(self, b):
+        return next((g for g in b["groups"] if g["lead"] == "Commander-Gone"), None)
+
+    def test_a_batch_all_merged_with_nobody_running_leaves_the_board_and_its_plan_stays(self):
+        from admiral import registry, statusline
+        import re
+        b = self.gone(("feat/a", pr(1, "MERGED")), ("feat/b", pr(2, "MERGED")))
+        self.assertIsNone(self.lead_of(b))
+        self.assertEqual([p["lead"] for p in registry.plans(self.cfg)], ["Commander-Gone"])  # the board closes no plan
+        self.assertIn('the plan of Commander-Gone is all merged and nobody of its batch runs: no longer shown; '
+                      'admiral plan close --lead "Commander-Gone" puts it away', b["hints"])
+        self.assertEqual((b["prsMerged"], b["prs"]), (0, 0))  # not counted, as a closed plan is not
+        board.write(self.cfg, b)
+        shown = " ".join(re.sub(r"\x1b\[[0-9;]*m", "", ln)
+                         for ln in statusline.admiral_lines(self.cfg.sub("board.json"), "s4", now=NOW))
+        self.assertNotIn("Gone", shown)
+        self.assertNotIn("commander not running", shown)
+        self.assertNotIn("## Commander-Gone", board.markdown(b))
+
+    def test_a_batch_with_anything_unmerged_stays_marked_commander_not_running(self):
+        for second in (pr(2, "OPEN"), pr(2, "CLOSED"), None):
+            with self.subTest(second=second):
+                self.tearDown()
+                self.setUp()
+                g = self.lead_of(self.gone(("feat/a", pr(1, "MERGED")), ("feat/b", second)))
+                self.assertIsNotNone(g)
+                self.assertIsNone(g["leadRow"])
+
+    def test_a_deliverable_only_reported_done_keeps_the_batch(self):
+        self.register("worker", branch="feat/b", phase="done")  # its session has closed; no PR
+        self.assertIsNotNone(self.lead_of(self.gone(("feat/a", pr(1, "MERGED")), ("feat/b", None))))
+
+    def test_with_github_down_the_batch_is_kept(self):
+        self.gh_down = True
+        self.assertIsNotNone(self.lead_of(self.gone(("feat/a", pr(1, "MERGED")))))
+
+    def test_a_running_commander_closes_its_own_plan(self):
+        self.session(1, "Commander-Gone")
+        g = self.lead_of(self.gone(("feat/a", pr(1, "MERGED"))))
+        self.assertIsNotNone(g)
+        self.assertEqual(g["leadRow"]["close"], "wrapup")  # "plan all merged: close the plan and report done"
+
+    def test_a_member_still_running_keeps_the_batch(self):
+        self.session(3, "worker")
+        self.register("worker", branch="feat/a", lead="Commander-Gone")
+        g = self.lead_of(self.gone(("feat/a", pr(1, "MERGED"))))
+        self.assertEqual([m["name"] for m in g["members"]], ["worker"])
+
+    def test_an_owner_still_running_keeps_the_batch_though_nothing_groups_it(self):
+        for name, former in (("worker", ()), ("worker-2", ("worker",))):  # by its name, or the one it had
+            with self.subTest(name=name):
+                self.tearDown()
+                self.setUp()
+                self.session(3, name, former=former)
+                self.register(name, branch="feat/a")  # no --lead, no commander message
+                b = self.gone(("feat/a", pr(1, "MERGED")))
+                self.assertIsNotNone(self.lead_of(b))
+                self.assertFalse([h for h in b["hints"] if "nobody of its batch runs" in h])
+
+    def test_a_member_that_only_heard_from_the_commander_keeps_the_batch(self):
+        self.session(1, "Commander-Gone")
+        self.session(3, "reviewer")  # no --lead, owns no planned PR: its batch is known from the commander's message
+        self.transcript(3, (1, "Commander-Gone"))
+        self.assertEqual([m["name"] for m in self.lead_of(self.gone(("feat/a", pr(1, "MERGED"))))["members"]],
+                         ["reviewer"])
+        os.remove(os.path.join(self.root, "sessions", "1.json"))  # the commander exits; the reviewer runs on
+        b = self.build()
+        self.assertIsNotNone(self.lead_of(b))
+        self.assertFalse([h for h in b["hints"] if "nobody of its batch runs" in h])
+
+    def test_an_empty_plan_is_not_taken_for_a_finished_one(self):
+        self.plan("Commander-Gone", ("feat/a", "a", "worker"))
+        from admiral import registry
+        registry.plan_remove(self.cfg, "Commander-Gone", "feat/a")
+        self.assertIsNotNone(self.lead_of(self.build()))
+
+    def test_the_board_leaves_the_plan_file_as_it_was(self):
+        self.plan("Commander-Gone", ("feat/a", "a", "worker"))
+        self.prs = {"feat/a": pr(1, "MERGED")}
+        d = self.cfg.sub("batches")
+        before = {f: (open(os.path.join(d, f), "rb").read(), os.stat(os.path.join(d, f)).st_mtime_ns) for f in os.listdir(d)}
+        self.assertIsNone(self.lead_of(self.build()))
+        after = {f: (open(os.path.join(d, f), "rb").read(), os.stat(os.path.join(d, f)).st_mtime_ns) for f in os.listdir(d)}
+        self.assertEqual(before, after)
+
+    def test_once_the_plan_is_closed_the_hint_goes_too(self):
+        from admiral import registry
+        self.gone(("feat/a", pr(1, "MERGED")))
+        registry.plan_close(self.cfg, "Commander-Gone")
+        self.assertFalse([h for h in self.build()["hints"] if "Commander-Gone" in h])
+
+
 class Sources(World):
     def test_a_registered_branch_keeps_its_merge_while_its_session_is_away(self):
         self.session(4, "other")  # keeps the board refreshing

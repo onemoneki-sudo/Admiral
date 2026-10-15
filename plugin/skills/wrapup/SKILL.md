@@ -29,4 +29,6 @@ The board (`admiral board`, and the sidebar's wrap-up section) sorts every sessi
 
 A commander can close once no member is still running and it has wrapped up its batch: with its plan all merged, it
 closes the plan (`admiral plan close`) and reports `done` (`admiral state --who "<its name>" --phase done`; a commander registers like any session). Until it reports `done`, a
-commander with no running member is for the person to confirm: it may be planning, or deferred.
+commander with no running member is for the person to confirm: it may be planning, or deferred. If the commander was
+closed before its plan, the batch leaves the board once every deliverable has merged and no session of it runs; its
+plan stays, listed to tidy, until someone runs `admiral plan close`.
