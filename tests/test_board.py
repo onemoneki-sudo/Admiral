@@ -267,6 +267,38 @@ class KnownBySession(World):
         self.assertEqual((row["registered"], row["branches"]), (True, ["feat/a"]))
 
 
+class OnlyWhoShouldRegister(World):
+    """Running but not registered is said of a session at work that ought to register: not of a commander, listed as
+    one by its name, nor of one just opened that has had no message yet."""
+
+    def fresh(self, pid, name):
+        """A session opened a moment ago: no message yet, so no transcript, and its status unchanged since it began."""
+        from admiral import sessions
+        self.session(pid, name, since=NOW - 60, startedAt=(NOW - 60) * 1000)
+        os.remove(sessions.transcript(self.cfg, "/w/app", f"s{pid}"))
+
+    def test_a_commander_is_not_said_to_be_unregistered(self):
+        self.session(1, "Commander-A")
+        self.assertFalse([h for h in self.build(use_gh=False)["hints"] if "not registered: Commander-A" in h])
+
+    def test_a_session_just_opened_is_neither_unregistered_nor_a_sign_transcripts_moved(self):
+        self.session(1, "Commander-A")
+        self.fresh(3, "worker")
+        b = self.build(use_gh=False)
+        self.assertFalse([h for h in b["hints"] if "not registered: worker" in h], b["hints"])
+        self.assertFalse([h for h in b["health"] if "no transcript" in h], b["health"])
+
+    def test_once_it_works_unregistered_it_is_said_so(self):
+        self.session(3, "worker")
+        self.assertIn("running but not registered: worker", self.build(use_gh=False)["hints"])
+
+    def test_a_session_at_work_with_no_transcript_still_tells_transcripts_moved(self):
+        from admiral import sessions
+        self.session(3, "worker", status="busy", since=NOW - 30, startedAt=(NOW - 3600) * 1000)
+        os.remove(sessions.transcript(self.cfg, "/w/app", "s3"))
+        self.assertTrue([h for h in self.build(use_gh=False)["health"] if "no transcript" in h])
+
+
 class OutsideTheProjects(World):
     """Sessions outside the configured projects are not shown, but a name running there is never taken for one that
     ended, nor its batch for one with nobody running."""

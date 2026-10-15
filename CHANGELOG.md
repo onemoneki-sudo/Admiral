@@ -13,6 +13,9 @@ its cache, one copy per version, so a change to the sidebar or the playbook reac
   under another name (its task's, say) is known all the same, and told so. One made by hand, or for another session
   (by a commander, under a running session's name, or by a session registered as itself already), is found by name
   as before. The commands are unchanged.
+- "Running but not registered" is said only of a session at work that ought to register: not of a commander, listed
+  as one by its name, nor of one just opened that has had no message yet. Executors just opened no longer make the
+  board say transcripts may have moved.
 - Not seen among the projects' sessions is no proof a session has ended. A registered session running outside
   `project_dirs` is not shown, as before, but no longer reads as ended, and a batch with anyone of it working there
   (an owner, its commander, a member) is not taken for one that is over.
