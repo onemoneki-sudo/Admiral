@@ -595,12 +595,56 @@ class SeveralProjects(World):
         self.assertEqual(b["count"], 2)
         self.assertTrue([h for h in b["health"] if h.startswith("Gone: ")], b["health"])
 
+    def test_names_given_again_take_the_next_free_number(self):
+        self.cfg = config.Config(config.merge(self.cfg.data, {"projects": [
+            {"name": "A", "dirs": ["/w/a"]}, {"name": "A (3)", "dirs": ["/w/b"]}, {"name": "A", "dirs": ["/w/c"]},
+            {"name": "A", "dirs": ["/w/d"]}]}))
+        self.assertEqual([p["name"] for p in self.cfg.projects], ["A", "A (3)", "A (2)", "A (4)"])
+
+    def test_a_deliverable_finds_its_owner_by_the_name_the_board_shows(self):
+        self.session(1, "Commander-A")
+        self.session(3, "worker")
+        self.register("worker", lead="Commander-A")
+        self.plan("Commander-A", ("feat/a", "a", "worker"))
+        g = self.group(self.build(use_gh=False), "Commander-A [Shop]")
+        self.assertEqual([it["owner"] for it in g["batch"]["items"]], [m["name"] for m in g["members"]])
+
+    def test_a_plan_skips_an_owner_outside_every_project_for_one_inside(self):
+        self.session(3, "shop-worker")
+        self.session(6, "stray", cwd="/w/other")
+        self.session(5, "owner", cwd="/w/tool")
+        self.plan("Commander-Gone", ("feat/a", "a", "stray"), ("feat/b", "b", "owner"))
+        b = self.build()
+        self.assertEqual([(g["lead"], g["project"]) for g in b["groups"]], [("Commander-Gone [Tool]", "Tool")])
+
     def test_each_project_keeps_its_own_caches(self):
         self.session(3, "shop-worker")
         self.session(5, "tool-worker", cwd="/w/tool")
         self.build(use_gh=False)
         kept = os.listdir(os.path.join(self.root, "state", "projects"))
         self.assertEqual(sorted(k.split("_")[0] for k in kept), ["Shop", "Tool"])
+
+
+class CurrentNamesFirst(World):
+    """A name a session has now is that session's: another that once had it does not take its registration, nor a
+    commander that once had it its members."""
+
+    def test_a_registration_goes_to_the_session_with_that_name_now(self):
+        self.session(3, "Worker")
+        self.session(4, "Renamed", former=("Worker",))
+        self.register("Worker", branch="feat/shop")
+        b = self.build(use_gh=False)
+        regd = {x["name"]: x["registered"] for x in b["unassigned"]}
+        self.assertEqual(regd, {"Worker": True, "Renamed": False})
+
+    def test_members_stay_with_the_commander_that_has_the_name_now(self):
+        self.session(1, "Commander-A")
+        self.session(2, "Commander-B", former=("Commander-A",))
+        self.session(3, "worker")
+        self.register("worker", lead="Commander-A")
+        b = self.build(use_gh=False)
+        self.assertEqual([m["name"] for m in self.group(b, "Commander-A")["members"]], ["worker"])
+        self.assertEqual(self.group(b, "Commander-B")["members"], [])
 
 
 class OutsideTheProjects(World):

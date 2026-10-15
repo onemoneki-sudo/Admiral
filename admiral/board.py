@@ -379,7 +379,7 @@ def owned(cfg, views, starts):
         lead = by_name.get(pl["lead"])
         owners = [it.get("owner") for it in pl["items"] if it.get("owner")]
         p = project_of(lead and lead.get("cwd")) \
-            or next((project_of(by_name[o].get("cwd")) for o in owners if o in by_name), None) \
+            or next((p for p in (project_of(by_name[o].get("cwd")) for o in owners if o in by_name) if p), None) \
             or next((home[o] for o in owners if o in home), None) or home.get(pl["lead"])
         plans[p or views[0].project].append(pl)
     anyone = any(project_of(s.get("cwd")) for s in live)
@@ -399,6 +399,8 @@ def combine(cfg, views, boards):
             x["project"], x["name"], x["lead"] = v.project, named(x["name"], v.project), named(x["lead"], v.project)
         for g in b["groups"]:
             g["project"], g["lead"] = v.project, named(g["lead"], v.project)
+            for it in (g.get("batch") or {}).get("items", []):  # a deliverable finds its owner by name
+                it["owner"] = named(it["owner"], v.project)
         for xs in b["closable"].values():
             for x in xs:
                 x["project"], x["name"], x["lead"] = v.project, named(x["name"], v.project), named(x["lead"], v.project)
@@ -460,10 +462,13 @@ def build_one(cfg, use_gh=True, now=None, starts=sessions.proc_starts, fetch=git
             by_name.setdefault(r["who"], r)
 
     convs, matched = [], set()
+    current = {s.get("name") for s in live if s.get("name")}
     for s in live:
         name = s.get("name") or s.get("sessionId", "?")[:8]
         former = [f.get("name", "") for f in s.get("formerNames") or []]
-        reg = by_session.get(s.get("sessionId")) or next((by_name[n] for n in [s.get("name") or ""] + former
+        # a name another session has now is that session's, not this one's that once had it
+        former_own = [f for f in former if f not in current]
+        reg = by_session.get(s.get("sessionId")) or next((by_name[n] for n in [s.get("name") or ""] + former_own
                                                           if n in by_name), None)
         if reg:
             matched.add(reg["who"])
@@ -580,7 +585,8 @@ def build_one(cfg, use_gh=True, now=None, starts=sessions.proc_starts, fetch=git
 
     commanders = [x for x in rows if x["isCommander"]]
     names = {x["name"] for x in commanders}
-    alias = {f: c["name"] for c in convs if c["isCommander"] for f in c["former"]}
+    # a commander's former name leads to it, unless another commander has that name now
+    alias = {f: c["name"] for c in convs if c["isCommander"] for f in c["former"] if f not in names}
     groups = []
     for cmd in sorted(commanders, key=lambda x: x["name"]):
         members = [x for x in rows if not x["isCommander"] and alias.get(x["lead"], x["lead"]) == cmd["name"]]

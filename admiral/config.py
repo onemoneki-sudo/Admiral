@@ -101,8 +101,10 @@ class Config:
         self.projects, self.renamed = [], []  # a name given twice is told apart, and doctor says so
         for i, p in enumerate(p for p in data.get("projects") or [] if isinstance(p, dict)):
             name = given = str(p.get("name") or f"project {i + 1}")
+            n = 1
             while name in {q["name"] for q in self.projects}:
-                name = f"{given} ({len([q for q in self.projects if q['name'].startswith(given)]) + 1})"
+                n += 1
+                name = f"{given} ({n})"
             if name != given:
                 self.renamed.append((given, name))
             self.projects.append({"name": name, "dirs": [path(d) for d in p.get("dirs") or []],

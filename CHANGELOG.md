@@ -23,6 +23,8 @@ its cache, one copy per version, so a change to the sidebar or the playbook reac
   sessions, PRs, CI and caches) and put together, every batch and session saying its project; a registration or plan
   belongs to where its session or commander works. With none, `[sessions] project_dirs` and `[github] repo_dir` work
   as always. `admiral doctor` checks each project.
+- A name a session has now is that session's: another session that once had it no longer takes its registration,
+  nor a commander that once had it the other's members.
 - Not seen among the projects' sessions is no proof a session has ended. A registered session running outside
   `project_dirs` is not shown, as before, but no longer reads as ended, and a batch with anyone of it working there
   (an owner, its commander, a member) is not taken for one that is over.
