@@ -288,6 +288,34 @@ class Cli(unittest.TestCase):
         self.assertIn("54 sessions", line)
         self.assertIn("1 more commander: /admiral shows all", line)
 
+    def test_the_demo_shows_its_status_line_and_how_to_try_it_without_installing(self):
+        import json
+        import shlex
+        r = self.run_cli("demo", "--once")
+        self.assertEqual(r.returncode, 0, r.stderr)
+        self.assertIn("54 sessions", r.stdout)  # the status line, right there
+        words = shlex.split(next(ln for ln in r.stdout.splitlines() if " claude " in ln))
+        demo_cfg = os.path.join(self.dir, "state", "demo", "config.toml")
+        self.assertEqual(words[:2], ["ADMIRAL_CONFIG=" + demo_cfg, "claude"])
+        self.assertEqual(words[words.index("--plugin-dir") + 1], os.path.join(ROOT, "plugin"))
+        command = json.loads(words[words.index("--settings") + 1])["statusLine"]["command"]
+        self.assertEqual(shlex.split(command), [os.path.join(ROOT, "bin", "admiral"), "statusline"])
+        env = dict(self.env, ADMIRAL_CONFIG=demo_cfg, COLUMNS="170")  # that status line, as Claude Code runs it
+        line = subprocess.run(["/bin/sh", "-c", command], input="{}", capture_output=True, text=True, env=env).stdout
+        self.assertIn("54 sessions", line)
+
+    def test_the_demo_config_reads_back_whatever_the_path(self):
+        from admiral import config, demo
+        root = os.path.join(self.dir, "home-🚢 \"q\" \\ \x7f é")
+        os.makedirs(root)
+        cfg = config.load(demo.write_config(root, "en", "base \t🚢"))
+        self.assertEqual((cfg.state_dir, cfg.statusline_base), (os.path.join(root, "state"), "base \t🚢"))
+
+    def test_without_a_clone_the_demo_says_what_the_session_needs(self):
+        from admiral import demo
+        self.assertEqual(demo.try_command("/x/config.toml", root=self.dir), ("ADMIRAL_CONFIG=/x/config.toml claude", False))
+        self.assertTrue(demo.try_command("/x/config.toml")[1])  # this clone has its plugin and bin/admiral
+
     def test_the_demo_fleet_speaks_chinese(self):
         import json
         r = self.run_cli("demo", "--once", "--lang", "zh")

@@ -4,17 +4,19 @@ be seen (and pictured) without running dozens of sessions.
     admiral demo [--lang en|zh] [--tty NAME=ttysNNN ...] [--once]
 
 Everything lives under <state_dir>/demo: its own sessions, transcripts, registrations, plans, locks, config and
-board. It rebuilds the board every 20 seconds until stopped (`--once`: build it once and exit). Start Claude Code with
-ADMIRAL_CONFIG set to the config it prints, and that session's status line and sidebar show the demo. `--tty` ties a
-demo session to a real terminal tab, so a click on its name in the sidebar brings that tab to the front.
+board. It rebuilds the board every 20 seconds until stopped (`--once`: build it once and exit). It prints the board's
+status line, and the command that opens Claude Code on the demo with Admiral's status line and sidebar loaded from
+this clone for that session only, so the demo can be tried before anything is installed. `--tty` ties a demo session
+to a real terminal tab, so a click on its name in the sidebar brings that tab to the front.
 """
 
 import json
 import os
+import shlex
 import shutil
 import time
 
-from . import board, config, registry, sessions
+from . import board, config, registry, sessions, statusline
 
 START = "Mon Oct 12 09:00:00 2026"
 
@@ -204,13 +206,19 @@ def paths(root):
     return {k: os.path.join(root, k) for k in ("sessions", "projects", "state", "locks", "repo")}
 
 
+def toml(s):
+    """A TOML string: quoted as JSON does, but a character beyond the Basic Multilingual Plane (an emoji in a path, say)
+    kept as it is, since JSON writes it as two escapes TOML refuses, and DEL escaped, as TOML requires."""
+    return json.dumps(s, ensure_ascii=False).replace("\x7f", "\\u007f")
+
+
 def write_config(root, language, base, prefix="Commander"):
     p = paths(root)
-    text = (f'state_dir = {json.dumps(p["state"])}\nlanguage = "{language}"\n\n[sessions]\n'
-            f'dir = {json.dumps(p["sessions"])}\nprojects_dir = {json.dumps(p["projects"])}\n'
-            f'project_dirs = [{json.dumps(p["repo"])}]\ncommander_prefix = {json.dumps(prefix)}\n\n'
-            f'[github]\nrepo_dir = {json.dumps(p["repo"])}\n\n[locks]\ndir = {json.dumps(p["locks"])}\n\n'
-            f'[statusline]\nbase = {json.dumps(base)}\n')
+    text = (f'state_dir = {toml(p["state"])}\nlanguage = "{language}"\n\n[sessions]\n'
+            f'dir = {toml(p["sessions"])}\nprojects_dir = {toml(p["projects"])}\n'
+            f'project_dirs = [{toml(p["repo"])}]\ncommander_prefix = {toml(prefix)}\n\n'
+            f'[github]\nrepo_dir = {toml(p["repo"])}\n\n[locks]\ndir = {toml(p["locks"])}\n\n'
+            f'[statusline]\nbase = {toml(base)}\n')
     with open(os.path.join(root, "config.toml"), "w", encoding="utf-8") as fh:
         fh.write(text)
     return os.path.join(root, "config.toml")
@@ -276,6 +284,18 @@ def build(root, ttys, now=None, fleet=FLEET):
     return snap
 
 
+def try_command(demo_cfg, root=os.path.dirname(os.path.dirname(os.path.abspath(__file__)))):
+    """The command that opens Claude Code on the demo, and whether it brings Admiral's status line and sidebar, read
+    straight from the clone at `root` for that session only (nothing installed, no setting changed): only a clone has
+    them to bring."""
+    plugin, launcher = os.path.join(root, "plugin"), os.path.join(root, "bin", "admiral")
+    cmd = f"ADMIRAL_CONFIG={shlex.quote(demo_cfg)} claude"
+    if not (os.path.isdir(plugin) and os.path.isfile(launcher)):
+        return cmd, False
+    line = {"type": "command", "command": f"{shlex.quote(launcher)} statusline", "refreshInterval": 20}
+    return cmd + f" --plugin-dir {shlex.quote(plugin)} --settings {shlex.quote(json.dumps({'statusLine': line}))}", True
+
+
 def run(cfg, language, ttys, once=False):
     root = cfg.sub("demo")
     os.makedirs(root, exist_ok=True)
@@ -289,7 +309,13 @@ def run(cfg, language, ttys, once=False):
         if row[8] == WRAPPED:
             registry.done(cfg_demo, row[0])
     build(root, ttys, fleet=fleet)
-    print(f"Demo board written. Start Claude Code with:\n\n  ADMIRAL_CONFIG='{demo_cfg}' claude\n\n"
+    cols = statusline.columns()
+    lines = statusline.admiral_lines(cfg_demo.sub("board.json"), None, cols=cols)
+    cmd, brought = try_command(demo_cfg)
+    how = ("with Admiral's status line and sidebar for that session only (nothing installed, no setting of yours "
+           "changed)" if brought else "with Admiral's plugin installed and its status line set")
+    print("Demo board written. Its status line:\n\n" + "\n".join(statusline.fit(x, cols) for x in lines) + "\n\n"
+          f"To see it in Claude Code, {how}, run{'' if once else ' in another terminal'}:\n\n  {cmd}\n\n"
           "and open the sidebar with /admiral." + ("" if once else " Rebuilding every 20 seconds; Ctrl-C stops."))
     while not once:
         time.sleep(20)

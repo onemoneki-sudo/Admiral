@@ -157,12 +157,18 @@ the details that are yours (thresholds, tools, CI, reviewers) live in your proje
 
 ## Try it in a minute
 
+Nothing to install first; Python 3.11 or newer.
+
 ```sh
-admiral demo
+git clone https://github.com/onemoneki-sudo/Admiral.git ~/admiral
+~/admiral/bin/admiral demo
 ```
 
-Builds a made-up fleet of 54 sessions under 7 commanders with Admiral's real board code, and prints how to open a
-Claude Code session on it. Nothing of yours is touched.
+Builds a made-up fleet of 54 sessions under 7 commanders with Admiral's real board code, prints its status line, and
+keeps the fleet fresh until Ctrl-C. Leave it running, and in another terminal run the command it prints: a Claude Code
+session with Admiral's status line and sidebar (`/admiral`, on a Claude Code with plugin function hooks), read from the
+clone for that session only. Nothing of yours is touched or installed; [Install](#install) sets it up for your own
+sessions.
 
 ## How it works
 
@@ -190,7 +196,7 @@ from cron or a systemd timer; everything else works the same); Python 3.11 or ne
 for the sidebar, a Claude Code with plugin function hooks (early access, developed against 2.1.299 and tested on 2.1.300).
 
 ```sh
-git clone https://github.com/onemoneki-sudo/Admiral.git ~/admiral
+git clone https://github.com/onemoneki-sudo/Admiral.git ~/admiral   # cloned already to try the demo: skip this
 ~/admiral/scripts/install.sh       # config template, background job, `admiral` on your PATH; --dry-run shows what it would do
 ```
 
