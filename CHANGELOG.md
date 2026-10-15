@@ -6,6 +6,22 @@ its cache, one copy per version, so a change to the sidebar or the playbook reac
 
 ## Unreleased
 
+## 0.2.3 (2026-10-15)
+
+**Playbook**
+- Every session reads it: the plugin ends each session's system prompt with a short reminder of which skill to read at
+  which moment, about 1 KB; `[playbook] remind = false` turns it off where a project's own rules do that job.
+- In a batch, the commander pushes: executors commit locally and hand it the push, so the person's go-ahead and any
+  push confirmations happen in one session rather than across the fleet.
+
+**Install**
+- While Claude Code's automatic memory is on, the install script recommends turning it off, and says why; it never
+  changes the setting itself.
+
+**Docs**
+- The README explains the reminder and the memory recommendation, with a `CLAUDE.md` line for a Claude Code without
+  plugin function hooks.
+
 ## 0.2.2 (2026-10-15)
 
 **Playbook**

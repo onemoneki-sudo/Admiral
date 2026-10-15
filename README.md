@@ -35,7 +35,7 @@ decide whether it works:
 - **Decisions in one place.** Executors send the calls they cannot make to their commander. It makes the low-risk
   ones itself, the best way it sees, and writes each into the batch's decision log for you to read whenever you like;
   the ones only you can make, it gathers and brings to you together, each with options and a recommendation. You
-  decide in a handful of commanders, not across fifty sessions.
+  decide in a handful of commanders, not across fifty sessions, and the pushes you approve go out from there.
 
 Admiral shows all of it inside Claude Code without asking any session anything, and spends no model tokens doing so
 ([why](#why-it-spends-no-tokens)).
@@ -195,6 +195,19 @@ Then two steps that are yours, since Admiral never edits Claude Code's settings 
 Last, set `project_dirs` and `[github] repo_dir` in `~/.config/admiral/config.toml`. `scripts/install.sh --uninstall`
 removes the background job and the link.
 
+**The playbook in every session.** A skill is read when a session thinks of it, and a busy one may not. So the plugin
+ends every session's system prompt with a short reminder, about 1 KB, of which skill to read at which moment: before a
+task, before a push, when named a commander, after a merge. Where your project's own rules already do that job, turn
+it off with `[playbook] remind = false`. On a Claude Code without plugin function hooks, put the same line in your
+project's `CLAUDE.md`: *Follow the Admiral playbook: read admiral:principles and admiral:workspace before starting any
+task, and its other skills at the moments their descriptions name.*
+
+**Recommended: turn off automatic memory** (`"autoMemoryEnabled": false` in `~/.claude/settings.json`; the install
+script reminds you while it is on). Fifty sessions should not share notes nobody can see: with it off, what a session
+knows comes from files you can read and correct, the task brief, the decision log and your rules. It applies to all
+your projects, so it is your call, and the playbook works either way; see
+[Briefs and records, not memory](#briefs-and-records-not-memory).
+
 **Update**:
 
 ```sh
@@ -224,6 +237,9 @@ summary_checks = []                    # CI jobs that only sum up the others: na
 
 [statusline]
 base = ""                              # a status line command to run first
+
+[playbook]
+remind = true                          # remind every session which playbook skill to read when; false where your rules do
 
 [progress]                             # what each milestone is worth
 develop = 25
@@ -317,8 +333,9 @@ the board costs none:
 
 What does take tokens is your sessions' own work with Admiral, and it is small:
 
-- **The playbook.** It is instructions for your sessions, so it sits in their context like any rules: the six skill
-  descriptions, about 2 KB in all, in every session, and a skill's full text, 3 to 11 KB, once a session opens it.
+- **The playbook.** It is instructions for your sessions, so it sits in their context like any rules: the reminder of
+  when to read which skill, about 1 KB, and the six skill descriptions, about 2 KB, in every session; a skill's full
+  text, 3 to 11 KB, once a session opens it. `[playbook] remind = false` drops the reminder.
 - **A few commands.** Registering (`admiral register`), taking a lock or a commander reading `board.md` is an ordinary
   command, and the session reads its few lines of output.
 - **`/admiral`** leaves one line in the conversation, saying the sidebar opened or closed.

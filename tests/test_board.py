@@ -192,6 +192,11 @@ class Progress(World):
         s = self.group(self.build(), "Commander-A")["summary"]
         self.assertEqual((s["total"], s["pct"]), (3, 65))
 
+    def test_the_playbook_reminder_follows_the_config(self):
+        self.assertIs(self.build(use_gh=False)["playbookReminder"], True)  # on unless turned off
+        self.cfg.playbook_remind = False
+        self.assertIs(self.build(use_gh=False)["playbookReminder"], False)
+
     def test_weights_come_from_the_config(self):
         self.cfg.weights = [0, 10, 20, 30, 40, 100]
         self.session(3, "worker")

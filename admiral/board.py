@@ -481,7 +481,7 @@ def build(cfg, use_gh=True, now=None, starts=sessions.proc_starts, fetch=github.
     total = dist(overall)
     solo = pr_count({"members": unassigned})
     return {"generated": now, "gh": gh_ok, "ghReused": reused, "count": len(rows), "language": cfg.language,
-            "commanderPrefix": cfg.commander_prefix,
+            "commanderPrefix": cfg.commander_prefix, "playbookReminder": cfg.playbook_remind,
             "words": W, "weights": cfg.weights, "green": {"faint": [52, 84, 64], "full": [63, 185, 80]},
             "dist": total, "pct": pct(total, cfg.weights), "waiting": [x for x in rows if x["status"] == "waiting"],
             "prsMerged": sum(g["summary"]["prsMerged"] for g in groups) + solo[0],

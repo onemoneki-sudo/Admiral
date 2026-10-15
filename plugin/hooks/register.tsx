@@ -2,7 +2,8 @@
 // pane docked right of the transcript in every session. Its close mark (×) hides it; while hidden, one button above
 // the prompt brings it back (/admiral toggles it too); the always-on summary is the status line
 // (`admiral statusline`). Reads one local file every 10 seconds; calls no model and no GitHub. Every word it shows
-// comes from the board's word table, in the language the config sets.
+// comes from the board's word table, in the language the config sets. It also ends every session's system prompt with
+// the playbook's reminder (below), unless the config turns it off.
 //
 // Colors carry one meaning each: green is working or done, yellow is waiting for the person, red is broken
 // (CI failed, data stale, a commander gone); everything else is gray.
@@ -16,6 +17,19 @@ const TITLE = 'Admiral'
 const WIDTH = 50 // body columns asked for; the person's own drag wins
 const REREAD_MS = 10_000
 const STALE_S = 180 // board.json older than this means the launchd job stopped
+
+// Skills are read when a session thinks of them; this names the moment for each, so the playbook holds in every
+// session, not only in those that happen to open it. Written for the model, so in English whatever the language.
+const PLAYBOOK = `# Admiral playbook
+
+Several Claude Code sessions work on this machine in parallel, and the Admiral playbook says how they keep out of each other's way and deliver. Read each of its skills, with the Skill tool, before the moment it covers. Where the project's own rules say otherwise, the project's rules win.
+
+- admiral:principles - before starting a task, before acting on a finding, before calling work done, and before writing a PR, issue or report.
+- admiral:workspace - before working in a repository: the worktree, registration, what never to touch.
+- admiral:pipeline - before a feature or fix (the task brief comes first), when development is done, before the full test gate and before pushing.
+- admiral:roles - when named a commander, when given work large enough to split across sessions, and when dispatching or receiving work.
+- admiral:resources - before heavy tests or anything else that needs a shared resource.
+- admiral:wrapup - after a PR merges or closes, and when asked which sessions can be closed.`
 
 const board = atom({ plugin: 'admiral', key: 'board' } as const, null)
 const readError = atom({ plugin: 'admiral', key: 'readError' } as const, '')
@@ -176,6 +190,14 @@ export const register: Register = on => {
     if (!(await read($, isCollapsed))) void expand($)
 
     return next(e)
+  })
+
+  // Last in the system prompt, after the cache boundary, only where the Skill tool is there to read the skills with.
+  on('prompt.compose', async ($, e, next) => {
+    const composed = await next(e)
+    if (!e.traits.includes('skills') || e.traits.includes('bare')) return composed
+    if ((await read($, board))?.playbookReminder === false) return composed
+    return { sections: [...composed.sections, { id: 'admiral:playbook', text: PLAYBOOK, scope: 'session' as const }] }
   })
 
   on('command.run', { command: 'admiral' }, async $ => {

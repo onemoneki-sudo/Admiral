@@ -57,6 +57,7 @@ Before marking ready, give the person a report (a file in the batch folder, a sh
 ## 7. One push, straight to ready
 
 - Development, acceptance and the gate all happen locally. Once the person decides, push each branch once and open the PR ready (not draft), so CI runs once on the final version. Push earlier only when someone truly needs the remote branch and the person agrees.
+- **In a batch, the commander pushes.** Pushing is the person's decision, and in a batch that decision is made at the commander, so the commander carries it out: executors commit locally and send it the branch, worktree and commit; once the person decides, it pushes each (`git -C <worktree> push -u origin <branch>`). Where every push asks for confirmation, the person confirms them in one session rather than across the fleet. The executor that owns the PR then opens it, sets labels and reviewers, writes its body and answers comments. An independent session pushes its own; where a project's rules have executors push their own, they do.
 - Marking ready, closing, reopening and merging are the person's or the maintainer's; agents never merge on their own nor bypass required checks or approvals. Agreement to mark ready authorises enabling auto-merge.
 - **Stacked PRs** (base is not the default branch): say so on the first line; never auto-merge or merge them (an unprotected base swallows the merge); after the lower PR lands, retarget to the default branch, merge it in (with the lower PR's last head as merge base when it was squashed), push, then enable auto-merge.
 

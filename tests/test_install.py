@@ -44,7 +44,19 @@ class Install(unittest.TestCase):
             self.assertEqual(data["sessions"]["commander_prefix"], "Commander")
             self.assertIn("claude plugin install admiral@admiral", r.stdout)
             self.assertIn("would record the Python", r.stdout)
+            self.assertIn('"autoMemoryEnabled": false', r.stdout)  # memory left on: recommended off
             self.assertEqual(recorded(), before)  # the dry run records no Python
+
+    def test_no_memory_advice_once_it_is_off(self):
+        with tempfile.TemporaryDirectory() as d:
+            home = os.path.join(d, "home")
+            os.makedirs(os.path.join(home, ".claude"))
+            with open(os.path.join(home, ".claude", "settings.json"), "w") as fh:
+                fh.write('{"autoMemoryEnabled": false}')
+            r = subprocess.run(["bash", os.path.join(ROOT, "scripts", "install.sh"), "--dry-run"], capture_output=True,
+                               text=True, env=dict(os.environ, HOME=home, ADMIRAL_CONFIG=os.path.join(d, "c.toml")))
+            self.assertEqual(r.returncode, 0, r.stderr)
+            self.assertNotIn("autoMemoryEnabled", r.stdout)
 
 
 class SpacedPath(unittest.TestCase):

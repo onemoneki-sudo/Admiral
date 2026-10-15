@@ -52,6 +52,7 @@ export type Board = {
   green?: { faint: number[]; full: number[] }
   words: Record<string, string | string[] | Record<string, string>>
   language?: string
+  playbookReminder?: boolean
   mine?: { open: number; mergedToday: number } | null
   closable?: Record<'close' | 'wrapup' | 'confirm', { name: string; lead: string; tty: string; why: string }[]>
 }

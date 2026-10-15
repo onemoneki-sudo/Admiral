@@ -20,5 +20,6 @@ unless you ask otherwise.
 Knowing this helps judge a report. Admiral runs locally as you. It reads Claude Code's files under `~/.claude`, `ps`
 and `git` (read-only); it writes only its state directory, its config, the locks you take and, at install, its
 background job, a link on your PATH and a note in the clone of which Python to use; it sends nothing but `gh` calls to GitHub, as you. It never edits Claude Code's
-settings and never types into a session. The status line runs the `base` command from your own config, through the
+settings and never types into a session; the plugin adds one thing to what sessions read, the playbook's reminder at
+the end of the system prompt, which `[playbook] remind = false` turns off. The status line runs the `base` command from your own config, through the
 shell, as your previous status line did.

@@ -22,6 +22,10 @@ all Admiral shows every Claude Code session on the machine and reads no GitHub.
     [statusline]
     base = ""                               # the status line command to run first (claude-hud, for example)
 
+    [playbook]
+    remind = true                           # a short reminder in every session's system prompt of which playbook
+                                            # skill to read when; false where the project's own rules do that job
+
     [progress]                              # what each milestone is worth, in percent
     develop = 25
     review = 50
@@ -46,6 +50,7 @@ DEFAULTS = {
     "github": {"repo_dir": "", "summary_checks": []},
     "locks": {"dir": "", "commanders": ""},
     "statusline": {"base": ""},
+    "playbook": {"remind": True},
     "progress": {"develop": 25, "review": 50, "accept": 70, "ci": 80, "merged": 100},
     "pacing": {"quiet_minutes": 30, "quiet_github_minutes": 15},
     "closing": {"idle_confirm_hours": 24, "idle_flag_days": 3, "stale_phase_hours": 24},
@@ -79,6 +84,7 @@ class Config:
         self.locks_dir = path(data["locks"]["dir"]) or os.path.join(self.state_dir, "locks")
         self.lock_commanders = path(data["locks"]["commanders"]) or os.path.join(self.state_dir, "lock-commanders.txt")
         self.statusline_base = data["statusline"]["base"]
+        self.playbook_remind = data["playbook"]["remind"] is not False
         p = data["progress"]
         self.weights = [0, p["develop"], p["review"], p["accept"], p["ci"], p["merged"]]
         self.quiet_s = data["pacing"]["quiet_minutes"] * 60

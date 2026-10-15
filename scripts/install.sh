@@ -104,3 +104,15 @@ Next, by hand:
 
   3. Check: '$here/bin/admiral' board   (prints the board as Markdown)
 NEXT
+
+# Automatic memory, read and never changed: recommended off, so what a session knows comes from files you can read.
+settings="$HOME/.claude/settings.json"
+memory="$(python3 -c 'import json,sys; print("off" if json.load(open(sys.argv[1])).get("autoMemoryEnabled") is False else "on")' "$settings" 2>/dev/null || echo on)"
+if [ "$memory" = on ]; then cat <<MEMORY
+
+Recommended: Claude Code's automatic memory is on. Many sessions should not share notes nobody can see; with it off,
+what a session knows comes from the task brief, the decision log and your rules, files you can read and correct.
+It applies to all your projects, so it is your call. To turn it off, add to ~/.claude/settings.json:
+       "autoMemoryEnabled": false
+MEMORY
+fi
