@@ -6,6 +6,10 @@ its cache, one copy per version, so a change to the sidebar or the playbook reac
 
 ## Unreleased
 
+**Status line and sidebar**
+- A batch with no plan and no member registered reads "progress unknown: no member registered" rather than "no
+  progress yet", which read as nothing done.
+
 ## 0.2.5 (2026-10-15)
 
 **Board**

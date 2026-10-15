@@ -45,7 +45,8 @@ class Parts(unittest.TestCase):
         lines = statusline.Lines(board())
         self.assertEqual(plain(lines.bar(57, 1, 11)), "██████░░░░  57%  PRs merged 1/11")
         self.assertEqual(plain(lines.bar(57)), "██████░░░░  57%")
-        self.assertEqual(plain(lines.bar(None)), "no progress yet")
+        # no plan and no member registered: nothing to count, said with why rather than read as nothing done
+        self.assertEqual(plain(lines.bar(None)), "progress unknown: no member registered")
         self.assertEqual(plain(lines.bar(25, 0, 0)), "██░░░░░░░░  25%")  # no PR yet: no "merged 0/0"
 
     def test_the_bar_deepens_from_faint_to_full_green(self):
