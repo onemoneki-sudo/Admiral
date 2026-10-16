@@ -1,6 +1,6 @@
 {
   "name": "admiral",
-  "version": "0.2.6",
+  "version": "0.2.7",
   "description": "Admiral: a sidebar of every Claude Code session, grouped under its commander, with progress, who waits for you and what can close; plus the playbook skills for running many sessions on one repository",
   "author": {
     "name": "Admiral contributors"
