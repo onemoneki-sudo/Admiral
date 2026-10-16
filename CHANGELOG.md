@@ -6,21 +6,24 @@ its cache, one copy per version, so a change to the sidebar or the playbook reac
 
 ## Unreleased
 
+## 0.2.7 (2026-10-16)
+
 **Playbook**
 - A session that hands a piece of work over (done, sent for review, ready to push), or is in doubt, says unasked, a
   sentence each with its evidence, whether the work still serves the goal, stays within the task's scope and holds for
-  every case of its kind rather than one. The review by a different model asks the same, adding to a repository's own
-  review prompt only what it does not ask, and the report before a push carries it.
+  every case of its kind rather than one; a small change needs a few words. The review by a different model asks the
+  same, adding to a repository's own review prompt only what it does not ask, and the report before a push carries it.
 
 **Try it**
 - `admiral demo` prints the demo's status line, and the command that opens Claude Code on the demo with Admiral's status
   line and sidebar read from the clone for that session only: the demo can be tried right after cloning, before
-  anything is installed or set. "Try it in a minute" in the README now starts from the clone.
+  anything is installed or set. "Try it in a minute" in the README now starts from the clone. Run from a copy without
+  the plugin, the demo says the session needs it installed; a path with an emoji in it no longer stops the demo.
 
 **Status line**
-- On a board of several projects, the status line names a session or a commander without its project unless another
-  project has the name too, as the project is there to tell two apart: with it, batch names were cut short. The board
-  and the sidebar still give every name its project.
+- On a board of several projects, the status line leaves a name's project out wherever the name then reads like no
+  other on the line (a session waiting, a batch, the commander a session works under): with it, batch names were cut
+  short. Names that would read alike keep their project; the board and the sidebar still give every name its project.
 
 ## 0.2.6 (2026-10-15)
 
