@@ -73,6 +73,11 @@ Docs, copy and mechanical changes need none. What changes during acceptance goes
   ready covers enabling auto-merge.
 - A PR built on another unmerged branch says so on its first line and is not auto-merged; once the lower PR lands,
   retarget it to the default branch.
+- PRs of one batch can each pass alone and fail together. Before they go ready, check them merged together on the
+  latest default branch. When one adds what every change must satisfy (a check across the repository, a registry, a
+  numbered sequence), it merges last: it takes in the default branch and fills in what the others brought, so they
+  need no second push or approval, and it is not auto-merged until then. When it guards against harm happening now,
+  it merges first instead, and the others take it in before they merge.
 
 ## 6. Word completion precisely
 
