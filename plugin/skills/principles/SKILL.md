@@ -17,6 +17,10 @@ what you were told for this project, tell the person, who decides.
   **without handling it, is the goal still reached?** If not, including a regression your change brought, fix it
   before delivering. If so, defer it: note it in the batch's list of deferred items, or the brief's, and do not widen
   the task (wrapup says what becomes of the list). Decide this yourself rather than stopping to ask.
+- Say how the work stands against the goal unasked, when you hand a piece of it over (done, sent for review, ready
+  to push) or are in doubt: a sentence each, with its evidence, on whether it still serves the goal, stays within the
+  task's scope, and holds for every case of its kind rather than one (see Building). A small change needs a few words;
+  expand only a line you are unsure of. The person should not have to ask.
 - Some decisions stay with the person: pushing, merging, changing these rules, exposing data to someone new, and any
   outward action beyond what they authorised.
 
