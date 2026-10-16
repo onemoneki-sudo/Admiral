@@ -10,8 +10,10 @@ Where the project's own rules differ from this playbook, the project's rules win
 ## Who does what
 
 - **Independent session**: carries its own task from start to finish and asks the person directly when a decision is
-  theirs. When its work spans several areas that could go ahead in parallel, each worth its own PR, it says so first
-  and proposes that the person name it a commander; small or tightly coupled work it simply does.
+  theirs. Once it has worked out what is asked, and before it writes a design, a brief or code, it says in the chat
+  what it will do, roughly how big that is and how it splits into PRs (see pipeline), and recommends doing it itself
+  or, when the work spans areas that could go ahead in parallel, being named a commander; then it waits for the
+  person to decide. A small fix asked for plainly, or work the person said at the start to do directly, it does.
 - **Commander** (only when the person names it so: its name starts with the commander prefix, `Commander-` unless
   configured otherwise, set with `claude -n` or `/rename`): splits the work, writes the briefs, dispatches by
   cross-session message, makes the decisions within the person's authorisation and logs each, brings the ones only the

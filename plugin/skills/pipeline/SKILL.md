@@ -14,9 +14,16 @@ brief → develop (affected tests) → review by a different model → the perso
 ## 1. Brief first
 
 Before a feature or fix, write down its goal, how it will be accepted and what is out of scope; a small fix takes
-three lines, and an issue that already says it is cited. Decisions made along the way go into the brief. Settle how
-the work splits into PRs at the start. A batch of parallel sessions keeps one folder outside the repository for its
-briefs, a status note per session and the decision log.
+three lines, and an issue that already says it is cited. Decisions made along the way go into the brief. A batch of
+parallel sessions keeps one folder outside the repository for its briefs, a status note per session and the decision
+log.
+
+Settle how the work splits into PRs at the start: one PR for each result the person can accept at once, and one for
+each independent small fix, since every PR costs an acceptance, a review and a full CI run. Split further only where
+the parts can each start from the default branch and go ahead at the same time, where one part is risky (permissions,
+migrations, money) and is better reviewed alone, or where the whole is too much to review clearly in one go, judged by
+how well it can be reviewed, not by its line count. Steps or layers of one result (a frame and then its content, a
+backend and its screen) are not split for that alone; a PR that has to wait for another to merge says why.
 
 ## 2. Develop, verifying what is affected
 
