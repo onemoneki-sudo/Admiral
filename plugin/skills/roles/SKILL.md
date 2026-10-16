@@ -31,6 +31,7 @@ Where the project's own rules differ from this playbook, the project's rules win
 - Once the split is settled, record each deliverable (branch, title, owner) with
   `admiral plan add --lead "<commander name>"`, keep it in step with `admiral plan rm`, and `admiral plan close` when
   the batch is over. The board counts the batch's progress from this plan.
+- Numbers the batch's work must not repeat (a migration's, a version's) are handed out with the dispatch.
 - Learn progress from the board (`admiral board`), not by asking each session.
 
 ## Sizing a batch
