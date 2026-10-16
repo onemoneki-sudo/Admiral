@@ -8,9 +8,10 @@ its cache, one copy per version, so a change to the sidebar or the playbook reac
 
 **Playbook**
 - PRs of one batch can each pass alone and fail together: before they go ready they are checked merged together on the
-  latest default branch, and the one that adds what every change must satisfy (a check across the repository, a
-  registry, a numbered sequence) merges last, catching up with the others itself, unless it guards against harm
-  happening now. Numbers a batch must not repeat are handed out with the dispatch.
+  latest default branch, and one that adds what every change must satisfy (a check across the repository, a registry,
+  a numbered sequence) merges after the PRs it must cover, catching up with them itself; two that need each other are
+  ordered or combined. One that guards against harm going on merges first, without waiting for the batch.
+  Numbers a batch must not repeat are handed out with the dispatch.
 - An independent session stops once it has worked out what is asked, before it writes a design, a brief or code: it
   says what it will do, roughly how big that is and how it splits into PRs, recommends doing it itself or being named a
   commander, and waits for the person to decide. A small fix asked for plainly, or work the person said to do directly,
