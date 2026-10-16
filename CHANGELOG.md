@@ -6,6 +6,16 @@ its cache, one copy per version, so a change to the sidebar or the playbook reac
 
 ## Unreleased
 
+**Playbook**
+- An independent session stops once it has worked out what is asked, before it writes a design, a brief or code: it
+  says what it will do, roughly how big that is and how it splits into PRs, recommends doing it itself or being named a
+  commander, and waits for the person to decide. A small fix asked for plainly, or work the person said to do directly,
+  it does.
+- How work splits into PRs: one for each result the person can accept at once, and one for each independent small fix.
+  Split further only for parts that can go ahead at the same time, a risky part better reviewed alone, or a whole too
+  much to review clearly, judged by how well it can be reviewed rather than by line count; not by steps or layers of
+  one result.
+
 ## 0.2.7 (2026-10-16)
 
 **Playbook**
