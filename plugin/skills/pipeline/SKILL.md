@@ -18,8 +18,9 @@ the chat what it will do, roughly how big that is and how it splits into PRs (be
 being named a commander (see roles), and waits for the person to decide. A small fix asked for plainly, or work the
 person said at the start to do directly, it does.
 
-Before a feature or fix, write down its goal, how it will be accepted and what is out of scope; a small fix takes
-three lines, and an issue that already says it is cited. Decisions made along the way go into the brief. A batch of
+Before a feature or fix, write down its goal, how it will be accepted (the cases it must hold in, and those it leaves
+alone, so that a review does not take every edge case for a failure) and what is out of scope; a small fix takes three
+lines, and an issue that already says it is cited. Decisions made along the way go into the brief. A batch of
 parallel sessions keeps one folder outside the repository for its briefs, a status note per session and the decision
 log.
 
@@ -35,6 +36,10 @@ merge says why.
 
 - After each change run the linters and the tests it affects, not the whole suite; tests that need a shared resource
   take its lock first (see resources).
+- Find those tests by more than one route, as deep as the change warrants, since each misses something: its callers,
+  traced with an impact tool where the project has one or by hand, and a search for the names and paths it touches.
+  Files read at run time rather than imported (SQL, templates, pages a browser test loads) have no callers and are
+  found by their paths; a test that scans the whole tree or a registry is affected by any change to what it scans.
 - Verify locally under the conditions CI and production have (versions, services, permissions): what can be caught
   locally is caught there, and a pass under looser conditions does not count.
 - Run the whole suite when you cannot tell what is affected, or the change is global (configuration, startup,

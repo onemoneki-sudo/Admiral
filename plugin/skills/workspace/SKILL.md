@@ -10,7 +10,10 @@ Where the project's own rules differ from this playbook, the project's rules win
 ## Before starting: look, then register
 
 - Start from the fetched default branch. Check a handover, an old plan or a "current state" against the remote and the
-  open PRs before acting on it.
+  open PRs before acting on it. Before new work, look on the remote too for the same work under way or done (open PRs,
+  issues, recent merges, wherever the project keeps them), as closely as its size warrants: a session that has ended
+  may have left a PR open. What is found goes to the person rather than being started again; an overlap is pointed out
+  for them to decide.
 - Look first: `admiral list` (who works on what), `admiral lock status`, `git worktree list`. When someone's registered
   area overlaps yours, agree the order with them or the person first.
 - Register when work starts: `admiral register --who "<this session's name>" --task "<task>" --branch <branch>
