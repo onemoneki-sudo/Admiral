@@ -80,6 +80,7 @@ if [ "$(uname)" = Darwin ]; then
   <key>Label</key><string>$label</string>
   <key>ProgramArguments</key><array><string>/bin/bash</string><string>$here/scripts/refresh.sh</string></array>
   <key>StartInterval</key><integer>60</integer>
+  <key>ProcessType</key><string>Interactive</string>
   <key>RunAtLoad</key><true/>$env_keys
 </dict></plist>"
   if [ $dry -eq 1 ]; then echo "would write $plist and load it:"; echo "$job" | sed 's/^/    /'

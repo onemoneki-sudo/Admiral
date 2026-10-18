@@ -4,6 +4,20 @@ Each version says what changed for someone using Admiral. The version lives in `
 `plugin/.claude-plugin/plugin.json` carries the same one (the tests check): Claude Code keeps an installed plugin in
 its cache, one copy per version, so a change to the sidebar or the playbook reaches people only when the version moves.
 
+## Unreleased
+
+**Background job**
+- On a busy machine a refresh can take minutes; the status line, the sidebar and `admiral doctor` now say the job is
+  still refreshing, slowed by a busy machine, rather than that it may have stopped, while a refresh begun since the
+  board was written is under way (under ten minutes) and has written no error.
+- The background job is set up so that macOS does not slow it down like background work: on a busy Mac a refresh took
+  several times longer than the same one run by hand. A job set up by an earlier install keeps the old way until the
+  install script runs again; `admiral doctor` says so.
+
+**Status line**
+- The status line set before Admiral's (claude-hud, say) no longer comes and goes on a busy machine: when it takes
+  longer than its 5 seconds, the last it showed in that session stands in for it, if that is under two minutes old.
+
 ## 0.2.8 (2026-10-18)
 
 **Playbook**

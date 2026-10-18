@@ -21,6 +21,10 @@ import unicodedata
 from .words import phrases
 
 STALE_S = 180
+RUN_S = 600  # a refresh running longer than this is taken for stuck, not slow
+BASE_TIMEOUT_S = 5
+BASE_KEPT_S = 120  # how long a base's last output may stand in for one too slow this time
+KEPT_DAYS_S = 86400  # what sessions left that long ago is cleared
 DEFAULT_STATE = "~/.local/state/admiral"  # where scripts/refresh.sh reports a job that could not start (config.py's default)
 BAR = 10
 TEAMS = 5
@@ -227,19 +231,72 @@ def no_board(state_dir):
     return "no board yet: run scripts/install.sh (it starts the background job), or `admiral board --write` every minute"
 
 
+def refreshing(board_file, now):
+    """Whether the background job is on a refresh begun since the board was written, recently enough to be slow
+    rather than stuck, and with no error so far: scripts/refresh.sh begins each run by emptying last-error.txt."""
+    errors = os.path.join(os.path.dirname(board_file), "last-error.txt")
+    try:
+        started = os.path.getmtime(errors)
+        # a time ahead of the clock (put back since) says nothing of a refresh now
+        return started > os.path.getmtime(board_file) and 0 <= now - started <= RUN_S and not os.path.getsize(errors)
+    except OSError:
+        return False
+
+
 def admiral_lines(board_file, session_id, now=None, cols=None):
     try:
         with open(board_file, encoding="utf-8") as fh:
             b = json.load(fh)
     except (OSError, ValueError):
         return [f"{c(ORANGE, 'Admiral')}  {c(RED, no_board(os.path.dirname(board_file)))}"]
-    age = (now or time.time()) - b["generated"]
+    now = now or time.time()
+    age = now - b["generated"]
     if age > STALE_S:
         mins = int(age // 60)
+        if refreshing(board_file, now) and "slow" in b["words"]:
+            slow = b["words"]["slow"].format(age=b["words"]["min_ago"].format(n=mins))
+            return [f"{c(ORANGE, 'Admiral')}  {c(YELLOW, slow)}"]
         err = job_error(os.path.dirname(board_file))
         why = f" ({err})" if err else ""
         return [f"{c(ORANGE, 'Admiral')}  {c(RED, b['words']['stale'].format(age=b['words']['min_ago'].format(n=mins)) + why)}"]
     return Lines(b).render(session_id, cols)
+
+
+def base_output(cfg, raw, session_id, run=subprocess.run, clock=time.time):
+    """The base status line's output. One too slow this time (a busy machine) is stood in for by the last it gave in
+    this session while that is fresh, so it does not come and go; older, it is left out rather than shown stale. Only
+    a run that went well is kept."""
+    named = isinstance(session_id, str) and re.fullmatch(r"[\w-]+", session_id)  # a session id, never a path
+    kept = cfg.sub("statusline-base", f"{session_id}.txt") if named else None
+    try:
+        r = run(["/bin/sh", "-c", cfg.statusline_base], input=raw, capture_output=True, text=True,
+                timeout=BASE_TIMEOUT_S, env=dict(os.environ, ADMIRAL_IN_BASE="1"))  # never Admiral inside Admiral
+    except subprocess.TimeoutExpired:
+        try:  # its age as it is now, after the wait; a time ahead of the clock (put back since) is no age at all
+            if kept and 0 <= clock() - os.path.getmtime(kept) <= BASE_KEPT_S:
+                with open(kept, encoding="utf-8") as fh:
+                    return fh.read()
+        except OSError:
+            pass
+        return ""
+    out = r.stdout.rstrip("\n") if r.stdout.strip() else ""
+    if kept and r.returncode == 0:
+        try:
+            if out:
+                os.makedirs(os.path.dirname(kept), exist_ok=True)
+                tmp = f"{kept}.{os.getpid()}"
+                with open(tmp, "w", encoding="utf-8") as fh:
+                    fh.write(out)
+                os.replace(tmp, kept)
+            elif os.path.exists(kept):
+                os.remove(kept)
+            now = clock()
+            for e in os.scandir(os.path.dirname(kept)):
+                if now - e.stat().st_mtime > KEPT_DAYS_S:
+                    os.remove(e.path)
+        except OSError:
+            pass  # nothing kept: the line still shows what the base gave
+    return out
 
 
 def main(cfg):
@@ -256,14 +313,9 @@ def main(cfg):
     except ValueError:
         data = {}
     out = []
-    if cfg.statusline_base:
-        try:
-            r = subprocess.run(["/bin/sh", "-c", cfg.statusline_base], input=raw, capture_output=True, text=True,
-                               timeout=5, env=dict(os.environ, ADMIRAL_IN_BASE="1"))  # never Admiral inside Admiral
-            if r.stdout.strip():
-                out.append(r.stdout.rstrip("\n"))
-        except subprocess.TimeoutExpired:
-            pass
+    base = base_output(cfg, raw, data.get("session_id")) if cfg.statusline_base else ""
+    if base:
+        out.append(base)
     cols = columns()
     out += [fit(line, cols) for line in admiral_lines(cfg.sub("board.json"), data.get("session_id"), cols=cols)]
     sys.stdout.write("\n".join(out) + "\n")

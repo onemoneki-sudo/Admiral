@@ -16,7 +16,8 @@ const PANE = 'admiral'
 const TITLE = 'Admiral'
 const WIDTH = 50 // body columns asked for; the person's own drag wins
 const REREAD_MS = 10_000
-const STALE_S = 180 // board.json older than this means the launchd job stopped
+const STALE_S = 180 // board.json older than this means the launchd job stopped, unless a refresh is under way
+const RUN_S = 600 // a refresh running longer than this is taken for stuck, not slow (as admiral/statusline.py)
 
 // Skills are read when a session thinks of them; this names the moment for each, so the playbook holds in every
 // session, not only in those that happen to open it. Written for the model, so in English whatever the language.
@@ -33,6 +34,7 @@ Several Claude Code sessions work on this machine in parallel, and the Admiral p
 
 const board = atom({ plugin: 'admiral', key: 'board' } as const, null)
 const readError = atom({ plugin: 'admiral', key: 'readError' } as const, '')
+const refreshBegan = atom({ plugin: 'admiral', key: 'refreshBegan' } as const, 0)
 const isCollapsed = atom({ plugin: 'admiral', key: 'isCollapsed' } as const, false)
 const isHintsOpen = atom({ plugin: 'admiral', key: 'isHintsOpen' } as const, false)
 const isIdleOpen = atom({ plugin: 'admiral', key: 'isIdleOpen' } as const, false)
@@ -139,6 +141,20 @@ async function load($: EngineInterface): Promise<void> {
     err = `${boardPath || 'board.json'}: ${e instanceof Error ? e.message : String(e)}`
   }
   await update($, readError, () => err)
+  const began = await refreshing($)
+  await update($, refreshBegan, () => began)
+}
+
+// When the refresh under way began (ms), or 0: scripts/refresh.sh begins each run by emptying last-error.txt, so one
+// emptied since the board was written is a refresh not yet done, and one with an error in it is not a slow one.
+async function refreshing($: EngineInterface): Promise<number> {
+  try {
+    const errors = await $.fs.stat(boardPath.replace(/board\.json$/, 'last-error.txt'))
+    const written = await $.fs.stat(boardPath)
+    return errors.mtimeMs > written.mtimeMs && errors.size === 0 ? errors.mtimeMs : 0
+  } catch {
+    return 0
+  }
 }
 
 // The pane moves first and the atom after, so the button's redraw (it reads the atom) sees the pane's new state.
@@ -231,6 +247,7 @@ export const register: Register = on => {
     const { Box, Text, Button } = $.ui.resolve(e)
     const b = await read($, board)
     const err = await read($, readError)
+    const began = await read($, refreshBegan)
     const hintsOpen = await read($, isHintsOpen)
     const idleOpen = await read($, isIdleOpen)
     const nowS = (await $.clock.now()) / 1000
@@ -402,8 +419,9 @@ export const register: Register = on => {
       parts.push(<Text key={`health-${i}`} color="error" wrap="wrap">⚠ {h}</Text>)
     }
     if (!b || err || nowS - b.generated > STALE_S) {
-      const why = err || (b ? fmt('stale', { age: ago(nowS, b.generated) }) : fmt('loading'))
-      parts.push(<Text key="stale" color="error">{why}</Text>)
+      const slow = !err && b && began && nowS >= began / 1000 && nowS - began / 1000 <= RUN_S && W.slow
+      const why = err || (b ? fmt(slow ? 'slow' : 'stale', { age: ago(nowS, b.generated) }) : fmt('loading'))
+      parts.push(<Text key="stale" color={slow ? 'warning' : 'error'}>{why}</Text>)
     }
     if (!b) return <Box flexDirection="column">{parts}</Box>
 

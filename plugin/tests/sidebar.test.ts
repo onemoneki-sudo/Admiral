@@ -23,10 +23,11 @@ const board = {
 
 // Mounts the sidebar on a board; the engine's answers beneath the plugin come from here, and every process it runs is
 // recorded.
-async function mount($: any, on: any, b: unknown) {
+async function mount($: any, on: any, b: unknown, files: Record<string, { size: number; mtimeMs: number }> = {}) {
   const runs: string[][] = []
   on('session.start', async (_$: any, e: any) => ({ cwd: e.cwd }) as any)
-  on('fs.stat', async () => ({ value: { realPath: '/opt/admiral-cache/plugin', isFile: false, isDirectory: true, size: 0, mtimeMs: 0 } }) as any)
+  on('fs.stat', async (_$: any, e: any) => ({ value: { realPath: '/opt/admiral-cache/plugin', isFile: false,
+    isDirectory: true, size: 0, mtimeMs: 0, ...files[String(e.path ?? e).split('/').pop() ?? ''] } }) as any)
   on('fs.exists', async () => ({ value: false }) as any)
   on('process.run', async (_$: any, e: any) => {
     runs.push(e)
@@ -67,4 +68,30 @@ test('a deliverable only reported done says so, and is not drawn as merged', asy
   expect(shown).toContain('reported done')
   expect(shown).toContain('PRs merged 0/1')
   expect(shown).toContain('{"type":"Text","props":{"dimColor":true},"children":["▰"]}')  // the last milestone dim
+})
+
+test('a late board whose refresh is under way says the job is slow, not stopped', async ($, on) => {
+  const late = { ...board, generated: now - 600, words: {
+    min_ago: '{n} min ago', stale: 'data {age} old: may have stopped', slow: 'data {age} old: still refreshing' } }
+  const begun = (size: number) => ({ 'board.json': { size: 1, mtimeMs: (now - 590) * 1000 },
+    'last-error.txt': { size, mtimeMs: (now - 120) * 1000 } })
+  expect((await mount($, on, late, begun(0))).shown).toContain('still refreshing')
+})
+
+test('a late board whose last refresh wrote an error says the job may have stopped', async ($, on) => {
+  const late = { ...board, generated: now - 600, words: {
+    min_ago: '{n} min ago', stale: 'data {age} old: may have stopped', slow: 'data {age} old: still refreshing' } }
+  const begun = { 'board.json': { size: 1, mtimeMs: (now - 590) * 1000 },
+    'last-error.txt': { size: 40, mtimeMs: (now - 120) * 1000 } }
+  const { shown } = await mount($, on, late, begun)
+  expect(shown).toContain('may have stopped')
+  expect(shown).not.toContain('still refreshing')
+})
+
+test('a refresh begun in the future (the clock was put back) is not taken for one under way', async ($, on) => {
+  const late = { ...board, generated: now - 600, words: {
+    min_ago: '{n} min ago', stale: 'data {age} old: may have stopped', slow: 'data {age} old: still refreshing' } }
+  const begun = { 'board.json': { size: 1, mtimeMs: (now - 590) * 1000 },
+    'last-error.txt': { size: 0, mtimeMs: (now + 3600) * 1000 } }
+  expect((await mount($, on, late, begun)).shown).toContain('may have stopped')
 })

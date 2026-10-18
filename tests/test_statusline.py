@@ -237,6 +237,43 @@ class Lines(unittest.TestCase):
     def test_a_stale_board_says_so(self):
         self.assertIn("background job may have stopped", self.lines(board(generated=time.time() - 600), "s1")[0])
 
+    def refresh_begun(self, ago, error=""):
+        """The background job began a refresh `ago` seconds back: it empties last-error.txt as it starts."""
+        path = os.path.join(self.dir, "last-error.txt")
+        with open(path, "w") as fh:
+            fh.write(error)
+        os.utime(path, (time.time() - ago, time.time() - ago))
+
+    def late_board(self, age=600):
+        with open(self.file, "w", encoding="utf-8") as fh:
+            json.dump(board(generated=time.time() - age), fh)
+        os.utime(self.file, (time.time() - age + 10,) * 2)  # written as the build that began then ended
+        return plain(statusline.admiral_lines(self.file, "s1")[0])
+
+    def test_a_late_board_while_a_refresh_runs_says_the_job_is_slow_not_stopped(self):
+        self.refresh_begun(120)
+        line = self.late_board()
+        self.assertIn("10 min ago", line)
+        self.assertIn("still refreshing", line)
+        self.assertNotIn("may have stopped", line)
+
+    def test_a_refresh_begun_before_the_board_was_written_is_not_one_running(self):
+        self.refresh_begun(595)
+        self.assertIn("may have stopped", self.late_board())
+
+    def test_a_refresh_begun_in_the_future_is_not_one_running(self):  # the clock was put back
+        self.refresh_begun(-3600)
+        self.assertIn("may have stopped", self.late_board())
+
+    def test_a_refresh_running_far_too_long_is_taken_for_stuck(self):
+        self.refresh_begun(statusline.RUN_S + 1)
+        self.assertIn("may have stopped", self.late_board(age=3600))
+
+    def test_a_refresh_that_wrote_an_error_is_not_taken_for_a_slow_one(self):
+        self.refresh_begun(120, error="RuntimeError: gh is not signed in\n")
+        line = self.late_board()
+        self.assertIn("may have stopped (RuntimeError: gh is not signed in)", line)
+
     def test_a_source_problem_is_flagged(self):
         self.assertIn("⚠ source problem 1", self.lines(board(health=["x"]), "s1")[0])
 
@@ -244,6 +281,93 @@ class Lines(unittest.TestCase):
         first = self.lines(board("zh", mine={"open": 5, "mergedToday": 1}), "nobody")[0]
         self.assertIn("GitHub PR：开着 5 · 今天合并 1", first)
         self.assertIn("共 3 对话：◆ 1 待处理（two） · ● 1 工作 · ○ 1 空闲", first)
+
+
+class Base(unittest.TestCase):
+    """The status line set before (claude-hud, say), run first: one too slow this time is stood in for by its last
+    output in the session, while that is fresh, so it does not come and go on a busy machine."""
+
+    def setUp(self):
+        self.dir = tempfile.mkdtemp()
+        self.addCleanup(shutil.rmtree, self.dir)
+        d = self.dir
+
+        class Cfg:
+            statusline_base = "hud"
+
+            def sub(self, *parts):
+                return os.path.join(d, *parts)
+        self.cfg = Cfg()
+
+    def run_base(self, out, sid="s1", code=0, waited=0):
+        """The base gives `out` (None: too slow), exiting with `code`, after `waited` seconds."""
+        clock = [time.time()]
+
+        def run(*a, **kw):
+            clock[0] += waited
+            if out is None:
+                raise subprocess.TimeoutExpired(a[0], kw.get("timeout"))
+            return subprocess.CompletedProcess(a[0], code, stdout=out, stderr="")
+        return statusline.base_output(self.cfg, "{}", sid, run=run, clock=lambda: clock[0])
+
+    def age(self, sid, seconds):
+        f = self.cfg.sub("statusline-base", f"{sid}.txt")
+        os.utime(f, (time.time() - seconds, time.time() - seconds))
+
+    def test_a_base_in_time_is_shown_as_it_is(self):
+        self.assertEqual(self.run_base("hud line 1\nhud line 2\n"), "hud line 1\nhud line 2")
+
+    def test_a_base_too_slow_this_time_shows_its_last_output_in_the_session(self):
+        self.run_base("context 40%\n")
+        self.assertEqual(self.run_base(None), "context 40%")
+
+    def test_a_last_output_too_old_is_not_shown(self):
+        self.run_base("context 40%\n")
+        self.age("s1", statusline.BASE_KEPT_S + 1)
+        self.assertEqual(self.run_base(None), "")
+
+    def test_a_last_output_that_grew_too_old_while_waiting_is_not_shown(self):
+        self.run_base("context 40%\n")
+        self.age("s1", statusline.BASE_KEPT_S - 2)
+        self.assertEqual(self.run_base(None, waited=statusline.BASE_TIMEOUT_S), "")
+
+    def test_a_last_output_from_the_future_is_not_shown(self):  # the clock was put back
+        self.run_base("context 40%\n")
+        self.age("s1", -3600)
+        self.assertEqual(self.run_base(None), "")
+
+    def test_a_base_that_fails_leaves_its_last_good_output_to_stand_in(self):
+        self.run_base("context 40%\n")
+        self.assertEqual(self.run_base("half a line\n", code=1), "half a line")  # shown as it always was
+        self.assertEqual(self.run_base("", code=1), "")
+        self.assertEqual(self.run_base(None), "context 40%")
+
+    def test_another_sessions_output_is_never_shown(self):
+        self.run_base("context 40%\n", sid="s1")
+        self.assertEqual(self.run_base(None, sid="s2"), "")
+
+    def test_without_a_session_nothing_is_kept(self):
+        self.run_base("context 40%\n", sid="")
+        self.assertEqual(self.run_base(None, sid=""), "")
+        self.assertEqual(self.run_base(None, sid="../board"), "")
+        self.assertFalse(os.path.exists(self.cfg.sub("board.txt")))
+
+    def test_a_base_that_now_shows_nothing_is_not_stood_in_for_later(self):
+        self.run_base("context 40%\n")
+        self.assertEqual(self.run_base(""), "")
+        self.assertEqual(self.run_base(None), "")
+
+    def test_what_ended_sessions_left_is_cleared_after_a_day(self):
+        self.run_base("old\n", sid="gone")
+        self.age("gone", 86400 + 1)
+        self.run_base("new\n", sid="s1")
+        self.assertEqual(sorted(os.listdir(self.cfg.sub("statusline-base"))), ["s1.txt"])
+
+    def test_a_state_directory_that_cannot_be_written_still_shows_the_base(self):
+        with open(self.cfg.sub("statusline-base"), "w") as fh:  # a file where the folder would go
+            fh.write("")
+        self.assertEqual(self.run_base("context 40%\n"), "context 40%")
+        self.assertEqual(self.run_base(None), "")
 
 
 if __name__ == "__main__":

@@ -17,7 +17,7 @@ import tempfile
 import time
 import tomllib
 
-from . import __version__, config
+from . import __version__, config, statusline
 from .words import phrases
 
 OK, NOTE, WARN, FAIL = "ok", "note", "warn", "fail"
@@ -61,6 +61,8 @@ TEXT = phrases({
         "job_ok": "background job {job} loaded", "job_missing": "background job {job} not loaded",
         "board_ok": "board refreshed {age} ago", "board_none": "no board yet at {path}",
         "board_stale": "board last refreshed {age} ago: the background job is not running",
+        "board_slow": "board last refreshed {age} ago: the background job is still refreshing, slowed by a busy machine",
+        "job_old": "background job {job} was set up by an older install: on a busy machine macOS slows it down",
         "board_error": "the last refresh wrote an error: {error}",
         "fix_board_error": "read {errors}, the last refresh's own words, and check that {state} is writable",
         "fix_cron": "run it every minute from cron or a systemd timer; for cron, this adds the line",
@@ -123,6 +125,8 @@ TEXT = phrases({
         "job_ok": "后台任务 {job} 已加载", "job_missing": "后台任务 {job} 没有加载",
         "board_ok": "看板 {age}前刷新过", "board_none": "{path} 还没有看板",
         "board_stale": "看板上次刷新在 {age}前：后台任务没在运行",
+        "board_slow": "看板上次刷新在 {age}前：后台任务还在刷新，机器太忙变慢了",
+        "job_old": "后台任务 {job} 是旧版安装的：机器忙时 macOS 会给它限速",
         "board_error": "上次刷新留下了错误：{error}",
         "fix_board_error": "查看 {errors}（上次刷新自己的输出），并确认 {state} 可写",
         "fix_cron": "用 cron 或 systemd 定时器每分钟运行一次；用 cron 的话，下面这条命令会加上那一行",
@@ -457,6 +461,12 @@ def check_job(m, T, ctx):
         r = m.run(["launchctl", "print", f"gui/{os.getuid()}/{JOB}"])
         out.append(result(OK, T["job_ok"].format(job=JOB)) if r is not None and not r[0]
                    else result(FAIL, T["job_missing"].format(job=JOB), fix, cmd))
+        try:  # set up before it said ProcessType: launchd throttles it like background work
+            with open(os.path.join(m.home, "Library", "LaunchAgents", f"{JOB}.plist"), encoding="utf-8") as fh:
+                if "ProcessType" not in fh.read():
+                    out.append(result(WARN, T["job_old"].format(job=JOB), fix, cmd))
+        except (OSError, ValueError):
+            pass
     cfg = ctx.get("cfg")
     if cfg is None:
         return out
@@ -482,6 +492,9 @@ def check_job(m, T, ctx):
                           T["fix_unreadable"]))
         return out
     age = m.now - os.path.getmtime(board)
+    if age > STALE_S and statusline.refreshing(board, m.now):
+        out.append(result(WARN, T["board_slow"].format(age=ago(age, cfg.language))))
+        return out
     if age > STALE_S:
         why = T["fix_job_error"].format(errors=errors) + " " if error else ""
         out.append(result(FAIL, T["board_stale"].format(age=ago(age, cfg.language)), why + fix, cmd))
