@@ -58,6 +58,17 @@ class Launch(unittest.TestCase):
         with open(os.path.join(self.home, ".local", "state", "admiral", "last-error.txt")) as fh:
             self.assertIn("this python is broken", fh.read())
 
+    def test_a_job_that_cannot_say_where_its_state_is_without_a_word_leaves_one(self):
+        fake = os.path.join(self.dir, "python3")  # dies on `admiral where` as a kill would, saying nothing
+        with open(fake, "w") as fh:
+            fh.write("#!/bin/sh\nkill -9 $$\n")
+        os.chmod(fake, 0o755)
+        env = {"HOME": self.home, "PATH": "/usr/bin:/bin", "ADMIRAL_PYTHON": fake}
+        r = subprocess.run(["bash", os.path.join(ROOT, "scripts", "refresh.sh")], capture_output=True, text=True, env=env)
+        self.assertNotEqual(r.returncode, 0)
+        with open(os.path.join(self.home, ".local", "state", "admiral", "last-error.txt")) as fh:
+            self.assertIn("admiral where gave no state directory", fh.read())
+
     def test_a_refresh_that_ends_badly_without_a_word_leaves_one(self):
         state = os.path.join(self.dir, "state")
         fake = os.path.join(self.dir, "python3")  # says where the state is, then dies on the refresh as a kill would

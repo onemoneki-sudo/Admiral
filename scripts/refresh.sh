@@ -11,6 +11,7 @@ fallback="$HOME/.local/state/admiral"  # config.py's default state_dir
 if ! state="$("$here/bin/admiral" where 2> "${TMPDIR:-/tmp}/admiral-where.$$")" || [ -z "$state" ]; then
   mkdir -p "$fallback"
   mv -f "${TMPDIR:-/tmp}/admiral-where.$$" "$fallback/last-error.txt"
+  [ -s "$fallback/last-error.txt" ] || echo "admiral where gave no state directory" > "$fallback/last-error.txt"
   exit 1
 fi
 rm -f "${TMPDIR:-/tmp}/admiral-where.$$"
