@@ -36,10 +36,10 @@ merge says why.
 
 - After each change run the linters and the tests it affects, not the whole suite; tests that need a shared resource
   take its lock first (see resources).
-- Find those tests by more than one route, since each misses something: a call graph or impact tool where the project
-  has one, and a search for the names and paths the change touches. Files read at run time rather than imported (SQL,
-  templates, built front-end files, pages a browser test loads) have no call chain and are found by their paths; a test
-  that scans the whole tree or a registry is affected by any change to what it scans.
+- Find those tests by more than one route, as deep as the change warrants, since each misses something: its callers,
+  traced with an impact tool where the project has one or by hand, and a search for the names and paths it touches.
+  Files read at run time rather than imported (SQL, templates, pages a browser test loads) have no callers and are
+  found by their paths; a test that scans the whole tree or a registry is affected by any change to what it scans.
 - Verify locally under the conditions CI and production have (versions, services, permissions): what can be caught
   locally is caught there, and a pass under looser conditions does not count.
 - Run the whole suite when you cannot tell what is affected, or the change is global (configuration, startup,
