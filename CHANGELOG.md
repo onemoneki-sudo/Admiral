@@ -4,7 +4,7 @@ Each version says what changed for someone using Admiral. The version lives in `
 `plugin/.claude-plugin/plugin.json` carries the same one (the tests check): Claude Code keeps an installed plugin in
 its cache, one copy per version, so a change to the sidebar or the playbook reaches people only when the version moves.
 
-## Unreleased
+## 0.2.8 (2026-10-18)
 
 **Playbook**
 - A brief's acceptance says the cases it must hold in and those it leaves alone, so that a review does not take every
