@@ -19,6 +19,9 @@ Where the project's own rules differ from this playbook, the project's rules win
 
 - Short jobs go first; nobody raises the priority of their own long job.
 - Nothing waits forever: a commander raises a long job that has waited well past its turn (`admiral lock prio`).
+- A job started in the background that is meant to finish gets a time limit from how long it should take: you hear
+  when a job exits, not when it hangs, and a hung job keeps its lock. While you are still working, one whose output has
+  stopped growing is looked into rather than waited on.
 
 ## When it was the machine, not the code
 

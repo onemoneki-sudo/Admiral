@@ -7,6 +7,16 @@ its cache, one copy per version, so a change to the sidebar or the playbook reac
 ## Unreleased
 
 **Playbook**
+- A brief's acceptance says the cases it must hold in and those it leaves alone, so that a review does not take every
+  edge case for a failure.
+- The tests a change affects are found by more than one route: an impact tool where there is one, and a search for the
+  names and paths it touches. Files read at run time rather than imported are found by their paths, and a test that
+  scans the whole tree or a registry runs on any change to what it scans.
+- A background job meant to finish gets a time limit from how long it should take, since a hang sends no notice and
+  keeps its lock; a job whose output has stopped growing is looked into, not waited on.
+- Before new work, the remote is searched for the same work under way or done (open PRs and issues, recent merges), as
+  closely as the work's size warrants: a session that has ended may have left a PR open. What is found goes to the
+  person rather than being started again.
 - PRs of one batch can each pass alone and fail together: before they go ready they are checked merged together on the
   latest default branch, and one that adds what every change must satisfy (a check across the repository, a registry,
   a numbered sequence) merges after the PRs it must cover, catching up with them itself; two that need each other are
