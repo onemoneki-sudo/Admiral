@@ -16,6 +16,9 @@ if ! state="$("$here/bin/admiral" where 2> "${TMPDIR:-/tmp}/admiral-where.$$")" 
 fi
 rm -f "${TMPDIR:-/tmp}/admiral-where.$$"
 mkdir -p "$state"
+# Stopped by a signal (launchd stopping the job, say), the run says so: left empty, the file would read as a refresh
+# still under way. A kill no script can catch reads so for RUN_S (admiral/statusline.py) at most.
+trap 'echo "the refresh was stopped by a signal" > "$state/last-error.txt"; exit 143' TERM INT HUP
 "$here/bin/admiral" board --write 2> "$state/last-error.txt"
 code=$?
 # Ended badly without a word (killed, say): left empty, the file would read as a refresh still under way.
