@@ -61,6 +61,7 @@ export type Board = {
 
 declare module 'claude-code' {
   interface PluginState {
-    'admiral': { board: Board | null; readError: string; isCollapsed: boolean; isHintsOpen: boolean; isIdleOpen: boolean }
+    'admiral': { board: Board | null; readError: string; isCollapsed: boolean; isHintsOpen: boolean; isIdleOpen: boolean
+      refreshBegan: number }
   }
 }

@@ -21,6 +21,7 @@ import unicodedata
 from .words import phrases
 
 STALE_S = 180
+RUN_S = 600  # a refresh running longer than this is taken for stuck, not slow
 DEFAULT_STATE = "~/.local/state/admiral"  # where scripts/refresh.sh reports a job that could not start (config.py's default)
 BAR = 10
 TEAMS = 5
@@ -227,15 +228,30 @@ def no_board(state_dir):
     return "no board yet: run scripts/install.sh (it starts the background job), or `admiral board --write` every minute"
 
 
+def refreshing(board_file, now):
+    """Whether the background job is on a refresh begun since the board was written, recently enough to be slow
+    rather than stuck, and with no error so far: scripts/refresh.sh begins each run by emptying last-error.txt."""
+    errors = os.path.join(os.path.dirname(board_file), "last-error.txt")
+    try:
+        started = os.path.getmtime(errors)
+        return started > os.path.getmtime(board_file) and now - started <= RUN_S and not os.path.getsize(errors)
+    except OSError:
+        return False
+
+
 def admiral_lines(board_file, session_id, now=None, cols=None):
     try:
         with open(board_file, encoding="utf-8") as fh:
             b = json.load(fh)
     except (OSError, ValueError):
         return [f"{c(ORANGE, 'Admiral')}  {c(RED, no_board(os.path.dirname(board_file)))}"]
-    age = (now or time.time()) - b["generated"]
+    now = now or time.time()
+    age = now - b["generated"]
     if age > STALE_S:
         mins = int(age // 60)
+        if refreshing(board_file, now) and "slow" in b["words"]:
+            slow = b["words"]["slow"].format(age=b["words"]["min_ago"].format(n=mins))
+            return [f"{c(ORANGE, 'Admiral')}  {c(YELLOW, slow)}"]
         err = job_error(os.path.dirname(board_file))
         why = f" ({err})" if err else ""
         return [f"{c(ORANGE, 'Admiral')}  {c(RED, b['words']['stale'].format(age=b['words']['min_ago'].format(n=mins)) + why)}"]

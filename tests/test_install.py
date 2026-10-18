@@ -63,6 +63,7 @@ class Install(unittest.TestCase):
             job = plistlib.loads(plist.encode())
             self.assertEqual(job["EnvironmentVariables"], {"ADMIRAL_CONFIG": cfg})
             self.assertEqual(job["StartInterval"], 60)
+            self.assertEqual(job["ProcessType"], "Interactive")  # not slowed down like background work on a busy Mac
 
     @unittest.skipUnless(sys.platform == "darwin", "the background job is set up on macOS only")
     def test_a_config_path_goes_into_the_job_as_admiral_reads_it(self):

@@ -164,6 +164,27 @@ class Checks(Doctor):
         out = self.fails("board last refreshed 10 min ago: the background job is not running",
                          f"it failed: read {self.state}/last-error.txt; then run the install script again")
 
+    def test_a_late_board_while_a_refresh_runs_is_a_warning_not_a_failure(self):
+        self.board(age=600)
+        errors = os.path.join(self.state, "last-error.txt")
+        os.utime(errors, (time.time() - 120, time.time() - 120))
+        code, out = self.doctor()
+        self.assertIn("! board last refreshed 10 min ago: the background job is still refreshing, slowed by a busy "
+                      "machine", out)
+        self.assertNotIn("✗ board last refreshed", out)
+
+    def test_a_job_set_up_by_an_older_install_is_worth_setting_up_again(self):
+        self.write("home/Library/LaunchAgents/com.admiral.board.plist", "<plist><dict><key>Label</key>"
+                   "<string>com.admiral.board</string></dict></plist>")
+        code, out = self.doctor()
+        self.assertIn("! background job com.admiral.board was set up by an older install: on a busy machine macOS "
+                      "slows it down", out)
+        self.assertIn("    fix: run the install script again", out)
+        self.write("home/Library/LaunchAgents/com.admiral.board.plist", "<plist><dict><key>ProcessType</key>"
+                   "<string>Interactive</string></dict></plist>")
+        code, out = self.doctor()
+        self.assertNotIn("older install", out)
+
     def test_a_board_or_an_error_file_that_cannot_be_read_is_a_failed_check(self):
         self.write("state/board.json", "{invalid")
         self.fails(f"{self.state}/board.json is there but cannot be read", "the background job writes it each minute")

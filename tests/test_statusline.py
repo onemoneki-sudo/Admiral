@@ -237,6 +237,39 @@ class Lines(unittest.TestCase):
     def test_a_stale_board_says_so(self):
         self.assertIn("background job may have stopped", self.lines(board(generated=time.time() - 600), "s1")[0])
 
+    def refresh_begun(self, ago, error=""):
+        """The background job began a refresh `ago` seconds back: it empties last-error.txt as it starts."""
+        path = os.path.join(self.dir, "last-error.txt")
+        with open(path, "w") as fh:
+            fh.write(error)
+        os.utime(path, (time.time() - ago, time.time() - ago))
+
+    def late_board(self, age=600):
+        with open(self.file, "w", encoding="utf-8") as fh:
+            json.dump(board(generated=time.time() - age), fh)
+        os.utime(self.file, (time.time() - age + 10,) * 2)  # written as the build that began then ended
+        return plain(statusline.admiral_lines(self.file, "s1")[0])
+
+    def test_a_late_board_while_a_refresh_runs_says_the_job_is_slow_not_stopped(self):
+        self.refresh_begun(120)
+        line = self.late_board()
+        self.assertIn("10 min ago", line)
+        self.assertIn("still refreshing", line)
+        self.assertNotIn("may have stopped", line)
+
+    def test_a_refresh_begun_before_the_board_was_written_is_not_one_running(self):
+        self.refresh_begun(595)
+        self.assertIn("may have stopped", self.late_board())
+
+    def test_a_refresh_running_far_too_long_is_taken_for_stuck(self):
+        self.refresh_begun(statusline.RUN_S + 1)
+        self.assertIn("may have stopped", self.late_board(age=3600))
+
+    def test_a_refresh_that_wrote_an_error_is_not_taken_for_a_slow_one(self):
+        self.refresh_begun(120, error="RuntimeError: gh is not signed in\n")
+        line = self.late_board()
+        self.assertIn("may have stopped (RuntimeError: gh is not signed in)", line)
+
     def test_a_source_problem_is_flagged(self):
         self.assertIn("⚠ source problem 1", self.lines(board(health=["x"]), "s1")[0])
 
