@@ -261,6 +261,10 @@ class Lines(unittest.TestCase):
         self.refresh_begun(595)
         self.assertIn("may have stopped", self.late_board())
 
+    def test_a_refresh_begun_in_the_future_is_not_one_running(self):  # the clock was put back
+        self.refresh_begun(-3600)
+        self.assertIn("may have stopped", self.late_board())
+
     def test_a_refresh_running_far_too_long_is_taken_for_stuck(self):
         self.refresh_begun(statusline.RUN_S + 1)
         self.assertIn("may have stopped", self.late_board(age=3600))
@@ -294,18 +298,21 @@ class Base(unittest.TestCase):
             def sub(self, *parts):
                 return os.path.join(d, *parts)
         self.cfg = Cfg()
-        self.now = time.time()
 
-    def run_base(self, out, sid="s1", now=None):
+    def run_base(self, out, sid="s1", code=0, waited=0):
+        """The base gives `out` (None: too slow), exiting with `code`, after `waited` seconds."""
+        clock = [time.time()]
+
         def run(*a, **kw):
+            clock[0] += waited
             if out is None:
                 raise subprocess.TimeoutExpired(a[0], kw.get("timeout"))
-            return subprocess.CompletedProcess(a[0], 0, stdout=out, stderr="")
-        return statusline.base_output(self.cfg, "{}", sid, run=run, now=self.now if now is None else now)
+            return subprocess.CompletedProcess(a[0], code, stdout=out, stderr="")
+        return statusline.base_output(self.cfg, "{}", sid, run=run, clock=lambda: clock[0])
 
     def age(self, sid, seconds):
         f = self.cfg.sub("statusline-base", f"{sid}.txt")
-        os.utime(f, (self.now - seconds, self.now - seconds))
+        os.utime(f, (time.time() - seconds, time.time() - seconds))
 
     def test_a_base_in_time_is_shown_as_it_is(self):
         self.assertEqual(self.run_base("hud line 1\nhud line 2\n"), "hud line 1\nhud line 2")
@@ -318,6 +325,22 @@ class Base(unittest.TestCase):
         self.run_base("context 40%\n")
         self.age("s1", statusline.BASE_KEPT_S + 1)
         self.assertEqual(self.run_base(None), "")
+
+    def test_a_last_output_that_grew_too_old_while_waiting_is_not_shown(self):
+        self.run_base("context 40%\n")
+        self.age("s1", statusline.BASE_KEPT_S - 2)
+        self.assertEqual(self.run_base(None, waited=statusline.BASE_TIMEOUT_S), "")
+
+    def test_a_last_output_from_the_future_is_not_shown(self):  # the clock was put back
+        self.run_base("context 40%\n")
+        self.age("s1", -3600)
+        self.assertEqual(self.run_base(None), "")
+
+    def test_a_base_that_fails_leaves_its_last_good_output_to_stand_in(self):
+        self.run_base("context 40%\n")
+        self.assertEqual(self.run_base("half a line\n", code=1), "half a line")  # shown as it always was
+        self.assertEqual(self.run_base("", code=1), "")
+        self.assertEqual(self.run_base(None), "context 40%")
 
     def test_another_sessions_output_is_never_shown(self):
         self.run_base("context 40%\n", sid="s1")

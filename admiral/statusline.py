@@ -237,7 +237,8 @@ def refreshing(board_file, now):
     errors = os.path.join(os.path.dirname(board_file), "last-error.txt")
     try:
         started = os.path.getmtime(errors)
-        return started > os.path.getmtime(board_file) and now - started <= RUN_S and not os.path.getsize(errors)
+        # a time ahead of the clock (put back since) says nothing of a refresh now
+        return started > os.path.getmtime(board_file) and 0 <= now - started <= RUN_S and not os.path.getsize(errors)
     except OSError:
         return False
 
@@ -261,25 +262,25 @@ def admiral_lines(board_file, session_id, now=None, cols=None):
     return Lines(b).render(session_id, cols)
 
 
-def base_output(cfg, raw, session_id, run=subprocess.run, now=None):
+def base_output(cfg, raw, session_id, run=subprocess.run, clock=time.time):
     """The base status line's output. One too slow this time (a busy machine) is stood in for by the last it gave in
-    this session while that is fresh, so it does not come and go; older, it is left out rather than shown stale."""
-    now = time.time() if now is None else now
+    this session while that is fresh, so it does not come and go; older, it is left out rather than shown stale. Only
+    a run that went well is kept."""
     named = isinstance(session_id, str) and re.fullmatch(r"[\w-]+", session_id)  # a session id, never a path
     kept = cfg.sub("statusline-base", f"{session_id}.txt") if named else None
     try:
         r = run(["/bin/sh", "-c", cfg.statusline_base], input=raw, capture_output=True, text=True,
                 timeout=BASE_TIMEOUT_S, env=dict(os.environ, ADMIRAL_IN_BASE="1"))  # never Admiral inside Admiral
     except subprocess.TimeoutExpired:
-        try:
-            if kept and now - os.path.getmtime(kept) <= BASE_KEPT_S:
+        try:  # its age as it is now, after the wait; a time ahead of the clock (put back since) is no age at all
+            if kept and 0 <= clock() - os.path.getmtime(kept) <= BASE_KEPT_S:
                 with open(kept, encoding="utf-8") as fh:
                     return fh.read()
         except OSError:
             pass
         return ""
     out = r.stdout.rstrip("\n") if r.stdout.strip() else ""
-    if kept:
+    if kept and r.returncode == 0:
         try:
             if out:
                 os.makedirs(os.path.dirname(kept), exist_ok=True)
@@ -289,6 +290,7 @@ def base_output(cfg, raw, session_id, run=subprocess.run, now=None):
                 os.replace(tmp, kept)
             elif os.path.exists(kept):
                 os.remove(kept)
+            now = clock()
             for e in os.scandir(os.path.dirname(kept)):
                 if now - e.stat().st_mtime > KEPT_DAYS_S:
                     os.remove(e.path)

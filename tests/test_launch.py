@@ -58,6 +58,18 @@ class Launch(unittest.TestCase):
         with open(os.path.join(self.home, ".local", "state", "admiral", "last-error.txt")) as fh:
             self.assertIn("this python is broken", fh.read())
 
+    def test_a_refresh_that_ends_badly_without_a_word_leaves_one(self):
+        state = os.path.join(self.dir, "state")
+        fake = os.path.join(self.dir, "python3")  # says where the state is, then dies on the refresh as a kill would
+        with open(fake, "w") as fh:
+            fh.write(f'#!/bin/sh\ncase "$*" in *where*) echo {state};; *) kill -9 $$;; esac\n')
+        os.chmod(fake, 0o755)
+        env = {"HOME": self.home, "PATH": "/usr/bin:/bin", "ADMIRAL_PYTHON": fake}
+        r = subprocess.run(["bash", os.path.join(ROOT, "scripts", "refresh.sh")], capture_output=True, text=True, env=env)
+        self.assertNotEqual(r.returncode, 0)
+        with open(os.path.join(state, "last-error.txt")) as fh:
+            self.assertIn("ended with status 137", fh.read())
+
     @unittest.skipUnless(os.path.exists("/usr/bin/python3") and subprocess.run(
         ["/usr/bin/python3", "-c", "import sys; sys.exit(sys.version_info >= (3, 11))"]).returncode == 0,
         "no Python older than 3.11 at /usr/bin/python3")

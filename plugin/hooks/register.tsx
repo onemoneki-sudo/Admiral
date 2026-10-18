@@ -419,7 +419,7 @@ export const register: Register = on => {
       parts.push(<Text key={`health-${i}`} color="error" wrap="wrap">⚠ {h}</Text>)
     }
     if (!b || err || nowS - b.generated > STALE_S) {
-      const slow = !err && b && began && nowS - began / 1000 <= RUN_S && W.slow
+      const slow = !err && b && began && nowS >= began / 1000 && nowS - began / 1000 <= RUN_S && W.slow
       const why = err || (b ? fmt(slow ? 'slow' : 'stale', { age: ago(nowS, b.generated) }) : fmt('loading'))
       parts.push(<Text key="stale" color={slow ? 'warning' : 'error'}>{why}</Text>)
     }

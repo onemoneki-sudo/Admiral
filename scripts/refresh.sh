@@ -16,3 +16,9 @@ fi
 rm -f "${TMPDIR:-/tmp}/admiral-where.$$"
 mkdir -p "$state"
 "$here/bin/admiral" board --write 2> "$state/last-error.txt"
+code=$?
+# Ended badly without a word (killed, say): left empty, the file would read as a refresh still under way.
+if [ $code -ne 0 ] && [ ! -s "$state/last-error.txt" ]; then
+  echo "admiral board --write ended with status $code" > "$state/last-error.txt"
+fi
+exit $code

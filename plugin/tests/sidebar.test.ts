@@ -87,3 +87,11 @@ test('a late board whose last refresh wrote an error says the job may have stopp
   expect(shown).toContain('may have stopped')
   expect(shown).not.toContain('still refreshing')
 })
+
+test('a refresh begun in the future (the clock was put back) is not taken for one under way', async ($, on) => {
+  const late = { ...board, generated: now - 600, words: {
+    min_ago: '{n} min ago', stale: 'data {age} old: may have stopped', slow: 'data {age} old: still refreshing' } }
+  const begun = { 'board.json': { size: 1, mtimeMs: (now - 590) * 1000 },
+    'last-error.txt': { size: 0, mtimeMs: (now + 3600) * 1000 } }
+  expect((await mount($, on, late, begun)).shown).toContain('may have stopped')
+})
