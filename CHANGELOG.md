@@ -4,6 +4,12 @@ Each version says what changed for someone using Admiral. The version lives in `
 `plugin/.claude-plugin/plugin.json` carries the same one (the tests check): Claude Code keeps an installed plugin in
 its cache, one copy per version, so a change to the sidebar or the playbook reaches people only when the version moves.
 
+## Unreleased
+
+**Status line**
+- The status line set before Admiral's (claude-hud, say) no longer comes and goes on a busy machine: when it takes
+  longer than its 5 seconds, the last it showed in that session stands in for it, if that is under two minutes old.
+
 ## 0.2.8 (2026-10-18)
 
 **Playbook**

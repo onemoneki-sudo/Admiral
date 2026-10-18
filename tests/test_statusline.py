@@ -279,5 +279,73 @@ class Lines(unittest.TestCase):
         self.assertIn("共 3 对话：◆ 1 待处理（two） · ● 1 工作 · ○ 1 空闲", first)
 
 
+class Base(unittest.TestCase):
+    """The status line set before (claude-hud, say), run first: one too slow this time is stood in for by its last
+    output in the session, while that is fresh, so it does not come and go on a busy machine."""
+
+    def setUp(self):
+        self.dir = tempfile.mkdtemp()
+        self.addCleanup(shutil.rmtree, self.dir)
+        d = self.dir
+
+        class Cfg:
+            statusline_base = "hud"
+
+            def sub(self, *parts):
+                return os.path.join(d, *parts)
+        self.cfg = Cfg()
+        self.now = time.time()
+
+    def run_base(self, out, sid="s1", now=None):
+        def run(*a, **kw):
+            if out is None:
+                raise subprocess.TimeoutExpired(a[0], kw.get("timeout"))
+            return subprocess.CompletedProcess(a[0], 0, stdout=out, stderr="")
+        return statusline.base_output(self.cfg, "{}", sid, run=run, now=self.now if now is None else now)
+
+    def age(self, sid, seconds):
+        f = self.cfg.sub("statusline-base", f"{sid}.txt")
+        os.utime(f, (self.now - seconds, self.now - seconds))
+
+    def test_a_base_in_time_is_shown_as_it_is(self):
+        self.assertEqual(self.run_base("hud line 1\nhud line 2\n"), "hud line 1\nhud line 2")
+
+    def test_a_base_too_slow_this_time_shows_its_last_output_in_the_session(self):
+        self.run_base("context 40%\n")
+        self.assertEqual(self.run_base(None), "context 40%")
+
+    def test_a_last_output_too_old_is_not_shown(self):
+        self.run_base("context 40%\n")
+        self.age("s1", statusline.BASE_KEPT_S + 1)
+        self.assertEqual(self.run_base(None), "")
+
+    def test_another_sessions_output_is_never_shown(self):
+        self.run_base("context 40%\n", sid="s1")
+        self.assertEqual(self.run_base(None, sid="s2"), "")
+
+    def test_without_a_session_nothing_is_kept(self):
+        self.run_base("context 40%\n", sid="")
+        self.assertEqual(self.run_base(None, sid=""), "")
+        self.assertEqual(self.run_base(None, sid="../board"), "")
+        self.assertFalse(os.path.exists(self.cfg.sub("board.txt")))
+
+    def test_a_base_that_now_shows_nothing_is_not_stood_in_for_later(self):
+        self.run_base("context 40%\n")
+        self.assertEqual(self.run_base(""), "")
+        self.assertEqual(self.run_base(None), "")
+
+    def test_what_ended_sessions_left_is_cleared_after_a_day(self):
+        self.run_base("old\n", sid="gone")
+        self.age("gone", 86400 + 1)
+        self.run_base("new\n", sid="s1")
+        self.assertEqual(sorted(os.listdir(self.cfg.sub("statusline-base"))), ["s1.txt"])
+
+    def test_a_state_directory_that_cannot_be_written_still_shows_the_base(self):
+        with open(self.cfg.sub("statusline-base"), "w") as fh:  # a file where the folder would go
+            fh.write("")
+        self.assertEqual(self.run_base("context 40%\n"), "context 40%")
+        self.assertEqual(self.run_base(None), "")
+
+
 if __name__ == "__main__":
     unittest.main()

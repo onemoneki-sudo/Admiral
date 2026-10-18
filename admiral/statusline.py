@@ -22,6 +22,9 @@ from .words import phrases
 
 STALE_S = 180
 RUN_S = 600  # a refresh running longer than this is taken for stuck, not slow
+BASE_TIMEOUT_S = 5
+BASE_KEPT_S = 120  # how long a base's last output may stand in for one too slow this time
+KEPT_DAYS_S = 86400  # what sessions left that long ago is cleared
 DEFAULT_STATE = "~/.local/state/admiral"  # where scripts/refresh.sh reports a job that could not start (config.py's default)
 BAR = 10
 TEAMS = 5
@@ -258,6 +261,42 @@ def admiral_lines(board_file, session_id, now=None, cols=None):
     return Lines(b).render(session_id, cols)
 
 
+def base_output(cfg, raw, session_id, run=subprocess.run, now=None):
+    """The base status line's output. One too slow this time (a busy machine) is stood in for by the last it gave in
+    this session while that is fresh, so it does not come and go; older, it is left out rather than shown stale."""
+    now = time.time() if now is None else now
+    named = isinstance(session_id, str) and re.fullmatch(r"[\w-]+", session_id)  # a session id, never a path
+    kept = cfg.sub("statusline-base", f"{session_id}.txt") if named else None
+    try:
+        r = run(["/bin/sh", "-c", cfg.statusline_base], input=raw, capture_output=True, text=True,
+                timeout=BASE_TIMEOUT_S, env=dict(os.environ, ADMIRAL_IN_BASE="1"))  # never Admiral inside Admiral
+    except subprocess.TimeoutExpired:
+        try:
+            if kept and now - os.path.getmtime(kept) <= BASE_KEPT_S:
+                with open(kept, encoding="utf-8") as fh:
+                    return fh.read()
+        except OSError:
+            pass
+        return ""
+    out = r.stdout.rstrip("\n") if r.stdout.strip() else ""
+    if kept:
+        try:
+            if out:
+                os.makedirs(os.path.dirname(kept), exist_ok=True)
+                tmp = f"{kept}.{os.getpid()}"
+                with open(tmp, "w", encoding="utf-8") as fh:
+                    fh.write(out)
+                os.replace(tmp, kept)
+            elif os.path.exists(kept):
+                os.remove(kept)
+            for e in os.scandir(os.path.dirname(kept)):
+                if now - e.stat().st_mtime > KEPT_DAYS_S:
+                    os.remove(e.path)
+        except OSError:
+            pass  # nothing kept: the line still shows what the base gave
+    return out
+
+
 def main(cfg):
     if os.environ.get("ADMIRAL_IN_BASE"):  # run by the base of an Admiral status line: that one draws Admiral
         return
@@ -272,14 +311,9 @@ def main(cfg):
     except ValueError:
         data = {}
     out = []
-    if cfg.statusline_base:
-        try:
-            r = subprocess.run(["/bin/sh", "-c", cfg.statusline_base], input=raw, capture_output=True, text=True,
-                               timeout=5, env=dict(os.environ, ADMIRAL_IN_BASE="1"))  # never Admiral inside Admiral
-            if r.stdout.strip():
-                out.append(r.stdout.rstrip("\n"))
-        except subprocess.TimeoutExpired:
-            pass
+    base = base_output(cfg, raw, data.get("session_id")) if cfg.statusline_base else ""
+    if base:
+        out.append(base)
     cols = columns()
     out += [fit(line, cols) for line in admiral_lines(cfg.sub("board.json"), data.get("session_id"), cols=cols)]
     sys.stdout.write("\n".join(out) + "\n")
