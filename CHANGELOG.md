@@ -4,7 +4,7 @@ Each version says what changed for someone using Admiral. The version lives in `
 `plugin/.claude-plugin/plugin.json` carries the same one (the tests check): Claude Code keeps an installed plugin in
 its cache, one copy per version, so a change to the sidebar or the playbook reaches people only when the version moves.
 
-## Unreleased
+## 0.2.9 (2026-10-18)
 
 **Background job**
 - On a busy machine a refresh can take minutes; the status line, the sidebar and `admiral doctor` now say the job is
