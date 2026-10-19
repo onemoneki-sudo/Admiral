@@ -7,10 +7,10 @@ its cache, one copy per version, so a change to the sidebar or the playbook reac
 ## Unreleased
 
 **Playbook**
-- A PR stacked on one that landed squashed takes the default branch in with the merge base set to the last commit of
-  the lower PR it contains: from the lower PR's final head, what that PR gained later reads as being removed, some of
-  it silently, and git's own base raises conflicts where there are none. The diff against the default branch then
-  holds only the PR's own changes.
+- A PR stacked on one that landed squashed first restores the history the squash left out (on a scratch branch from
+  the default branch, an "ours" merge of the lower PR's final head) and merges that in: otherwise the lower PR's
+  changes are misread, as conflicts where there are none or as changes lost or brought back silently. The diff against
+  the default branch then holds only the PR's own changes.
 
 ## 0.2.9 (2026-10-18)
 
