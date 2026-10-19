@@ -4,6 +4,14 @@ Each version says what changed for someone using Admiral. The version lives in `
 `plugin/.claude-plugin/plugin.json` carries the same one (the tests check): Claude Code keeps an installed plugin in
 its cache, one copy per version, so a change to the sidebar or the playbook reaches people only when the version moves.
 
+## Unreleased
+
+**Playbook**
+- A PR stacked on one that landed squashed takes the default branch in with the merge base set to the last commit of
+  the lower PR it contains: from the lower PR's final head, what that PR gained later reads as being removed, some of
+  it silently, and git's own base raises conflicts where there are none. The diff against the default branch then
+  holds only the PR's own changes.
+
 ## 0.2.9 (2026-10-18)
 
 **Background job**

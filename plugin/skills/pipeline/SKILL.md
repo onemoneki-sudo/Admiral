@@ -77,7 +77,10 @@ Docs, copy and mechanical changes need none. What changes during acceptance goes
 - Merging is the person's or the maintainer's; never go around required checks or approvals. Agreement to mark a PR
   ready covers enabling auto-merge.
 - A PR built on another unmerged branch says so on its first line and is not auto-merged; once the lower PR lands,
-  retarget it to the default branch.
+  retarget it to the default branch. If it landed squashed, take the default branch in with the merge base set to the
+  last commit of the lower PR that your branch contains: from the lower PR's final head, what it gained after your
+  branch took it reads as your branch removing it, some as conflicts and some silently, and git's own choice of base
+  raises conflicts where there are none. Afterwards the diff against the default branch holds only your own changes.
 - PRs of one batch can each pass alone and fail together. Before they go ready, check them merged together on the latest
   default branch. A PR that adds what every change must satisfy (a check across the repository, a registry, a numbered
   sequence) merges after the PRs whose additions it must cover: it takes in the default branch and fills in what they
