@@ -77,7 +77,13 @@ Docs, copy and mechanical changes need none. What changes during acceptance goes
 - Merging is the person's or the maintainer's; never go around required checks or approvals. Agreement to mark a PR
   ready covers enabling auto-merge.
 - A PR built on another unmerged branch says so on its first line and is not auto-merged; once the lower PR lands,
-  retarget it to the default branch.
+  retarget it to the default branch. A squash leaves no history tying the lower PR to its commit there, so taking the
+  default branch in misreads the lower PR's changes: conflicts where there are none, or changes lost or brought back
+  silently, and no one commit picked by hand as the base is right in every case. Restore the tie first: on a scratch
+  branch from the default branch, merge the lower PR's final head keeping the default branch's content (an "ours"
+  merge), then merge that branch into yours. That needs the commit of the lower PR your branch holds to be in its final
+  head's history; where the lower PR's history was rewritten, redo your own changes on a new branch from the default
+  branch instead. Afterwards the diff against the default branch shows every change of yours and nothing else.
 - PRs of one batch can each pass alone and fail together. Before they go ready, check them merged together on the latest
   default branch. A PR that adds what every change must satisfy (a check across the repository, a registry, a numbered
   sequence) merges after the PRs whose additions it must cover: it takes in the default branch and fills in what they
