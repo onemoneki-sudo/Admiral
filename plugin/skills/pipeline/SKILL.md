@@ -81,7 +81,9 @@ Docs, copy and mechanical changes need none. What changes during acceptance goes
   default branch in misreads the lower PR's changes: conflicts where there are none, or changes lost or brought back
   silently, and no one commit picked by hand as the base is right in every case. Restore the tie first: on a scratch
   branch from the default branch, merge the lower PR's final head keeping the default branch's content (an "ours"
-  merge), then merge that branch into yours. Afterwards the diff against the default branch holds only your changes.
+  merge), then merge that branch into yours. That needs the commit of the lower PR your branch holds to be in its final
+  head's history; where the lower PR's history was rewritten, redo your own changes on a new branch from the default
+  branch instead. Afterwards the diff against the default branch shows every change of yours and nothing else.
 - PRs of one batch can each pass alone and fail together. Before they go ready, check them merged together on the latest
   default branch. A PR that adds what every change must satisfy (a check across the repository, a registry, a numbered
   sequence) merges after the PRs whose additions it must cover: it takes in the default branch and fills in what they

@@ -9,8 +9,9 @@ its cache, one copy per version, so a change to the sidebar or the playbook reac
 **Playbook**
 - A PR stacked on one that landed squashed first restores the history the squash left out (on a scratch branch from
   the default branch, an "ours" merge of the lower PR's final head) and merges that in: otherwise the lower PR's
-  changes are misread, as conflicts where there are none or as changes lost or brought back silently. The diff against
-  the default branch then holds only the PR's own changes.
+  changes are misread, as conflicts where there are none or as changes lost or brought back silently. Where the lower
+  PR's history was rewritten after the stacked branch took it, the PR's own changes are redone on a new branch instead.
+  Either way, the diff against the default branch is checked to show every change of the PR's and nothing else.
 
 ## 0.2.9 (2026-10-18)
 
