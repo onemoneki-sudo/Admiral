@@ -37,7 +37,8 @@ merge says why.
 - After each change run the linters and the tests it affects, not the whole suite; tests that need a shared resource
   take its lock first (see resources).
 - Find those tests by more than one route, as deep as the change warrants, since each misses something: its callers,
-  traced with an impact tool where the project has one or by hand, and a search for the names and paths it touches.
+  traced by hand or with an impact tool once it has been checked on this project against changes whose affected tests
+  are known, and a search for the names and paths it touches.
   Files read at run time rather than imported (SQL, templates, pages a browser test loads) have no callers and are
   found by their paths; a test that scans the whole tree or a registry is affected by any change to what it scans.
 - Verify locally under the conditions CI and production have (versions, services, permissions): what can be caught
@@ -50,12 +51,21 @@ merge says why.
 - When the change alters behaviour, ask a model other than the one that wrote it (for code Claude wrote, Codex, say)
   to refute it, once the work is complete and its tests pass. Docs, copy and mechanical changes need only your own
   read of the final diff.
+- Run the reviewer non-interactively with a time limit (see resources), and give it a finite input or none: `codex
+  exec` given an input that is open but not a terminal waits for it to end before it begins, so a command that sends
+  it nothing ends with `</dev/null`.
 - Ask the model, besides for defects, whether the change serves the goal, stays within the brief and holds for every
   case of its kind. Where the repository has its own review prompt, use it, adding only those of these questions it
   does not ask. Give the model the goal and the diff, not your conclusions, which would anchor it.
+- A change too large to review well at once has its first round in parts, each a complete piece of function given
+  with its own commits and files; where two parts call each other or share data, the seam goes into one of them. The
+  parts together make the first round.
 - Judge each finding by whether it blocks the goal (see principles): fix what blocks it with the simplest reliable
   fix, disprove what is not a defect, defer the rest. The model's opinion is input to your judgment, not a to-do list.
-- Have significant fixes reviewed again. Stop when nothing blocking remains, at most three rounds.
+- Have a fix reviewed again, narrowed to the fix, unless all of these hold: it stays within one file or module; it
+  touches no rendering, state changes, storage or permissions; its test goes through the real path (the page drawn,
+  the endpoint called); and it failed before the fix and passes after. When unsure, review it; several fixes share
+  one round. Stop when nothing blocking remains, at most three rounds.
 
 ## 4. The person's acceptance
 
@@ -74,12 +84,15 @@ Docs, copy and mechanical changes need none. What changes during acceptance goes
 - Once the PR is ready, push only what it needs: a fix, a conflict, a change of base. Every push runs CI again and
   voids approvals, so notes ride along with a fix, and a default branch that merely moved on is not merged in unless
   the repository requires it.
+- When CI fails, collect every failure before fixing any and fix what they share at its root; rerun locally the failed
+  tests and those the fix affects, and push it all at once.
 - Merging is the person's or the maintainer's; never go around required checks or approvals. Agreement to mark a PR
   ready covers enabling auto-merge.
-- A PR built on another unmerged branch says so on its first line and is not auto-merged; once the lower PR lands,
-  retarget it to the default branch. A squash leaves no history tying the lower PR to its commit there, so taking the
-  default branch in misreads the lower PR's changes: conflicts where there are none, or changes lost or brought back
-  silently, and no one commit picked by hand as the base is right in every case. Restore the tie first: on a scratch
+- A PR built on another unmerged branch says so on its first line and, while that branch is its base, is merged
+  neither automatically nor by hand: it would land there, not on the default branch. Once the lower PR lands, retarget
+  it to the default branch. A squash leaves no history tying the lower PR to its commit there, so taking the default
+  branch in misreads the lower PR's changes: conflicts where there are none, or changes lost or brought back silently,
+  and no one commit picked by hand as the base is right in every case. Restore the tie first: on a scratch
   branch from the default branch, merge the lower PR's final head keeping the default branch's content (an "ours"
   merge), then merge that branch into yours. That needs the commit of the lower PR your branch holds to be in its final
   head's history; where the lower PR's history was rewritten, redo your own changes on a new branch from the default

@@ -21,7 +21,8 @@ Where the project's own rules differ from this playbook, the project's rules win
 - Nothing waits forever: a commander raises a long job that has waited well past its turn (`admiral lock prio`).
 - A job started in the background that is meant to finish gets a time limit from how long it should take: you hear
   when a job exits, not when it hangs, and a hung job keeps its lock. While you are still working, one making less
-  progress than its expected time and output allow is looked into rather than waited on.
+  progress than its expected time and output allow is looked into rather than waited on. Empty output, or no summary
+  line, does not mean a job finished: check that it has exited, and how, before reading a result from it.
 
 ## When it was the machine, not the code
 
@@ -32,4 +33,5 @@ it once the resource is free before investigating.
 
 - Where the product calls models, test and evaluate with the model and settings production uses now.
 - When the provider starts rate limiting, stop; never push through it.
-- Decide the question first and run the fewest calls that answer it; report how many calls and which model.
+- Decide the question first and run the fewest calls that answer it, together at the end of a stage rather than after
+  each small step; report how many calls and which model.

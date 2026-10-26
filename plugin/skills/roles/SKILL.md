@@ -19,6 +19,9 @@ Where the project's own rules differ from this playbook, the project's rules win
   person can make together, each with options and a recommendation, and writes the batch summary at the end (see
   wrapup). By default it writes no product code, so its context stays free for decisions; in a batch it is the one
   that pushes (see pipeline).
+- A new, unrelated batch gets a new commander session: one that led the last batch takes that batch's state and rules
+  for the present. Given unrelated work, a commander suggests a new one with a command to start it; work continued
+  stays with it.
 - **Executor**: works from its brief; sends what it cannot decide to its commander with options and a recommendation;
   keeps a status note in the batch folder, its current state at the top, rewritten when it changes; commits locally,
   then opens and tends its own PR once it is pushed.
