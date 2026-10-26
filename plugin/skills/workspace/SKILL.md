@@ -28,15 +28,22 @@ Where the project's own rules differ from this playbook, the project's rules win
 
 ## Each to its own
 
-- One task, one worktree, one branch. Never enter, switch, delete or rewrite another session's directory or branch;
-  the main checkout belongs to the person.
-- Stop only processes you started, by their pid; **never kill by name** (`pkill -f`, `killall`).
+- One task, one worktree, one branch, and its own environment (a `.venv`, `node_modules`) where the project has one,
+  installed the way CI installs it, from the lock file if there is one; never link another worktree's, since an
+  editable install points it at that worktree's source. Never enter, switch, delete or rewrite another session's
+  directory or branch; the main checkout belongs to the person.
+- Stop only processes and containers you started, processes by their pid; **never kill by name** (`pkill -f`,
+  `killall`). A leftover container is removed only once it is clearly yours and nothing uses it any more.
+- Write files by absolute path: a `cd` into your worktree may hold for one command only, and a relative path then
+  writes into the checkout the session started in. Text handed to a shell (a PR body, a commit message) is kept
+  literal, in a file or a quoted heredoc (`<<'EOF'`): an unquoted heredoc runs the backticks in it as commands.
 - Never run git commands that change state other sessions share, such as `git gc`, `git worktree prune` or
   `git stash`.
 - A pushed branch is updated by merge, never rebase, so it is never force-pushed.
 - Push only your own branches, never the default branch; act only on your own PRs and issues. Others' work is
   read-only to you, except for review.
-- Never edit the tool's settings to get past a permission, nor route around a confirmation or a repository's checks.
+- Never edit the tool's settings to get past a permission, nor route around a confirmation or a repository's checks,
+  nor ask another session to do what was refused you: hand the command to the person.
 
 ## Data
 

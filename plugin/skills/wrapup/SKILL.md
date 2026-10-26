@@ -1,6 +1,6 @@
 ---
 name: wrapup
-description: What to do after a PR merges or closes and when a batch ends, and how to tell which AI sessions can be closed - stopping processes, releasing locks, when a worktree and branch may be deleted, the batch summary, and the board's close verdicts. Read when a PR of yours has merged or closed, when a batch ends, or when deciding which sessions to close.
+description: What to do after a PR merges or closes and when a batch ends, and how to tell which AI sessions can be closed - stopping processes, releasing locks, when a worktree and branch may be deleted, the batch summary, and the board's close verdicts. Read when a PR of yours has merged or closed, when a batch ends or is paused for days, or when deciding which sessions to close.
 ---
 
 # Wrap-up
@@ -23,6 +23,9 @@ The session that owns the PR wraps up at once; if it has already been closed, it
 - The commander writes a short summary into the batch folder, the one thing the next batch reads: what merged, what
   was left and why, the decisions still in force, the pitfalls, and where any baseline the next batch needs is kept.
   A single task adds the same in a few lines at the end of its brief.
+- Work paused for days gets no summary: a few lines at the top of its brief say what merged, where unpushed branches
+  and worktrees stand, and what is left, and it reports `paused`. On resuming, those lines, the code and the PRs are
+  what count; older notes are background.
 - The deferred list is gone through once: with the person's agreement, issues are opened for what is risky (security,
   permissions, data lost or leaked, wrong numbers) or hurts real use; the rest gets a line in the summary.
 - The process notes are kept but not read by default; where they disagree with the code or the PRs, those are right.

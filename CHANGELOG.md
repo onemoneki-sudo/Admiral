@@ -12,6 +12,23 @@ its cache, one copy per version, so a change to the sidebar or the playbook reac
   changes are misread, as conflicts where there are none or as changes lost or brought back silently. Where the lower
   PR's history was rewritten after the stacked branch took it, the PR's own changes are redone on a new branch instead.
   Either way, the diff against the default branch is checked to show every change of the PR's and nothing else.
+- A stacked PR is not merged by hand either while its base is another branch: it would land there, not on the
+  default branch.
+- A defect of a kind already fixed that turns up again elsewhere is fixed once, at the point every path passes
+  through, with a test over every path; two findings are one kind when they break the same invariant.
+- Review by a different model: the reviewer runs with a time limit and a finite input or none (`codex exec` with an
+  open input waits on it and never starts); a large change has its first round in parts; a fix is reviewed again unless it stays
+  in one module, touches no rendering, state, storage or permissions, is tested through the real path and shown red
+  then green.
+- An impact tool finds affected tests only once checked on the project against known cases. A failed CI run is fixed
+  from all its failures at once, in one push.
+- Workspace: each worktree has its own environment, never a link to another's; containers are stopped only by whoever
+  started them; files are written by absolute path and text handed to a shell is kept literal; what was refused is handed
+  to the person, never to another session.
+- Also: changing production is the person's decision, and reading it is announced first; work is not narrowed to
+  avoid a review; a call that breaks its callee's contract and stale generated files count as ordinary defects; empty
+  output from a background job is not taken as done; real model calls are gathered per stage; paused work leaves a few
+  lines of state at the top of its brief; an unrelated new batch gets a new commander.
 
 ## 0.2.9 (2026-10-18)
 

@@ -21,17 +21,25 @@ what you were told for this project, tell the person, who decides.
   to push) or are in doubt: a sentence each, with its evidence, on whether it still serves the goal, stays within the
   task's scope, and holds for every case of its kind rather than one (see Building). A small change needs a few words;
   expand only a line you are unsure of. The person should not have to ask.
-- Some decisions stay with the person: pushing, merging, changing these rules, exposing data to someone new, and any
-  outward action beyond what they authorised.
+- Some decisions stay with the person: pushing, merging, changing these rules, exposing data to someone new, changing
+  anything in production, and any outward action beyond what they authorised. Before even reading production, say
+  what you will look at.
 
 ## Building
 
 - Build the real thing, complete in itself, not a stopgap with a list of caveats; do not spread into unrelated work.
-  Reuse what the repository already has.
+  Reuse what the repository already has. Do not narrow the work to spare it a review or an approval, nor hand the
+  person what you can do yourself.
 - Rules and fixes hold for every case of the domain, with no special case for one instance. A fix settles the kind its
   defect belongs to (the wrong assumption, and the inputs that share it), never a condition for the one case that
   broke; a rule, likewise, settles a kind of problem, not one incident. Where data is missing, degrade honestly, so
   that once it is filled in the code works unchanged.
+- Before settling on a fix, ask whether it sits where the case broke or where every path passes. When a kind already
+  fixed turns up again elsewhere, stop patching places: name in one sentence the invariant they break, move the fix to
+  the one point every path passes through (or remove what produces the kind), add a test that goes over every path and
+  fails for one that skips that point, and have the review look for ways around it. Two findings are one kind when
+  they break the same invariant, wherever or however they failed. Where there is no such point, or making one is
+  beyond the task, say so to whoever decides.
 - Nothing grows without bound: a list, cache, rule or exemption that grows with time or with the number of problems
   gets a limit.
 
@@ -40,7 +48,8 @@ what you were told for this project, tell the person, who decides.
 - **Judge as the real user.** Can the person who will use it understand it, trust it and act on it? Check it through
   their real entry point, not only by an internal function's return value.
 - **No defect an ordinary review of your own diff would catch**: wrong conditions or data flow, boundaries and nulls,
-  debug leftovers, wrong files, secrets or personal data, false claims.
+  a call that breaks its callee's contract, generated files left stale, debug leftovers, wrong files, secrets or
+  personal data, false claims.
 - **Tests tell the key error apart.** Expected values come from the requirement, not from the code under test; choose
   data that would expose a flipped sign, a mixed group or an off-by-one. A key fix comes with a test that is red
   without it and green with it.
