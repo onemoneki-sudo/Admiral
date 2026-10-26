@@ -1,3 +1,3 @@
 """Admiral: command a fleet of AI coding sessions from one terminal."""
 
-__version__ = "0.2.9"  # the one version; plugin.json must say the same (tests check)
+__version__ = "0.2.10"  # the one version; plugin.json must say the same (tests check)
