@@ -192,6 +192,8 @@ git clone https://github.com/onemoneki-sudo/Admiral.git ~/admiral   # 试 demo �
    claude plugin marketplace add ~/admiral
    claude plugin install admiral@admiral
    ```
+   Codex 用同一个插件市场装协作规则的技能（`codex plugin marketplace add ~/admiral`，再
+   `codex plugin add admiral@admiral`）；侧边栏和开工提醒只有 Claude Code 有。
 
 最后，在 `~/.config/admiral/config.toml` 里设置 `project_dirs` 和 `[github] repo_dir`，再运行 `admiral doctor`：
 它逐项检查 Python、后台任务、状态栏、插件、`gh` 和配置，告诉你哪一项没接上、怎么修，自己不改任何东西。
@@ -461,7 +463,8 @@ claude --plugin-dir plugin                 # 开一个从工作目录加载侧�
 宣传片和上面的图片都来自 Admiral 在演示舰队上的真实输出：先运行 `docs/film/build_assets.py`，再运行
 `docs/film/render.py`（需要 Playwright 和 ffmpeg）。
 
-发布新版本：同时提高 `admiral/__init__.py` 里的 `__version__` 和 `plugin/.claude-plugin/plugin.json` 里的版本号，
+发布新版本：同时提高 `admiral/__init__.py` 里的 `__version__`，以及 `plugin/.claude-plugin/plugin.json` 和
+`plugin/.codex-plugin/plugin.json` 里的版本号，
 把 `CHANGELOG.md` 里 `Unreleased` 下的内容移到新版本下面，给这个提交打上 `v<版本号>` 标签。
 
 ## 致谢

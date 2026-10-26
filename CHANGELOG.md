@@ -1,8 +1,15 @@
 # Changelog
 
 Each version says what changed for someone using Admiral. The version lives in `admiral/__init__.py`, and
-`plugin/.claude-plugin/plugin.json` carries the same one (the tests check): Claude Code keeps an installed plugin in
+`plugin/.claude-plugin/plugin.json` and `plugin/.codex-plugin/plugin.json` carry the same one (the tests check): Claude Code keeps an installed plugin in
 its cache, one copy per version, so a change to the sidebar or the playbook reaches people only when the version moves.
+
+## Unreleased
+
+**Codex**
+- Codex installs the plugin from the same marketplace without a warning: it read the sidebar's hooks file as its own
+  and could not parse it. The plugin now has a Codex manifest naming a hooks file of Codex's, and Codex loads the
+  playbook's skills from it.
 
 ## 0.2.10 (2026-10-26)
 
