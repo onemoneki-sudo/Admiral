@@ -421,9 +421,10 @@ def combine(cfg, views, boards):
     return out
 
 
-def attach(live, regs, current):
+def attach(live, regs, current, elsewhere=()):
     """The registration of each live session, in the order of `live` (None where it has none); `current` holds the
-    names sessions have now, wherever they run. The board, `admiral send` and `admiral wait` all ask this one place.
+    names sessions have now, wherever they run, and `elsewhere` the sessions running outside the projects, whose
+    registrations are theirs all the same. The board, `admiral send` and `admiral wait` all ask this one place.
 
     A registration its session made follows that session, whatever it is called now; one made without a session (by
     hand, or for another session) is found by name. A Codex session that no registration names (Codex often keeps no
@@ -435,13 +436,13 @@ def attach(live, regs, current):
     for r in regs:
         if not r.get("sessionId"):
             by_name.setdefault(r["who"], r)
-    found = []
-    for s in live:
+    def own(s):
         # a name another session has now is that session's, not this one's that once had it
         former_own = [f.get("name", "") for f in s.get("formerNames") or [] if f.get("name") not in current]
-        found.append(by_session.get(s.get("sessionId")) or next((by_name[n] for n in [s.get("name") or ""] + former_own
-                                                                 if n in by_name), None))
-    taken = {r["who"] for r in found if r}
+        return by_session.get(s.get("sessionId")) or next((by_name[n] for n in [s.get("name") or ""] + former_own
+                                                           if n in by_name), None)
+    found = [own(s) for s in live]
+    taken = {r["who"] for r in found + [own(s) for s in elsewhere] if r}
     by_dir, unclaimed = {}, {}
     for r in by_name.values():
         if first(r.get("worktree")) and r["who"] not in taken:
@@ -489,7 +490,7 @@ def build_one(cfg, use_gh=True, now=None, starts=sessions.proc_starts, fetch=git
             live.append(one)
     convs, matched = [], set()
     current = {s.get("name") for s in live + elsewhere if s.get("name")}  # wherever a session runs
-    for s, reg in zip(live, attach(live, regs, current)):
+    for s, reg in zip(live, attach(live, regs, current, elsewhere)):
         codex = s.get("agent") == "codex"
         former = [f.get("name", "") for f in s.get("formerNames") or []]
         # a Codex session goes by its registration's name, the one its commander's plan and messages use

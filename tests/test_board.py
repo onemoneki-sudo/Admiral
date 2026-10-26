@@ -105,6 +105,38 @@ class World(unittest.TestCase):
         from admiral import codex, registry
         return registry.read_json(codex.record_path(self.cfg, sid, pid))
 
+    def starts(self, pids):
+        return {p: (START, f"ttys{p:03d}") for p in pids}
+
+    def codex_threads(self, last=None, named=None, known=()):
+        """Codex's own thread list, as these tests need it: never the real one."""
+        import contextlib
+        from admiral import codex
+        @contextlib.contextmanager
+        def patched():
+            old = codex.last_thread, codex.thread_named, codex.thread_exists
+            codex.last_thread = lambda d: (last or {}).get(d, "")
+            codex.thread_named = lambda n: (named or {}).get(n, "")
+            codex.thread_exists = lambda s: s in known
+            try:
+                yield
+            finally:
+                codex.last_thread, codex.thread_named, codex.thread_exists = old
+        return patched()
+
+    def queue(self):
+        calls = []
+        def run(cmd, **kw):
+            calls.append(cmd[3])
+            return type("R", (), {"returncode": 0, "stdout": "", "stderr": ""})()
+        return calls, run
+
+    def watch(self, steps, **kw):
+        from admiral import relay
+        steps = list(steps)
+        return relay.wait(self.cfg, timeout=60, interval=1, starts=self.starts,
+                          sleep=lambda s: steps.pop(0)() if steps else None, clock=iter(range(100)).__next__, **kw)
+
     def group(self, b, lead):
         return next(g for g in b["groups"] if g["lead"] == lead)
 
@@ -1786,9 +1818,6 @@ class CodexSessions(World):
 class Relay(World):
     """A commander messaging a Codex executor, and hearing when a member reports."""
 
-    def starts(self, pids):
-        return {p: (START, f"ttys{p:03d}") for p in pids}
-
     def test_send_finds_the_codex_session_by_its_worktree_and_queues(self):
         from admiral import relay
         self.register("exec-codex", worktree="/w/app/wt1", lead="Commander-A")
@@ -1831,12 +1860,6 @@ class Relay(World):
                            sleep=lambda s: None, clock=iter(range(100)).__next__)
         self.assertEqual(found, [])
 
-    def watch(self, steps, **kw):
-        from admiral import relay
-        steps = list(steps)
-        return relay.wait(self.cfg, timeout=60, interval=1, starts=self.starts,
-                          sleep=lambda s: steps.pop(0)() if steps else None, clock=iter(range(100)).__next__, **kw)
-
     def test_send_never_reaches_a_codex_session_beside_a_claude_one_registered_there(self):
         from admiral import relay
         self.session(7, "worker", cwd="/w/app/wt1")
@@ -1853,12 +1876,8 @@ class Relay(World):
         def run(cmd, **kw):
             calls.append(cmd[3])
             return type("R", (), {"returncode": 0, "stdout": "", "stderr": ""})()
-        old = codex.last_thread, codex.thread_exists
-        codex.last_thread, codex.thread_exists = (lambda d: "t-old" if d == "/w/app/wt1" else ""), (lambda s: False)
-        try:
+        with self.codex_threads(last={"/w/app/wt1": "t-old"}):
             ok, msg = relay.send(self.cfg, "exec-codex", "go on", self.starts, run=run)
-        finally:
-            codex.last_thread, codex.thread_exists = old
         self.assertTrue(ok, msg)
         self.assertEqual(calls, ["t-old"])
 
@@ -1912,3 +1931,46 @@ class CodexStates(World):
         os.remove(sessions.transcript(self.cfg, "/w/app", "s3"))
         self.codex("t-1", "SessionStart")
         self.assertIn(board.TEXT["en"]["x_no_transcripts"], self.build(use_gh=False)["health"])
+
+    def test_send_refuses_a_worktree_with_codex_sessions_it_cannot_tell_apart(self):
+        from admiral import relay
+        self.register("exec-codex", worktree="/w/app/wt1")
+        self.codex("t-1", "SessionStart", pid=50)
+        self.codex("t-2", "SessionStart", pid=51)
+        calls, run = self.queue()
+        with self.codex_threads(last={"/w/app/wt1": "t-2"}):
+            ok, msg = relay.send(self.cfg, "exec-codex", "go", self.starts, run=run)
+        self.assertFalse(ok)
+        self.assertEqual(calls, [])
+
+    def test_a_registration_held_by_a_session_outside_the_projects_is_not_taken(self):
+        self.session(7, "worker", cwd="/elsewhere")
+        self.register("worker", worktree="/w/app/wt1")
+        self.codex("t-1", "SessionStart")
+        b = self.build(use_gh=False)
+        rows = [x for g in b["groups"] for x in g["members"]] + b.get("unassigned", [])
+        self.assertEqual([x["name"] for x in rows], ["t-1"])
+
+    def test_wait_knows_a_renamed_claude_session_by_its_name_now(self):
+        self.session(7, "worker-old", status="busy")
+        self.register("worker-old", lead="Commander-A")
+        self.session(7, "worker-new", status="busy", former=["worker-old"])
+        found = self.watch([lambda: self.session(7, "worker-new", status="waiting", former=["worker-old"],
+                                                 since=NOW + 30)], who=["worker-new"])
+        self.assertEqual(found, ["worker-new: waiting for the person (an approval or a question)"])
+
+    def test_send_reaches_a_closed_named_codex_session(self):
+        from admiral import relay
+        calls, run = self.queue()
+        with self.codex_threads(named={"named-worker": "t-9"}):
+            ok, msg = relay.send(self.cfg, "named-worker", "go on", self.starts, run=run)
+        self.assertTrue(ok, msg)
+        self.assertEqual(calls, ["t-9"])
+
+    def test_another_process_at_work_does_not_repeat_a_wait(self):
+        self.register("exec-codex", worktree="/w/app/wt1", lead="Commander-A")
+        self.codex("t-1", "UserPromptSubmit", ("PermissionRequest", {"tool_use_id": "a"}), pid=50)
+        self.codex("t-1", "UserPromptSubmit", pid=60)
+        found = self.watch([lambda: self.codex("t-1", "PreToolUse", "PostToolUse", pid=60, now=NOW + 30)],
+                           lead="Commander-A")
+        self.assertEqual(found, [])

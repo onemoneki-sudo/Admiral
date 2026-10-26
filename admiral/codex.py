@@ -80,6 +80,12 @@ def thread_exists(sid):
     return threads("SELECT 1 FROM threads WHERE id = ?", (sid,)) is not None
 
 
+def thread_named(name):
+    """The Codex session last active under `name`, open or closed; "" when Codex has none."""
+    row = threads("SELECT id FROM threads WHERE name = ? AND archived = 0 ORDER BY updated_at DESC LIMIT 1", (name,))
+    return row[0] if row else ""
+
+
 def last_thread(directory):
     """The Codex session last active in `directory`, open or closed; "" when Codex has none there."""
     row = threads("SELECT id FROM threads WHERE cwd = ? AND archived = 0 ORDER BY updated_at DESC LIMIT 1",

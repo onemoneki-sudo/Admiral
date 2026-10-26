@@ -9,6 +9,7 @@ or ends a turn, and Claude Code tells a session when a command it left in the ba
 means is decided as the board decides it (board.attach), so a message never goes where the board would not show it.
 """
 
+import os
 import subprocess
 import time
 
@@ -27,8 +28,10 @@ def sessions_of(cfg, who, starts):
     that name with no registration of their own."""
     live, _, _, elsewhere = sessions.load(cfg, starts)
     current = {s.get("name") for s in live + elsewhere if s.get("name")}
-    pairs = list(zip(live, board.attach(live, registry.registrations(cfg), current)))
-    return [s for s, reg in pairs if (reg and who in registry.names_of(reg)) or (reg is None and s.get("name") == who)]
+    pairs = list(zip(live, board.attach(live, registry.registrations(cfg), current, elsewhere)))
+    # a Claude Code session goes by its own name on the board, whatever name it registered under
+    return [s for s, reg in pairs if (reg and who in registry.names_of(reg))
+            or (s.get("name") == who and (reg is None or s.get("agent") != "codex"))]
 
 
 def codex_thread(cfg, who, starts):
@@ -41,13 +44,25 @@ def codex_thread(cfg, who, starts):
         return "", f"{who} names {len(threads)} Codex sessions; register each under a name of its own"
     if threads:
         return threads.pop(), ""
-    reg = registration(cfg, who)  # not running: the thread it registered from, or the last one in its worktree
+    # not running: the thread it registered from, the closed one Codex keeps under that name, or the last one in its
+    # worktree, unless Codex sessions run there that the board could not tell apart
+    reg = registration(cfg, who)
     if reg and reg.get("sessionId") and codex.thread_exists(reg["sessionId"]):
         return reg["sessionId"], ""
+    named = codex.thread_named(who)
+    if named:
+        return named, ""
     wt = board.first((reg or {}).get("worktree"))
-    thread = codex.last_thread(wt) if wt else ""
-    if thread:
-        return thread, ""
+    if wt:
+        live = sessions.load(cfg, starts)[0]
+        here = {s["sessionId"] for s in live if s.get("agent") == "codex"
+                and os.path.realpath(s.get("cwd") or "/nonexistent") == os.path.realpath(wt)}
+        if here:
+            return "", (f"{len(here)} Codex sessions run in {wt} and none is {who} for certain; register each under "
+                        "a name of its own")
+        thread = codex.last_thread(wt)
+        if thread:
+            return thread, ""
     return "", (f"no Codex session is {who}: none running has that name or registration, and Codex has none in its "
                 "registered worktree")
 
@@ -78,9 +93,11 @@ def snapshot(cfg, names, starts):
     out = {}
     for who in names:
         reg = registration(cfg, who)
-        found = sorted(sessions_of(cfg, who, starts), key=lambda s: ORDER.get(s.get("status"), 9))
+        found = sorted(sessions_of(cfg, who, starts), key=lambda s: (ORDER.get(s.get("status"), 9),
+                                                                     -(s.get("statusUpdatedAt") or 0)))
+        # the most pressing process speaks, with its own time: another process's work moves nothing here
         out[who] = ((reg.get("phase"), reg.get("note", ""), reg.get("phaseAt")) if reg else None,
-                    found[0].get("status", "") if found else "", max((s.get("statusUpdatedAt") or 0 for s in found), default=0))
+                    found[0].get("status", "") if found else "", (found[0].get("statusUpdatedAt") or 0) if found else 0)
     return out
 
 
