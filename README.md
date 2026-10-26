@@ -524,7 +524,8 @@ The film and the pictures above are drawn from Admiral's real output on its demo
 then `docs/film/render.py` (needs Playwright and ffmpeg).
 
 To release: raise `__version__` in `admiral/__init__.py` and the version in `plugin/.claude-plugin/plugin.json` and
-`plugin/.codex-plugin/plugin.json` together, move the `Unreleased` notes in `CHANGELOG.md` under the new version, and tag the commit `v<version>`.
+`plugin/.codex-plugin/plugin.json` together, move the `Unreleased` notes in `CHANGELOG.md` under the new version, and
+tag the commit `v<version>`.
 
 ## Acknowledgements
 
