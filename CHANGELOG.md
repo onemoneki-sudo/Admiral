@@ -10,6 +10,16 @@ its cache, one copy per version, so a change to the sidebar or the playbook reac
 - Codex installs the plugin from the same marketplace without a warning: it read the sidebar's hooks file as its own
   and could not parse it. The plugin now has a Codex manifest naming a hooks file of Codex's, and Codex loads the
   playbook's skills from it.
+- Codex sessions are on the board beside Claude Code's: working, idle, or waiting for your approval, as Codex
+  itself reports it to the plugin's hooks (trust them once when Codex asks), and counted in their commander's batch.
+  One without a name is shown under the registration whose worktree is its directory, so a commander can register
+  a Codex executor before it starts; `admiral register` run inside Codex is tied to its session.
+- `admiral send <name> "<message>"` puts a message into a Codex session (through `codex queue`; one closed takes it
+  up when resumed), so a commander dispatches to Codex executors without the person relaying.
+- `admiral wait --lead <commander>` (or `--who <name>`) returns when a member reports, starts waiting for the person,
+  ends a turn or ends: a commander leaves it running in the background and hears of it, whatever agent the member is.
+- Playbook: a batch may mix Claude Code and Codex executors (roles); code Codex wrote is refuted by Claude, read-only
+  (pipeline); a Codex session whose sandbox keeps `admiral` from its state directory asks the person (workspace).
 
 ## 0.2.10 (2026-10-26)
 

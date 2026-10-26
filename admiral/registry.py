@@ -5,6 +5,7 @@ whole and atomically, so two sessions never write the same file. A file name car
 that differ only in non-ASCII characters never share a file.
 """
 
+import glob
 import hashlib
 import json
 import os
@@ -35,16 +36,17 @@ def read_json(path):
 
 
 def running_names(cfg):
-    """Names of the sessions Claude Code lists as running (for warnings only)."""
+    """Names of the sessions Claude Code lists as running, and the Codex sessions recorded (for warnings only)."""
     names = set()
-    try:
-        for f in os.listdir(cfg.sessions_dir):
-            if f.endswith(".json"):
-                d = read_json(os.path.join(cfg.sessions_dir, f)) or {}
-                if d.get("name"):
-                    names.add(d["name"])
-    except OSError:
-        pass
+    for where in (cfg.sessions_dir, cfg.sub("codex")):
+        try:
+            for f in os.listdir(where):
+                if f.endswith(".json"):
+                    d = read_json(os.path.join(where, f)) or {}
+                    if d.get("name"):
+                        names.add(d["name"])
+        except OSError:
+            pass
     return names
 
 
@@ -70,7 +72,13 @@ def path_of(cfg, reg):
 
 def caller(cfg):
     """(session ID, names) of the Claude Code session running this command, as Claude Code hands its commands
-    (CLAUDE_CODE_SESSION_ID, CLAUDE_PID): its name now first, then its former ones. ("", []) outside a session."""
+    (CLAUDE_CODE_SESSION_ID, CLAUDE_PID): its name now first, then its former ones; or of the Codex session, by the
+    CODEX_THREAD_ID Codex hands its commands, once the plugin's hooks have recorded it. ("", []) outside a session."""
+    thread = os.environ.get("CODEX_THREAD_ID", "")
+    if thread and not os.environ.get("CLAUDE_CODE_SESSION_ID"):
+        found = [read_json(f) or {} for f in glob.glob(cfg.sub("codex", glob.escape(os.path.basename(thread)) + ".*.json"))]
+        d = max(found, key=lambda r: r.get("statusUpdatedAt") or 0, default=None)  # one record per process it runs in
+        return (thread, [d["name"]] if d.get("name") else []) if d else ("", [])
     sid, pid = os.environ.get("CLAUDE_CODE_SESSION_ID", ""), os.environ.get("CLAUDE_PID", "")
     d = read_json(os.path.join(cfg.sessions_dir, pid + ".json")) if pid.isdigit() else None
     if not sid or not d or d.get("sessionId") != sid:

@@ -19,7 +19,8 @@ Where the project's own rules differ from this playbook, the project's rules win
 - Register when work starts: `admiral register --who "<this session's name>" --task "<task>" --branch <branch>
   --worktree <path> --files "<main files or areas>" [--lead "<commander>"]`. `--who` is exactly the session's name.
   Registered by the session itself, the registration follows it through a rename: report under the new name and it
-  moves along.
+  moves along. In Codex, whose sandbox may keep `admiral` from writing its state directory (`admiral where`), ask the
+  person to approve the command, or to let Codex write that directory.
 - Report each new phase with `admiral state --who "<name>" --phase <phase> [--note "<one line>"]`: `working`,
   `waiting` (the note says on what), `needs_you` (the person must act or decide: the note says what), `review`,
   `accepting`, `paused`, `done`. Whenever you ask the person something, report `needs_you` too: they may not be

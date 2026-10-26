@@ -92,6 +92,19 @@ class World(unittest.TestCase):
         with open(os.path.join(self.root, "locks", name, "owner"), "w", encoding="utf-8") as fh:
             fh.write(f"who={who}\npid=1\n")
 
+    def codex(self, sid, *events, cwd="/w/app/wt1", name="", pid=50, start=START, now=NOW):
+        """A Codex session, as the plugin's hooks record it on these events: each an event name, or (name, fields)."""
+        from admiral import codex
+        for e in events:
+            kind, fields = e if isinstance(e, tuple) else (e, {})
+            codex.hook(self.cfg, {"session_id": sid, "hook_event_name": kind, "cwd": cwd, **fields},
+                       starts=lambda pids: {p: (start, f"ttys{p:03d}") for p in pids if start},
+                       find_pid=lambda: pid, name_of=lambda s: name, now=now)
+
+    def codex_record(self, sid, pid=50):
+        from admiral import codex, registry
+        return registry.read_json(codex.record_path(self.cfg, sid, pid))
+
     def group(self, b, lead):
         return next(g for g in b["groups"] if g["lead"] == lead)
 
@@ -1667,3 +1680,235 @@ class Chinese(World):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class CodexSessions(World):
+    """Codex sessions as the plugin's Codex hooks record them, on the board beside Claude Code's."""
+
+    def test_a_nameless_codex_session_is_its_worktrees_registration_and_waits_for_the_person(self):
+        self.session(1, "Commander-A")
+        self.register("exec-codex", worktree="/w/app/wt1", lead="Commander-A")  # made by its commander
+        self.codex("t-1", "SessionStart", "UserPromptSubmit", "PreToolUse", "PermissionRequest")
+        b = self.build(use_gh=False)
+        member = next(x for x in self.group(b, "Commander-A")["members"])
+        self.assertEqual((member["name"], member["agent"], member["status"]), ("exec-codex", "codex", "waiting"))
+        self.assertEqual([x["name"] for x in b["waiting"]], ["exec-codex"])
+
+    def test_an_approved_call_and_a_finished_turn_clear_the_wait(self):
+        self.register("exec-codex", worktree="/w/app/wt1")
+        self.codex("t-1", "SessionStart", "PermissionRequest", "PostToolUse")
+        self.assertEqual(self.build(use_gh=False)["waiting"], [])
+        self.codex("t-1", "Stop")
+        self.assertEqual(self.codex_record("t-1")["status"], "idle")
+        self.codex("t-1", "SessionEnd")
+        self.assertIsNone(self.codex_record("t-1"))
+
+    def test_an_interrupted_wait_or_turn_ends(self):
+        self.codex("t-1", "UserPromptSubmit", ("PermissionRequest", {"tool_use_id": "a"}), "Interrupt")
+        self.assertEqual(self.codex_record("t-1")["status"], "idle")
+
+    def test_compaction_mid_turn_keeps_the_turn_going(self):
+        self.codex("t-1", "UserPromptSubmit", ("SessionStart", {"source": "compact"}))
+        self.assertEqual(self.codex_record("t-1")["status"], "busy")
+        self.codex("t-1", ("SessionStart", {"source": "startup"}))
+        self.assertEqual(self.codex_record("t-1")["status"], "idle")
+
+    def test_a_parallel_call_that_ran_leaves_the_one_asked_about_waiting(self):
+        self.codex("t-1", "UserPromptSubmit", ("PermissionRequest", {"tool_use_id": "a"}), ("PostToolUse", {"tool_use_id": "b"}))
+        self.assertEqual(self.codex_record("t-1")["status"], "waiting")
+        self.codex("t-1", ("PostToolUse", {"tool_use_id": "a"}))
+        self.assertEqual(self.codex_record("t-1")["status"], "busy")
+
+    def test_one_conversation_in_two_processes_is_two_records(self):
+        self.codex("t-1", "SessionStart", pid=50)
+        self.codex("t-1", "SessionStart", "UserPromptSubmit", pid=60)
+        self.codex("t-1", "SessionEnd", pid=50)
+        self.assertIsNone(self.codex_record("t-1", 50))
+        self.assertEqual(self.codex_record("t-1", 60)["status"], "busy")
+
+    def test_no_record_without_the_process_start(self):
+        self.codex("t-1", "SessionStart", start=None)
+        self.assertIsNone(self.codex_record("t-1"))
+
+    def test_a_registration_another_session_has_is_not_taken_by_directory(self):
+        self.session(7, "worker", cwd="/w/app/wt1")
+        self.register("worker", worktree="/w/app/wt1")
+        self.codex("t-1", "SessionStart")
+        b = self.build(use_gh=False)
+        rows = [x for g in b["groups"] for x in g["members"]] + b.get("unassigned", [])
+        self.assertEqual(sorted(x["name"] for x in rows), ["t-1", "worker"])
+
+    def test_a_codex_session_named_later_keeps_its_registration(self):
+        self.session(1, "Commander-A")
+        self.register("exec-codex", worktree="/w/app/wt1", lead="Commander-A")
+        self.codex("t-1", "SessionStart", name="a name Codex was given")
+        b = self.build(use_gh=False)
+        self.assertEqual([x["name"] for x in self.group(b, "Commander-A")["members"]], ["exec-codex"])
+
+    def test_a_named_codex_session_goes_by_its_name(self):
+        self.session(1, "Commander-A")
+        self.register("exec-named", lead="Commander-A")
+        self.codex("t-2", "SessionStart", "UserPromptSubmit", name="exec-named", cwd="/w/app/elsewhere")
+        b = self.build(use_gh=False)
+        self.assertEqual([(x["name"], x["status"]) for x in self.group(b, "Commander-A")["members"]],
+                         [("exec-named", "busy")])
+
+    def test_two_registrations_on_one_worktree_name_neither(self):
+        self.register("one", worktree="/w/app/wt1")
+        self.register("two", worktree="/w/app/wt1")
+        self.codex("t-3", "SessionStart")
+        b = self.build(use_gh=False)
+        rows = [x for g in b["groups"] for x in g["members"]] + b.get("unassigned", [])
+        self.assertEqual([x["name"] for x in rows if x["sessionId"] == "t-3"], ["t-3"])  # by its id: no guess
+
+    def test_a_codex_session_registers_itself_by_its_thread(self):
+        from admiral import registry
+        self.codex("t-4", "SessionStart", name="")
+        old = dict(os.environ)
+        try:
+            os.environ.pop("CLAUDE_CODE_SESSION_ID", None)
+            os.environ["CODEX_THREAD_ID"] = "t-4"
+            reg = registry.register(self.cfg, "exec-self", lead="Commander-A")
+        finally:
+            os.environ.clear()
+            os.environ.update(old)
+        self.assertEqual(reg.get("sessionId"), "t-4")
+        b = self.build(use_gh=False)
+        self.assertIn("exec-self", [x["name"] for g in b["groups"] for x in g["members"]])
+
+    def test_records_of_gone_processes_are_pruned(self):
+        from admiral import codex
+        self.codex("t-5", "SessionStart", pid=60)
+        codex.prune(self.cfg, starts=lambda pids: {})
+        self.assertEqual([f for f in os.listdir(codex.sessions_dir(self.cfg)) if f.endswith(".json")], [])
+
+
+class Relay(World):
+    """A commander messaging a Codex executor, and hearing when a member reports."""
+
+    def starts(self, pids):
+        return {p: (START, f"ttys{p:03d}") for p in pids}
+
+    def test_send_finds_the_codex_session_by_its_worktree_and_queues(self):
+        from admiral import relay
+        self.register("exec-codex", worktree="/w/app/wt1", lead="Commander-A")
+        self.codex("t-1", "SessionStart")
+        calls = []
+        def run(cmd, **kw):
+            calls.append(cmd)
+            return type("R", (), {"returncode": 0, "stdout": "", "stderr": ""})()
+        ok, msg = relay.send(self.cfg, "exec-codex", "brief: see /tmp/brief.md", self.starts, run=run)
+        self.assertTrue(ok, msg)
+        self.assertEqual(calls, [["codex", "queue", "--thread", "t-1", "--message", "brief: see /tmp/brief.md"]])
+
+    def test_send_tells_a_claude_session_from_a_missing_one(self):
+        from admiral import relay
+        self.session(7, "claude-worker")
+        ok, msg = relay.send(self.cfg, "claude-worker", "hi", self.starts, run=None)
+        self.assertFalse(ok)
+        self.assertIn("SendMessage", msg)
+        ok, msg = relay.send(self.cfg, "nobody", "hi", self.starts, run=None)
+        self.assertFalse(ok)
+        self.assertIn("no Codex session is nobody", msg)
+
+    def test_wait_returns_when_a_member_reports_or_waits_for_the_person(self):
+        from admiral import relay, registry
+        self.register("exec-codex", worktree="/w/app/wt1", lead="Commander-A")
+        self.codex("t-1", "SessionStart", "UserPromptSubmit")
+        steps = [lambda: None, lambda: registry.set_phase(self.cfg, "exec-codex", "review")]
+        found = relay.wait(self.cfg, lead="Commander-A", timeout=60, interval=1, starts=self.starts,
+                           sleep=lambda s: steps.pop(0)() if steps else None, clock=iter(range(100)).__next__)
+        self.assertEqual(found, ["exec-codex: reported review"])
+        steps = [lambda: self.codex("t-1", "PermissionRequest")]
+        found = relay.wait(self.cfg, who=["exec-codex"], timeout=60, interval=1, starts=self.starts,
+                           sleep=lambda s: steps.pop(0)() if steps else None, clock=iter(range(100)).__next__)
+        self.assertEqual(found, ["exec-codex: waiting for the person (an approval or a question)"])
+
+    def test_wait_gives_up_quietly(self):
+        from admiral import relay
+        self.register("exec-codex", worktree="/w/app/wt1", lead="Commander-A")
+        found = relay.wait(self.cfg, lead="Commander-A", timeout=3, interval=1, starts=self.starts,
+                           sleep=lambda s: None, clock=iter(range(100)).__next__)
+        self.assertEqual(found, [])
+
+    def watch(self, steps, **kw):
+        from admiral import relay
+        steps = list(steps)
+        return relay.wait(self.cfg, timeout=60, interval=1, starts=self.starts,
+                          sleep=lambda s: steps.pop(0)() if steps else None, clock=iter(range(100)).__next__, **kw)
+
+    def test_send_never_reaches_a_codex_session_beside_a_claude_one_registered_there(self):
+        from admiral import relay
+        self.session(7, "worker", cwd="/w/app/wt1")
+        self.register("worker", worktree="/w/app/wt1")
+        self.codex("t-1", "SessionStart")
+        ok, msg = relay.send(self.cfg, "worker", "fix the bug", self.starts, run=None)
+        self.assertFalse(ok)
+        self.assertIn("Claude Code session", msg)
+
+    def test_send_reaches_a_closed_codex_session_through_codex_own_list(self):
+        from admiral import codex, relay
+        self.register("exec-codex", worktree="/w/app/wt1")
+        calls = []
+        def run(cmd, **kw):
+            calls.append(cmd[3])
+            return type("R", (), {"returncode": 0, "stdout": "", "stderr": ""})()
+        old = codex.last_thread, codex.thread_exists
+        codex.last_thread, codex.thread_exists = (lambda d: "t-old" if d == "/w/app/wt1" else ""), (lambda s: False)
+        try:
+            ok, msg = relay.send(self.cfg, "exec-codex", "go on", self.starts, run=run)
+        finally:
+            codex.last_thread, codex.thread_exists = old
+        self.assertTrue(ok, msg)
+        self.assertEqual(calls, ["t-old"])
+
+    def test_two_nameless_codex_sessions_in_one_worktree_take_no_registration(self):
+        self.register("exec-codex", worktree="/w/app/wt1")
+        self.codex("t-1", "SessionStart", pid=50)
+        self.codex("t-2", "SessionStart", pid=51)
+        b = self.build(use_gh=False)
+        rows = [x for g in b["groups"] for x in g["members"]] + b.get("unassigned", [])
+        self.assertEqual(sorted(x["name"] for x in rows), ["t-1", "t-2"])
+
+    def test_wait_hears_a_turn_begun_and_ended_between_two_looks(self):
+        self.register("exec-codex", worktree="/w/app/wt1", lead="Commander-A")
+        self.codex("t-1", "SessionStart")
+        found = self.watch([lambda: self.codex("t-1", "UserPromptSubmit", "Stop", now=NOW + 30)], lead="Commander-A")
+        self.assertEqual(found, ["exec-codex: finished a turn"])
+
+    def test_wait_hears_a_member_that_reports_done_and_leaves(self):
+        from admiral import registry
+        self.register("exec-codex", worktree="/w/app/wt1", lead="Commander-A")
+        def report_and_leave():
+            registry.set_phase(self.cfg, "exec-codex", "done")
+            registry.done(self.cfg, "exec-codex")
+        found = self.watch([report_and_leave], lead="Commander-A")
+        self.assertEqual(found, ["exec-codex: registration closed"])
+
+    def test_wait_hears_either_process_of_one_conversation(self):
+        self.register("exec-codex", worktree="/w/app/wt1", lead="Commander-A")
+        self.codex("t-1", "SessionStart", pid=50)
+        self.codex("t-1", "SessionStart", "UserPromptSubmit", pid=60)
+        found = self.watch([lambda: self.codex("t-1", ("PermissionRequest", {"tool_use_id": "a"}), pid=60)],
+                           lead="Commander-A")
+        self.assertEqual(found, ["exec-codex: waiting for the person (an approval or a question)"])
+
+
+class CodexStates(World):
+    def test_a_question_to_the_person_is_waiting(self):
+        self.codex("t-1", "UserPromptSubmit", ("PreToolUse", {"tool_use_id": "q", "tool_name": "request_user_input"}))
+        self.assertEqual(self.codex_record("t-1")["status"], "waiting")
+        self.codex("t-1", ("PostToolUse", {"tool_use_id": "q", "tool_name": "request_user_input"}))
+        self.assertEqual(self.codex_record("t-1")["status"], "busy")
+
+    def test_a_call_let_through_runs_as_work_where_codex_says_so(self):
+        self.codex("t-1", "UserPromptSubmit", ("PermissionRequest", {"tool_use_id": "a", "tool_name": "shell"}),
+                   ("PreToolUse", {"tool_use_id": "a", "tool_name": "shell"}))
+        self.assertEqual(self.codex_record("t-1")["status"], "busy")
+
+    def test_a_codex_session_hides_no_warning_about_claude_transcripts(self):
+        from admiral import sessions
+        self.session(3, "worker", status="busy")
+        os.remove(sessions.transcript(self.cfg, "/w/app", "s3"))
+        self.codex("t-1", "SessionStart")
+        self.assertIn(board.TEXT["en"]["x_no_transcripts"], self.build(use_gh=False)["health"])

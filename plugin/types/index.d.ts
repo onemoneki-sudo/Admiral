@@ -18,6 +18,7 @@ export type Row = {
   pr: { number: number; state: string; label: string } | null
   ci: string
   ciLevel: 'ok' | 'run' | 'fail' | 'none'
+  agent?: 'claude' | 'codex'
 }
 
 export type Item = {

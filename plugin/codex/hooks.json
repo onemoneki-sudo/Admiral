@@ -1,1 +1,93 @@
-{ "hooks": {} }
+{
+  "description": "Admiral: records each Codex session's state (working, waiting for you, idle) for the board",
+  "hooks": {
+    "SessionStart": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "\"$HOME/.local/bin/admiral\" codex-hook >/dev/null 2>&1; exit 0",
+            "timeout": 10
+          }
+        ]
+      }
+    ],
+    "UserPromptSubmit": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "\"$HOME/.local/bin/admiral\" codex-hook >/dev/null 2>&1; exit 0",
+            "timeout": 10
+          }
+        ]
+      }
+    ],
+    "PreToolUse": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "\"$HOME/.local/bin/admiral\" codex-hook >/dev/null 2>&1; exit 0",
+            "timeout": 10
+          }
+        ]
+      }
+    ],
+    "PostToolUse": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "\"$HOME/.local/bin/admiral\" codex-hook >/dev/null 2>&1; exit 0",
+            "timeout": 10
+          }
+        ]
+      }
+    ],
+    "PermissionRequest": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "\"$HOME/.local/bin/admiral\" codex-hook >/dev/null 2>&1; exit 0",
+            "timeout": 10
+          }
+        ]
+      }
+    ],
+    "Stop": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "\"$HOME/.local/bin/admiral\" codex-hook >/dev/null 2>&1; exit 0",
+            "timeout": 10
+          }
+        ]
+      }
+    ],
+    "Interrupt": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "\"$HOME/.local/bin/admiral\" codex-hook >/dev/null 2>&1; exit 0",
+            "timeout": 3
+          }
+        ]
+      }
+    ],
+    "SessionEnd": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "\"$HOME/.local/bin/admiral\" codex-hook >/dev/null 2>&1; exit 0",
+            "timeout": 3
+          }
+        ]
+      }
+    ]
+  }
+}

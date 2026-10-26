@@ -36,11 +36,20 @@ Where the project's own rules differ from this playbook, the project's rules win
   the batch is over. The board counts the batch's progress from this plan.
 - Numbers the batch's work must not repeat (a migration's, a version's) are handed out with the dispatch.
 - Learn progress from the board (`admiral board`), not by asking each session.
+- An executor may be a Codex session, alone or beside Claude Code ones in one batch. Register it yourself before it
+  starts, its worktree included (`admiral register --who <name> --worktree <path> --lead "<commander name>"`): the
+  board knows a Codex session without a name by its directory. Give the person the command that opens it there with
+  its brief (`codex -C <worktree> "Read <brief> and start"`); send it decisions with `admiral send <name>
+  "<message>"`, as Claude Code's own messages reach only Claude Code sessions. Its board row shows when it waits for
+  the person's approval once the person has trusted the plugin's hooks in Codex.
+- Executors report with `admiral state`. Rather than check on them, leave `admiral wait --lead "<commander name>"`
+  running in the background: it returns when a member reports, starts waiting for the person, ends a turn or ends,
+  and you hear of it then.
 
 ## Sizing a batch
 
 When asked how many sessions are needed, propose the batch before dispatching: one session per area of change that
-does not overlap another, plus an acceptance executor when it pays. For each, give a name by role, its duty, the model
-and effort you suggest (harder or riskier work getting the stronger setting) and a command to start it, for the person
-to paste. Once they are open, the commander finds them and sends each its brief; the person types nothing in them.
-Only the person sets a session's model and effort.
+does not overlap another, plus an acceptance executor when it pays. For each, give a name by role, its duty, the
+agent (Claude Code or Codex), the model and effort you suggest (harder or riskier work getting the stronger setting)
+and a command to start it, for the person to paste. Once they are open, the commander finds them and sends each
+its brief; the person types nothing in them. Only the person sets a session's model and effort.
