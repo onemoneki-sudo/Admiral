@@ -212,6 +212,8 @@ Then two steps that are yours, since Admiral never edits Claude Code's settings 
    claude plugin marketplace add ~/admiral
    claude plugin install admiral@admiral
    ```
+   Codex takes the same marketplace for the playbook's skills (`codex plugin marketplace add ~/admiral`, then
+   `codex plugin add admiral@admiral`); the sidebar and the reminder are Claude Code's alone.
 
 Last, set `project_dirs` and `[github] repo_dir` in `~/.config/admiral/config.toml`, and run `admiral doctor`: it checks
 each piece (Python, the background job, the status line, the plugin, `gh` and the config), says what is not in
@@ -512,8 +514,9 @@ How to contribute, and what to leave out of an issue: [CONTRIBUTING.md](CONTRIBU
 The film and the pictures above are drawn from Admiral's real output on its demo fleet: `docs/film/build_assets.py`,
 then `docs/film/render.py` (needs Playwright and ffmpeg).
 
-To release: raise `__version__` in `admiral/__init__.py` and the version in `plugin/.claude-plugin/plugin.json`
-together, move the `Unreleased` notes in `CHANGELOG.md` under the new version, and tag the commit `v<version>`.
+To release: raise `__version__` in `admiral/__init__.py` and the version in `plugin/.claude-plugin/plugin.json` and
+`plugin/.codex-plugin/plugin.json` together, move the `Unreleased` notes in `CHANGELOG.md` under the new version, and
+tag the commit `v<version>`.
 
 ## Acknowledgements
 

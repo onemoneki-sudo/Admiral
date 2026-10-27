@@ -250,10 +250,21 @@ class Cli(unittest.TestCase):
         import json
         from admiral import __version__
         self.assertEqual(self.run_cli("--version").stdout.strip(), f"admiral {__version__}")
-        with open(os.path.join(ROOT, "plugin", ".claude-plugin", "plugin.json")) as fh:
-            self.assertEqual(json.load(fh)["version"], __version__)  # the plugin updates only when its version moves
+        for agent in (".claude-plugin", ".codex-plugin"):
+            with open(os.path.join(ROOT, "plugin", agent, "plugin.json")) as fh:
+                self.assertEqual(json.load(fh)["version"], __version__)  # the plugin updates only when its version moves
         with open(os.path.join(ROOT, "CHANGELOG.md")) as fh:
             self.assertIn(f"## {__version__} ", fh.read())  # every version says what changed
+
+    def test_codex_reads_its_own_hooks(self):
+        import json
+        # Codex reads a Claude marketplace too and parses hooks/hooks.json in its own shape, which the sidebar's
+        # module list is not; its manifest comes first and names a file of its own
+        with open(os.path.join(ROOT, "plugin", ".codex-plugin", "plugin.json")) as fh:
+            hooks = json.load(fh)["hooks"]
+        self.assertNotEqual(os.path.normpath(hooks), os.path.join("hooks", "hooks.json"))
+        with open(os.path.join(ROOT, "plugin", hooks)) as fh:
+            self.assertLessEqual(set(json.load(fh)), {"description", "hooks"})
 
     @unittest.skipUnless(os.path.exists("/usr/bin/python3") and subprocess.run(
         ["/usr/bin/python3", "-c", "import sys; sys.exit(sys.version_info >= (3, 11))"]).returncode == 0,
