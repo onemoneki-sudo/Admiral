@@ -48,9 +48,9 @@ merge says why.
 
 ## 3. Review by a different model
 
-- When the change alters behaviour, ask a model other than the one that wrote it (for code Claude wrote, Codex, say)
-  to refute it, once the work is complete and its tests pass. Docs, copy and mechanical changes need only your own
-  read of the final diff.
+- When the change alters behaviour, ask a model other than the one that wrote it (for code Claude wrote, Codex; for
+  code Codex wrote, Claude, run read-only with `claude -p`) to refute it, once the work is complete and its tests
+  pass. Docs, copy and mechanical changes need only your own read of the final diff.
 - Run the reviewer non-interactively with a time limit (see resources), and give it a finite input or none: `codex
   exec` given an input that is open but not a terminal waits for it to end before it begins, so a command that sends
   it nothing ends with `</dev/null`.

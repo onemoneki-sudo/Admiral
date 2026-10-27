@@ -1,4 +1,5 @@
-"""Claude Code's running sessions and the commanders their transcripts show them taking orders from.
+"""Claude Code's running sessions (and Codex's, as admiral/codex.py records them) and the commanders their
+transcripts show them taking orders from.
 
 Both sources are Claude Code's internal files, not an API: a session file that does not parse, or lacks a field the
 board needs, is counted so the board can say its sources may have changed shape, never silently dropped.
@@ -11,6 +12,7 @@ import re
 import subprocess
 import time
 
+from . import codex
 from .registry import read_json, write_json
 
 FIELDS = ("pid", "sessionId", "status", "cwd")  # what the board needs from a session file
@@ -42,7 +44,7 @@ def load(cfg, starts=proc_starts):
     """(running sessions of the configured projects, files that did not parse, files missing a needed field, running
     sessions outside the projects). A pid that is gone, or now belongs to another process, is not a session."""
     raw, broken, shapeless = [], 0, 0
-    for f in glob.glob(os.path.join(cfg.sessions_dir, "*.json")):
+    for f in glob.glob(os.path.join(cfg.sessions_dir, "*.json")) + glob.glob(os.path.join(codex.sessions_dir(cfg), "*.json")):
         d = None
         for _ in range(2):  # a file read mid-write does not parse; one retry
             d = read_json(f)

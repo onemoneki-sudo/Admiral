@@ -212,8 +212,12 @@ Then two steps that are yours, since Admiral never edits Claude Code's settings 
    claude plugin marketplace add ~/admiral
    claude plugin install admiral@admiral
    ```
-   Codex takes the same marketplace for the playbook's skills (`codex plugin marketplace add ~/admiral`, then
-   `codex plugin add admiral@admiral`); the sidebar and the reminder are Claude Code's alone.
+   Codex takes the same marketplace (`codex plugin marketplace add ~/admiral`, then `codex plugin add
+   admiral@admiral`): the playbook's skills, and hooks that put each Codex session on the board, working, idle or
+   waiting for your approval. Codex runs a plugin's hooks only once you trust them (it asks, "Hooks need review",
+   when a session opens). A Codex session is shown under the name Codex keeps for it, else under the registration
+   whose `--worktree` is its directory, so a commander can register it before it starts. The sidebar and the
+   reminder are Claude Code's alone.
 
 Last, set `project_dirs` and `[github] repo_dir` in `~/.config/admiral/config.toml`, and run `admiral doctor`: it checks
 each piece (Python, the background job, the status line, the plugin, `gh` and the config), says what is not in
@@ -342,6 +346,8 @@ batch shows, marked commander not running. The board never closes a plan itself.
 ```
 admiral register | state | done | list          registrations
 admiral plan add | rm | list | close            commanders' plans
+admiral send <name> "<message>"                 a message into a Codex session (Claude Code's: SendMessage)
+admiral wait [--who <name>]... [--lead <c>]     return when a member reports, waits for you, ends a turn or ends
 admiral board [--now | --write] [--no-github]   the latest board as Markdown (--now builds it afresh)
 admiral statusline                              the status line (reads Claude Code's JSON on stdin)
 admiral lock acquire | release | status | port  shared-resource locks
@@ -355,12 +361,15 @@ admiral doctor                                  whether each piece is in place, 
 
 - **Reads**, on your machine only: Claude Code's session registry and transcripts (`~/.claude`); `ps`, for each
   session's start time and terminal; `git`, read-only, in your repository and the registered worktrees; the lock
-  owners; `~/.claude/settings.json` once, at install, to keep your status line and see whether automatic memory is on.
-- **Writes**: its state directory (`~/.local/state/admiral`) and the locks you take; at install, its config, the
+  owners; `~/.claude/settings.json` once, at install, to keep your status line and see whether automatic memory is on;
+  with Codex, its thread list (`~/.codex/state_*.sqlite`, read-only: a session's name, the last session in a worktree).
+- **Writes**: its state directory (`~/.local/state/admiral`, with a record per Codex process its hooks report) and the
+  locks you take; at install, its config, the
   background job, the `~/.local/bin/admiral` link and `.python-path` in the clone.
 - **Adds**: one thing to what your sessions read, the playbook's reminder at the end of the system prompt, about 1 KB;
   `[playbook] remind = false` turns it off.
-- **Sends**: only the `gh` calls to GitHub, as you, listing PRs and checks. No model is called and nothing is uploaded.
+- **Sends**: only the `gh` calls to GitHub, as you, listing PRs and checks, and the messages you `admiral send`, to the
+  Codex session on this machine through `codex queue`. No model is called and nothing is uploaded.
 
 ## Why it spends no tokens
 

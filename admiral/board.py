@@ -421,6 +421,41 @@ def combine(cfg, views, boards):
     return out
 
 
+def attach(live, regs, current, elsewhere=()):
+    """The registration of each live session, in the order of `live` (None where it has none); `current` holds the
+    names sessions have now, wherever they run, and `elsewhere` the sessions running outside the projects, whose
+    registrations are theirs all the same. The board, `admiral send` and `admiral wait` all ask this one place.
+
+    A registration its session made follows that session, whatever it is called now; one made without a session (by
+    hand, or for another session) is found by name. A Codex session that no registration names (Codex often keeps no
+    name for it, or one its commander did not use) is the registration made for it, by its commander say, whose
+    worktree is its directory: when that registration is the only one there, no other session has it, and no other
+    such Codex session works there."""
+    by_session = {r["sessionId"]: r for r in regs if r.get("sessionId")}
+    by_name = {}
+    for r in regs:
+        if not r.get("sessionId"):
+            by_name.setdefault(r["who"], r)
+    def own(s):
+        # a name another session has now is that session's, not this one's that once had it
+        former_own = [f.get("name", "") for f in s.get("formerNames") or [] if f.get("name") not in current]
+        return by_session.get(s.get("sessionId")) or next((by_name[n] for n in [s.get("name") or ""] + former_own
+                                                           if n in by_name), None)
+    found = [own(s) for s in live]
+    taken = {r["who"] for r in found + [own(s) for s in elsewhere] if r}
+    by_dir, unclaimed = {}, {}
+    for r in by_name.values():
+        if first(r.get("worktree")) and r["who"] not in taken:
+            by_dir.setdefault(os.path.realpath(first(r.get("worktree"))), []).append(r)
+    where = lambda s: os.path.realpath(s.get("cwd") or "/nonexistent")
+    for s, reg in zip(live, found):
+        if reg is None and s.get("agent") == "codex":
+            unclaimed.setdefault(where(s), set()).add(s.get("sessionId"))  # one conversation in two processes is one
+    return [reg or (by_dir[where(s)][0] if s.get("agent") == "codex" and len(by_dir.get(where(s), [])) == 1
+                    and len(unclaimed.get(where(s), ())) == 1 else None)
+            for s, reg in zip(live, found)]
+
+
 def build_one(cfg, use_gh=True, now=None, starts=sessions.proc_starts, fetch=github.prs_by_branch,
               commits=sessions.last_commit, fetch_mine=github.my_prs, checked_out=sessions.worktree_branch,
               worktrees=sessions.worktrees, regs=None, plans=None, read=None):
@@ -453,32 +488,22 @@ def build_one(cfg, use_gh=True, now=None, starts=sessions.proc_starts, fetch=git
             one = dict(same[0], _pids=[p["pid"] for p in same], _began=begun)  # a message may come from any of them
             one["formerNames"] = [f for p in same for f in p.get("formerNames") or []]  # as may an old registration
             live.append(one)
-    # A registration its session made follows that session, whatever it is called now; one made without a session
-    # (by hand, or for another session) is found by name, as before.
-    by_session = {r["sessionId"]: r for r in regs if r.get("sessionId")}
-    by_name = {}
-    for r in regs:
-        if not r.get("sessionId"):
-            by_name.setdefault(r["who"], r)
-
     convs, matched = [], set()
     current = {s.get("name") for s in live + elsewhere if s.get("name")}  # wherever a session runs
-    for s in live:
-        name = s.get("name") or s.get("sessionId", "?")[:8]
+    for s, reg in zip(live, attach(live, regs, current, elsewhere)):
+        codex = s.get("agent") == "codex"
         former = [f.get("name", "") for f in s.get("formerNames") or []]
-        # a name another session has now is that session's, not this one's that once had it
-        former_own = [f for f in former if f not in current]
-        reg = by_session.get(s.get("sessionId")) or next((by_name[n] for n in [s.get("name") or ""] + former_own
-                                                          if n in by_name), None)
+        # a Codex session goes by its registration's name, the one its commander's plan and messages use
+        name = (reg["who"] if reg and codex else "") or s.get("name") or s.get("sessionId", "?")[:8]
         if reg:
             matched.add(reg["who"])
         convs.append({"name": name, "sessionId": s.get("sessionId", ""), "pid": s["pid"], "pids": s.get("_pids", [s["pid"]]),
                       "cwd": s.get("cwd", ""),
                       "tty": s.get("_tty", ""), "former": former, "status": s.get("status") or "?",
                       "statusSince": (s.get("statusUpdatedAt") or 0) / 1000, "waitingFor": s.get("waitingFor") or "",
-                      "begun": s.get("_began", began(s)), "hasTranscript": os.path.exists(sessions.transcript(cfg, s.get("cwd", ""),
-                                                                                        s.get("sessionId", ""))),
-                      "reg": reg, "isCommander": name.startswith(cfg.commander_prefix)})
+                      "begun": s.get("_began", began(s)),
+                      "hasTranscript": codex or os.path.exists(sessions.transcript(cfg, s.get("cwd", ""), s.get("sessionId", ""))),
+                      "agent": "codex" if codex else "claude", "reg": reg, "isCommander": name.startswith(cfg.commander_prefix)})
 
     for c in convs:  # registered branches, plus whatever the registered worktree has checked out now
         r = c["reg"]
@@ -568,6 +593,7 @@ def build_one(cfg, use_gh=True, now=None, starts=sessions.proc_starts, fetch=git
         status = "waiting" if c["waitKind"] else c["status"]
         rows.append({
             "name": c["name"], "sessionId": c["sessionId"], "tty": c["tty"], "isCommander": c["isCommander"],
+            "agent": c["agent"],
             "lead": lead or ("" if c["isCommander"] else inferred.get(c["sessionId"], "")),
             "leadFrom": "registered" if lead else ("message" if inferred.get(c["sessionId"]) else ""),
             "stage": st, "done": st == 5, "reportedDone": st == 5 and not merged(pr), "finished": finished,
@@ -730,7 +756,7 @@ def build_one(cfg, use_gh=True, now=None, starts=sessions.proc_starts, fetch=git
         health.append(T["x_broken"].format(n=broken))
     if shapeless:
         health.append(T["x_shape"].format(n=shapeless, fields="/".join(sessions.FIELDS)))
-    workers = [c for c in convs if not c["isCommander"]]
+    workers = [c for c in convs if not c["isCommander"] and c["agent"] == "claude"]  # Claude Code's transcripts
     begun = [c for c in workers if c["begun"]]  # one just opened has no transcript yet, and that is no sign
     if begun and not any(c["hasTranscript"] for c in workers):
         health.append(T["x_no_transcripts"])

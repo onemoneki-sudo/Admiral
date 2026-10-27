@@ -192,8 +192,10 @@ git clone https://github.com/onemoneki-sudo/Admiral.git ~/admiral   # 试 demo �
    claude plugin marketplace add ~/admiral
    claude plugin install admiral@admiral
    ```
-   Codex 用同一个插件市场装协作规则的技能（`codex plugin marketplace add ~/admiral`，再
-   `codex plugin add admiral@admiral`）；侧边栏和开工提醒只有 Claude Code 有。
+   Codex 用同一个插件市场安装（`codex plugin marketplace add ~/admiral`，再 `codex plugin add admiral@admiral`）：
+   协作规则的技能，以及把每个 Codex 对话放上面板的 hook（工作中、空闲、等你批准）。Codex 只在你信任插件的 hook
+   之后才运行它们（开对话时会提示「Hooks need review」）。Codex 对话在面板上用 Codex 给它的名字；没有名字时，
+   用 `--worktree` 是它所在目录的那条登记，所以总指挥可以在它开工前替它登记。侧边栏和开工提醒只有 Claude Code 有。
 
 最后，在 `~/.config/admiral/config.toml` 里设置 `project_dirs` 和 `[github] repo_dir`，再运行 `admiral doctor`：
 它逐项检查 Python、后台任务、状态栏、插件、`gh` 和配置，告诉你哪一项没接上、怎么修，自己不改任何东西。
@@ -312,6 +314,8 @@ admiral plan close --lead "<总指挥>"
 ```
 admiral register | state | done | list          登记
 admiral plan add | rm | list | close            总指挥的计划
+admiral send <名字> "<消息>"                     往 Codex 对话里发消息（Claude Code 对话用 SendMessage）
+admiral wait [--who <名字>]... [--lead <总指挥>]  成员回报、等你、做完一轮或结束时返回
 admiral board [--now | --write] [--no-github]   最新的面板，Markdown 格式（--now 现场重新生成）
 admiral statusline                              状态栏（从标准输入读 Claude Code 的 JSON）
 admiral lock acquire | release | status | port  共享资源的锁
@@ -325,12 +329,14 @@ admiral doctor                                  逐项检查是否装好，没�
 
 - **读取**，只在你的电脑上：Claude Code 的对话注册表和对话记录（`~/.claude`）；`ps`，用来获取每个对话的启动时间
   和终端；`git`，只读，在你的仓库和登记过的工作区里；锁的持有者；安装时读一次 `~/.claude/settings.json`，
-  用来保留你的状态栏、看自动记忆是否开着。
-- **写入**：它的状态目录（`~/.local/state/admiral`）和你拿的锁；安装时写入它的配置、后台任务、
+  用来保留你的状态栏、看自动记忆是否开着；用 Codex 时，读它的对话列表（`~/.codex/state_*.sqlite`，只读：对话名、
+  一个工作区里最近的对话）。
+- **写入**：它的状态目录（`~/.local/state/admiral`，其中有 hook 报上来的每个 Codex 进程一份记录）和你拿的锁；安装时写入它的配置、后台任务、
   `~/.local/bin/admiral` 链接和克隆目录里的 `.python-path`。
 - **添加**：只往对话读到的内容里加一样东西，就是系统提示末尾约 1 KB 的协作规则提醒；`[playbook] remind = false`
   可以关掉。
-- **发送**：只有以你的身份调用 `gh` 向 GitHub 查询 PR 和检查。不调用任何模型，不上传任何东西。
+- **发送**：只有以你的身份调用 `gh` 向 GitHub 查询 PR 和检查，以及你用 `admiral send` 经 `codex queue` 发给本机
+  Codex 对话的消息。不调用任何模型，不上传任何东西。
 
 ## 为什么不花 token
 

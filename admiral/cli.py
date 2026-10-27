@@ -10,23 +10,29 @@
     admiral plan close --lead COMMANDER
     admiral board    [--now | --write] [--no-github]   the latest board; --now builds it afresh, --write publishes
     admiral statusline           the Claude Code status line (reads the session's JSON on stdin)
+    admiral codex-hook           what the plugin's Codex hooks run: records the Codex session (its event on stdin)
+    admiral send NAME MESSAGE    put a message into the Codex session NAME (Claude Code sessions: SendMessage)
+    admiral wait [--who NAME]... [--lead COMMANDER] [--timeout SECONDS]   return when a member reports, waits for
+                                 the person, ends a turn or ends; run it in the background to hear of it
     admiral lock ...             shared-resource locks (`admiral lock status`; see admiral/lock.sh)
     admiral focus TTY            bring the terminal tab on TTY to the front (macOS)
     admiral doctor               whether each piece Admiral needs is in place, and how to fix the rest
     admiral where                print the state directory (the board files live there)
     admiral demo [--lang zh] [--tty NAME=TTY] [--once]   a made-up fleet, to see Admiral without one
 
-`--who` is the session's name in Claude Code, exactly: the board joins sessions to registrations by it. Phases:
+`--who` is the session's name in Claude Code, exactly: the board joins sessions to registrations by it. A Codex
+session is joined by its name, or, when it has none, by the registration's --worktree being its directory. Phases:
 working, waiting (needs --note: on whom or what), review, accepting, paused, done; the Chinese names work too.
 """
 
 import argparse
+import json
 import os
 import signal
 import sys
 import time
 
-from . import __version__, board, config, registry
+from . import __version__, board, codex, config, registry, relay, sessions
 from .words import words
 
 
@@ -34,7 +40,8 @@ def warn_not_running(cfg, *names):
     running = registry.running_names(cfg)
     for n in names:
         if n and n not in running:
-            print(f'warning: no running Claude Code session is named "{n}"; --who and --lead must be session names',
+            print(f'warning: no running session is named "{n}"; --who and --lead must be session names (a Codex '
+                  f'session without one is found by its directory, the --worktree registered)',
                   file=sys.stderr)
 
 
@@ -72,6 +79,14 @@ def main(argv=None):
     b.add_argument("--now", action="store_true")
     b.add_argument("--no-github", action="store_true")
     sub.add_parser("statusline")
+    sub.add_parser("codex-hook")
+    sd = sub.add_parser("send")
+    sd.add_argument("who")
+    sd.add_argument("message")
+    wt = sub.add_parser("wait")
+    wt.add_argument("--who", action="append", default=[])
+    wt.add_argument("--lead", default="")
+    wt.add_argument("--timeout", type=float, default=3600)
     f = sub.add_parser("focus")
     f.add_argument("tty")
     sub.add_parser("where")
@@ -85,6 +100,12 @@ def main(argv=None):
     if a.cmd == "doctor":  # before the config loads: a config that does not is one of the things it reports
         from . import doctor
         sys.exit(doctor.main())
+    if a.cmd == "codex-hook":
+        try:  # a hook must never stand in Codex's way: whatever goes wrong, it says nothing and lets Codex go on
+            codex.hook(config.load(), json.load(sys.stdin), sessions.proc_starts)
+        except Exception:
+            pass
+        return
     cfg = config.load()
 
     if a.cmd == "register":
@@ -142,6 +163,16 @@ def main(argv=None):
             sys.exit(f"{a.branch} is not in the plan of {a.lead}")
         else:
             print(f"removed {a.branch} from the plan of {a.lead}")
+    elif a.cmd == "send":
+        ok, msg = relay.send(cfg, a.who, a.message, sessions.proc_starts)
+        print(msg, file=sys.stdout if ok else sys.stderr)
+        if not ok:
+            sys.exit(1)
+    elif a.cmd == "wait":
+        if not a.who and not a.lead:
+            sys.exit("admiral wait needs --who NAME (one or more) or --lead COMMANDER")
+        found = relay.wait(cfg, a.who, a.lead, timeout=a.timeout)
+        print("\n".join(found) if found else f"nothing changed in {a.timeout / 60:g} minutes")
     elif a.cmd == "statusline":
         from . import statusline
         statusline.main(cfg)
