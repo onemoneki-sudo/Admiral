@@ -5,7 +5,7 @@ Each version says what changed for someone using Admiral. The version lives in `
 Claude Code keeps an installed plugin in its cache, one copy per version, so a change to the sidebar or the playbook
 reaches people only when the version moves.
 
-## Unreleased
+## 0.2.12 (2026-10-27)
 
 **Codex**
 - A Codex session no longer shows as waiting for you until its turn ends after you approve a call: Codex gives a
