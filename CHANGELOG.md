@@ -5,7 +5,7 @@ Each version says what changed for someone using Admiral. The version lives in `
 Claude Code keeps an installed plugin in its cache, one copy per version, so a change to the sidebar or the playbook
 reaches people only when the version moves.
 
-## Unreleased
+## 0.2.11 (2026-10-27)
 
 **Codex**
 - Codex installs the plugin from the same marketplace without a warning: it read the sidebar's hooks file as its own
