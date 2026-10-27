@@ -5,6 +5,14 @@ Each version says what changed for someone using Admiral. The version lives in `
 Claude Code keeps an installed plugin in its cache, one copy per version, so a change to the sidebar or the playbook
 reaches people only when the version moves.
 
+## Unreleased
+
+**Codex**
+- A Codex session no longer shows as waiting for you until its turn ends after you approve a call: Codex gives a
+  permission request no call id, so the request is now matched to its call by the command, and one that cannot be
+  matched ends with the next call that ends. Codex tells no hook when you approve, so a call you approved still
+  shows as waiting until it ends.
+
 ## 0.2.11 (2026-10-27)
 
 **Codex**
