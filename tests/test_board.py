@@ -1746,9 +1746,29 @@ class CodexSessions(World):
         self.assertEqual(self.codex_record("t-1")["status"], "idle")
 
     def test_a_parallel_call_that_ran_leaves_the_one_asked_about_waiting(self):
-        self.codex("t-1", "UserPromptSubmit", ("PermissionRequest", {"tool_use_id": "a"}), ("PostToolUse", {"tool_use_id": "b"}))
+        # as Codex gives them: a request carries no tool_use_id, only the command its call began with
+        self.codex("t-1", "UserPromptSubmit", ("PreToolUse", {"tool_use_id": "a", "tool_input": {"command": "curl x"}}),
+                   ("PreToolUse", {"tool_use_id": "b", "tool_input": {"command": "ls"}}),
+                   ("PermissionRequest", {"tool_input": {"command": "curl x", "description": "network"}}),
+                   ("PostToolUse", {"tool_use_id": "b"}))
         self.assertEqual(self.codex_record("t-1")["status"], "waiting")
         self.codex("t-1", ("PostToolUse", {"tool_use_id": "a"}))
+        self.assertEqual(self.codex_record("t-1")["status"], "busy")
+
+    def test_two_requests_for_one_command_go_to_two_calls(self):
+        same = {"tool_input": {"command": "curl x"}}
+        self.codex("t-1", "UserPromptSubmit", ("PreToolUse", {"tool_use_id": "a", **same}),
+                   ("PreToolUse", {"tool_use_id": "b", **same}), ("PermissionRequest", same), ("PermissionRequest", same))
+        self.assertEqual(self.codex_record("t-1")["pending"], ["a", "b"])
+        self.codex("t-1", ("PostToolUse", {"tool_use_id": "a"}))
+        self.assertEqual(self.codex_record("t-1")["status"], "waiting")
+
+    def test_an_approved_call_that_ends_ends_the_wait(self):
+        # what a live session did: the request named no call, and the call's end must still clear it
+        self.codex("t-1", "UserPromptSubmit", ("PreToolUse", {"tool_use_id": "c1", "tool_input": {"command": "sleep 20"}}),
+                   ("PermissionRequest", {"tool_input": {"command": "sleep 20 && curl", "description": "retry"}}))
+        self.assertEqual(self.codex_record("t-1")["status"], "waiting")
+        self.codex("t-1", ("PostToolUse", {"tool_use_id": "c9"}))
         self.assertEqual(self.codex_record("t-1")["status"], "busy")
 
     def test_one_conversation_in_two_processes_is_two_records(self):
@@ -1920,10 +1940,12 @@ class CodexStates(World):
         self.codex("t-1", ("PostToolUse", {"tool_use_id": "q", "tool_name": "request_user_input"}))
         self.assertEqual(self.codex_record("t-1")["status"], "busy")
 
-    def test_a_call_let_through_runs_as_work_where_codex_says_so(self):
-        self.codex("t-1", "UserPromptSubmit", ("PermissionRequest", {"tool_use_id": "a", "tool_name": "shell"}),
-                   ("PreToolUse", {"tool_use_id": "a", "tool_name": "shell"}))
-        self.assertEqual(self.codex_record("t-1")["status"], "busy")
+    def test_calls_in_flight_are_forgotten_when_they_end(self):
+        self.codex("t-1", "UserPromptSubmit", ("PreToolUse", {"tool_use_id": "a", "tool_input": {"command": "ls"}}),
+                   ("PostToolUse", {"tool_use_id": "a"}))
+        self.assertEqual(self.codex_record("t-1")["running"], {})
+        self.codex("t-1", ("PreToolUse", {"tool_use_id": "b", "tool_input": {"command": "ls"}}), "Stop")
+        self.assertEqual(self.codex_record("t-1")["running"], {})
 
     def test_a_codex_session_hides_no_warning_about_claude_transcripts(self):
         from admiral import sessions

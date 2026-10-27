@@ -215,9 +215,10 @@ Then two steps that are yours, since Admiral never edits Claude Code's settings 
    Codex takes the same marketplace (`codex plugin marketplace add ~/admiral`, then `codex plugin add
    admiral@admiral`): the playbook's skills, and hooks that put each Codex session on the board, working, idle or
    waiting for your approval. Codex runs a plugin's hooks only once you trust them (it asks, "Hooks need review",
-   when a session opens). A Codex session is shown under the name Codex keeps for it, else under the registration
-   whose `--worktree` is its directory, so a commander can register it before it starts. The sidebar and the
-   reminder are Claude Code's alone.
+   when a session opens). Codex tells no hook when you approve, so a call you approved shows as waiting until it
+   ends. A Codex session goes by its registration, the one whose `--worktree` is its directory when no other
+   names it, so a commander can register it before it starts; else by the name Codex keeps for it. The sidebar and
+   the reminder are Claude Code's alone.
 
 Last, set `project_dirs` and `[github] repo_dir` in `~/.config/admiral/config.toml`, and run `admiral doctor`: it checks
 each piece (Python, the background job, the status line, the plugin, `gh` and the config), says what is not in

@@ -11,6 +11,7 @@ shown by its registration, or its id.
 
 import fcntl
 import glob
+import json
 import os
 import sqlite3
 import subprocess
@@ -93,6 +94,17 @@ def last_thread(directory):
     return row[0] if row else ""
 
 
+def command_of(event):
+    """What a call runs, as both its PreToolUse and its PermissionRequest give it: the command where there is one,
+    else the whole input but for the reason a request adds."""
+    given = event.get("tool_input")
+    if isinstance(given, dict) and "command" in given:
+        given = given["command"]
+    elif isinstance(given, dict):
+        given = {k: v for k, v in given.items() if k != "description"}
+    return json.dumps(given, sort_keys=True, ensure_ascii=False)
+
+
 def locked(cfg):
     """An exclusive lock over the records, so hooks of parallel tool calls apply one after another, not over each
     other."""
@@ -126,24 +138,34 @@ def hook(cfg, event, starts, find_pid=codex_pid, name_of=thread_name, now=None):
         if old.get("procStart") != proc_start:
             old = {}  # a record left by another process that had this pid
         pending = list(old.get("pending") or [])
+        running = dict(old.get("running") or {})  # tool_use_id -> command, for the calls begun and not yet ended
         call = str(event.get("tool_use_id") or "")
         if kind == "SessionStart" and event.get("source") == "compact" and old:
             status = old.get("status", "busy")  # compaction mid-turn: the turn goes on
         else:
             if kind in CLEARS:
-                pending = []
-            elif kind == "PermissionRequest" or (kind == "PreToolUse" and event.get("tool_name") in ASKS):
-                pending.append(call)
-            elif kind == "PreToolUse" and call in pending and event.get("tool_name") not in ASKS:
-                pending.remove(call)  # where Codex runs it after asking, the call asked about was let through
+                pending, running = [], {}
+            elif kind == "PermissionRequest":
+                # Codex gives a request no tool_use_id: it is a call begun with the same command and not asked about
+                # yet, the earliest such; two alike running at once can still be told apart only by when they began
+                same = [c for c, cmd in running.items() if cmd == command_of(event) and c not in pending]
+                pending.append(same[0] if same else "")
+            elif kind == "PreToolUse":
+                running[call] = command_of(event)
+                if event.get("tool_name") in ASKS:
+                    pending.append(call)
             elif kind == "PostToolUse":
-                pending = [p for p in pending if call and p != call]  # without an id, any call that ran clears all
+                running.pop(call, None)
+                # its own request ends with it; one no call could be found for ends with any call that ends: a call
+                # running beside it may end it early, but left there it would hold the session waiting until the turn
+                # ends, which is worse
+                pending = [p for p in pending if call and p and p != call]
             status = "waiting" if pending else STATUS[kind]
         ms = int((time.time() if now is None else now) * 1000)
         write_json(path, {"pid": pid, "procStart": proc_start, "sessionId": sid,
                           "cwd": event.get("cwd") or old.get("cwd", ""), "status": status, "statusUpdatedAt": ms,
                           "startedAt": old.get("startedAt", ms), "name": name_of(sid) or old.get("name", ""),
-                          "pending": pending, "agent": "codex"})
+                          "pending": pending, "running": running, "agent": "codex"})
         if kind == "SessionStart":
             prune(cfg, starts)
 
