@@ -215,8 +215,10 @@ Then two steps that are yours, since Admiral never edits Claude Code's settings 
    Codex takes the same marketplace (`codex plugin marketplace add ~/admiral`, then `codex plugin add
    admiral@admiral`): the playbook's skills, and hooks that put each Codex session on the board, working, idle or
    waiting for your approval. Codex runs a plugin's hooks only once you trust them (it asks, "Hooks need review",
-   when a session opens). Codex tells no hook when you approve, so a call you approved shows as waiting until it
-   ends. A Codex session goes by its registration, the one whose `--worktree` is its directory when no other
+   when a session opens), and again after each Admiral update: until you do, a session is not on the board. Codex
+   tells no hook when you approve, so the board reads it from the session's transcript: the session shows as
+   working again once the call you approved writes its first output, within seconds for most. A Codex session goes
+   by its registration, the one whose `--worktree` is its directory when no other
    names it, so a commander can register it before it starts; else by the name Codex keeps for it. The sidebar and
    the reminder are Claude Code's alone.
 
