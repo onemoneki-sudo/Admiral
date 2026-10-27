@@ -65,6 +65,9 @@ def load(cfg, starts=proc_starts):
         start, tty = procs.get(d["pid"], (None, ""))
         if start is None or (d.get("procStart") and norm(d["procStart"]) != start):
             continue
+        went = codex.moved_on(d) if d.get("agent") == "codex" and d.get("status") == "waiting" else None
+        if went:  # answered: Codex said so in its transcript, not to the hooks
+            d = dict(d, status="busy", statusUpdatedAt=went)
         (live if cfg.in_project(d.get("cwd", "")) else elsewhere).append(dict(d, _tty=tty))
     return live, broken, shapeless, elsewhere
 

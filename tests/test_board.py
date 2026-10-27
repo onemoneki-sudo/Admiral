@@ -39,8 +39,12 @@ class World(unittest.TestCase):
         self.prs, self.gh_calls, self.commits = {}, [], {}
         self.mine, self.checked_out = {"open": [], "mergedToday": []}, {}
         self.gh_down = False  # gh fails, as when it is signed out or GitHub does not answer
+        from admiral import codex
+        self.codex_home, codex.CODEX_HOME = codex.CODEX_HOME, self.root  # never the machine's own Codex
 
     def tearDown(self):
+        from admiral import codex
+        codex.CODEX_HOME = self.codex_home
         shutil.rmtree(self.root)
 
     def build(self, use_gh=True, now=NOW):
@@ -1996,3 +2000,113 @@ class CodexStates(World):
         found = self.watch([lambda: self.codex("t-1", "PreToolUse", "PostToolUse", pid=60, now=NOW + 30)],
                            lead="Commander-A")
         self.assertEqual(found, [])
+
+
+class CodexTranscript(World):
+    """Codex tells no hook when the person approves; its transcript says the session went on."""
+
+    def transcript_with(self, *events):
+        from datetime import datetime, timezone
+        path = os.path.join(self.root, "rollout.jsonl")
+        with open(path, "w", encoding="utf-8") as fh:
+            for at, kind in events:
+                stamp = datetime.fromtimestamp(at, timezone.utc).isoformat().replace("+00:00", "Z")
+                fh.write(json.dumps({"timestamp": stamp, "type": "response_item", "payload": {"type": kind}}) + "\n")
+        from admiral import codex
+        old = codex.transcript_of
+        codex.transcript_of = lambda sid: path
+        self.addCleanup(setattr, codex, "transcript_of", old)
+
+    def waiting_names(self):
+        return [x["name"] for x in self.build(use_gh=False, now=NOW + 60)["waiting"]]
+
+    def test_an_answered_request_is_work_once_the_transcript_shows_the_call_ran(self):
+        self.register("exec-codex", worktree="/w/app/wt1")
+        self.codex("t-1", "UserPromptSubmit", ("PermissionRequest", {"tool_input": {"command": "curl x"}}))
+        self.transcript_with((NOW - 5, "custom_tool_call"), (NOW + 3, "custom_tool_call_output"))
+        self.assertEqual(self.waiting_names(), [])
+
+    def test_a_request_still_open_stays_waiting(self):
+        self.register("exec-codex", worktree="/w/app/wt1")
+        self.codex("t-1", "UserPromptSubmit", ("PermissionRequest", {"tool_input": {"command": "curl x"}}))
+        self.transcript_with((NOW - 5, "custom_tool_call_output"), (NOW + 3, "token_count"))
+        self.assertEqual(self.waiting_names(), ["exec-codex"])
+
+    def test_no_transcript_leaves_it_waiting(self):
+        self.register("exec-codex", worktree="/w/app/wt1")
+        self.codex("t-1", "UserPromptSubmit", ("PermissionRequest", {"tool_input": {"command": "curl x"}}))
+        self.assertEqual(self.waiting_names(), ["exec-codex"])
+
+    def transcript_calls(self, *events):
+        """events: (at, type, call_id, input) as a Codex transcript holds them."""
+        from datetime import datetime, timezone
+        path = os.path.join(self.root, "rollout.jsonl")
+        with open(path, "w", encoding="utf-8") as fh:
+            for at, kind, call, given in events:
+                stamp = datetime.fromtimestamp(at, timezone.utc).isoformat().replace("+00:00", "Z")
+                fh.write(json.dumps({"timestamp": stamp, "type": "response_item",
+                                     "payload": {"type": kind, "call_id": call, "input": given}}) + "\n")
+        from admiral import codex
+        old = codex.transcript_of
+        codex.transcript_of = lambda sid: path
+        self.addCleanup(setattr, codex, "transcript_of", old)
+
+    def test_another_calls_output_does_not_end_the_wait(self):
+        self.register("exec-codex", worktree="/w/app/wt1")
+        self.codex("t-1", "UserPromptSubmit", ("PermissionRequest", {"tool_input": {"command": "curl x"}}))
+        self.transcript_calls((NOW - 1, "custom_tool_call", "c-ask", 'exec_command({cmd:"curl x"})'),
+                              (NOW - 1, "custom_tool_call", "c-other", 'exec_command({cmd:"ls"})'),
+                              (NOW + 2, "custom_tool_call_output", "c-other", ""))
+        self.assertEqual(self.waiting_names(), ["exec-codex"])
+        self.transcript_calls((NOW - 1, "custom_tool_call", "c-ask", 'exec_command({cmd:"curl x"})'),
+                              (NOW + 2, "custom_tool_call_output", "c-other", ""),
+                              (NOW + 4, "custom_tool_call_output", "c-ask", ""))
+        self.assertEqual(self.waiting_names(), [])
+
+    def test_working_again_counts_from_when_the_call_went_on(self):
+        self.register("exec-codex", worktree="/w/app/wt1")
+        self.codex("t-1", "UserPromptSubmit", ("PermissionRequest", {"tool_input": {"command": "curl x"}}))
+        self.transcript_calls((NOW + 40, "custom_tool_call_output", "c", ""))
+        b = self.build(use_gh=False, now=NOW + 60)
+        row = next(x for x in b["unassigned"] + [m for g in b["groups"] for m in g["members"]] if x["name"] == "exec-codex")
+        self.assertEqual(row["statusSince"], NOW + 40)
+
+    def test_an_output_longer_than_the_usual_read_is_still_found(self):
+        from admiral import codex
+        self.register("exec-codex", worktree="/w/app/wt1")
+        self.codex("t-1", "UserPromptSubmit", ("PermissionRequest", {"tool_input": {"command": "curl x"}}))
+        self.transcript_calls((NOW - 1, "custom_tool_call", "c-ask", "curl x"),
+                              (NOW + 3, "custom_tool_call_output", "c-ask", "x" * (codex.TAIL + 1000)),
+                              (NOW + 4, "token_count", "", ""))
+        self.assertEqual(self.waiting_names(), [])
+
+    def test_a_command_with_quotes_is_found_in_json_arguments(self):
+        self.register("exec-codex", worktree="/w/app/wt1")
+        self.codex("t-1", "UserPromptSubmit", ("PermissionRequest", {"tool_input": {"command": 'echo "hi"'}}))
+        self.transcript_calls((NOW - 1, "function_call", "c-ask", json.dumps({"cmd": 'echo "hi"'})),
+                              (NOW + 2, "function_call_output", "c-other", ""))
+        self.assertEqual(self.waiting_names(), ["exec-codex"])
+
+    def test_two_calls_asked_about_wait_until_both_went_on(self):
+        self.register("exec-codex", worktree="/w/app/wt1")
+        self.codex("t-1", "UserPromptSubmit", ("PermissionRequest", {"tool_input": {"command": "curl a"}}),
+                   ("PermissionRequest", {"tool_input": {"command": "curl b"}}))
+        self.transcript_calls((NOW - 1, "custom_tool_call", "ca", "curl a"), (NOW - 1, "custom_tool_call", "cb", "curl b"),
+                              (NOW + 2, "custom_tool_call_output", "cb", ""))
+        self.assertEqual(self.waiting_names(), ["exec-codex"])
+
+    def test_hooks_during_a_wait_keep_when_it_began(self):
+        self.codex("t-1", "UserPromptSubmit", ("PermissionRequest", {"tool_input": {"command": "curl a"}}))
+        began = self.codex_record("t-1")["statusUpdatedAt"]
+        self.codex("t-1", ("PreToolUse", {"tool_use_id": "zz", "tool_input": {"command": "ls"}}), now=NOW + 30)
+        self.assertEqual(self.codex_record("t-1")["status"], "waiting")  # a call beginning beside it ends nothing
+        self.assertEqual(self.codex_record("t-1")["statusUpdatedAt"], began)
+
+    def test_the_approved_calls_output_counts_though_the_turn_ends_later(self):
+        self.register("exec-codex", worktree="/w/app/wt1")
+        self.codex("t-1", "UserPromptSubmit", ("PermissionRequest", {"tool_input": {"command": "curl a"}}))
+        self.transcript_calls((NOW - 1, "custom_tool_call", "ca", "curl a"), (NOW + 3, "custom_tool_call_output", "ca", ""),
+                              (NOW + 26, "task_complete", "", ""))
+        b = self.build(use_gh=False, now=NOW + 60)
+        row = next(x for x in b["unassigned"] + [m for g in b["groups"] for m in g["members"]] if x["name"] == "exec-codex")
+        self.assertEqual(row["statusSince"], NOW + 3)

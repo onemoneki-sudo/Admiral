@@ -5,6 +5,15 @@ Each version says what changed for someone using Admiral. The version lives in `
 Claude Code keeps an installed plugin in its cache, one copy per version, so a change to the sidebar or the playbook
 reaches people only when the version moves.
 
+## Unreleased
+
+**Codex**
+- After you approve a call, a Codex session shows as working again within the board's next refresh, not when its
+  turn ends: Codex tells no hook of the approval, so the board reads the session's transcript, where the call's
+  output, a message or the turn's end follows it.
+- The README says that Codex asks you to trust the plugin's hooks again after each Admiral update, and that a
+  session is not on the board until you do.
+
 ## 0.2.12 (2026-10-27)
 
 **Codex**

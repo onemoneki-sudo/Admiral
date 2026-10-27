@@ -23,12 +23,17 @@ def registration(cfg, who):
     return next((r for r in registry.registrations(cfg) if who in registry.names_of(r)), None)
 
 
-def sessions_of(cfg, who, starts):
-    """The running sessions (one per process) `who` names: those its registration is attached to, else those of
-    that name with no registration of their own."""
+def attached(cfg, starts):
+    """(session, its registration or None) for each running session, read once for any number of names."""
     live, _, _, elsewhere = sessions.load(cfg, starts)
     current = {s.get("name") for s in live + elsewhere if s.get("name")}
-    pairs = list(zip(live, board.attach(live, registry.registrations(cfg), current, elsewhere)))
+    return list(zip(live, board.attach(live, registry.registrations(cfg), current, elsewhere)))
+
+
+def sessions_of(cfg, who, starts, pairs=None):
+    """The running sessions (one per process) `who` names: those its registration is attached to, else those of
+    that name with no registration of their own."""
+    pairs = attached(cfg, starts) if pairs is None else pairs
     # a Claude Code session goes by its own name on the board, whatever name it registered under
     return [s for s, reg in pairs if (reg and who in registry.names_of(reg))
             or (s.get("name") == who and (reg is None or s.get("agent") != "codex"))]
@@ -90,10 +95,10 @@ def watched(cfg, who=(), lead=""):
 def snapshot(cfg, names, starts):
     """name -> (what it last reported, or None with no registration; its sessions' most pressing status, "" with no
     session; when that status last changed)."""
-    out = {}
+    out, pairs = {}, attached(cfg, starts)  # one look for every name: the sessions are read once
     for who in names:
         reg = registration(cfg, who)
-        found = sorted(sessions_of(cfg, who, starts), key=lambda s: (ORDER.get(s.get("status"), 9),
+        found = sorted(sessions_of(cfg, who, starts, pairs), key=lambda s: (ORDER.get(s.get("status"), 9),
                                                                      -(s.get("statusUpdatedAt") or 0)))
         # the most pressing process speaks, with its own time: another process's work moves nothing here
         out[who] = ((reg.get("phase"), reg.get("note", ""), reg.get("phaseAt")) if reg else None,

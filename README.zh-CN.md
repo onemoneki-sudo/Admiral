@@ -194,8 +194,9 @@ git clone https://github.com/onemoneki-sudo/Admiral.git ~/admiral   # 试 demo �
    ```
    Codex 用同一个插件市场安装（`codex plugin marketplace add ~/admiral`，再 `codex plugin add admiral@admiral`）：
    协作规则的技能，以及把每个 Codex 对话放上面板的 hook（工作中、空闲、等你批准）。Codex 只在你信任插件的 hook
-   之后才运行它们（开对话时会提示「Hooks need review」）。你点批准时 Codex 不通知任何 hook，所以批准过的命令
-   跑完之前仍显示等你。Codex 对话在面板上用它的登记名：没有别的登记指名它时，用 `--worktree` 是它所在目录的那条
+   之后才运行它们（开对话时会提示「Hooks need review」），Admiral 每次更新后还会再问一次：信任之前，这个对话不在
+   面板上。你点批准时 Codex 不通知任何 hook，所以面板从对话记录里看：批准的命令一写出第一段输出（多数几秒内），
+   就显示回工作中。Codex 对话在面板上用它的登记名：没有别的登记指名它时，用 `--worktree` 是它所在目录的那条
    登记，所以总指挥可以在它开工前替它登记；没有登记时用 Codex 给它的名字。侧边栏和开工提醒只有 Claude Code 有。
 
 最后，在 `~/.config/admiral/config.toml` 里设置 `project_dirs` 和 `[github] repo_dir`，再运行 `admiral doctor`：
