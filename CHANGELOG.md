@@ -5,7 +5,7 @@ Each version says what changed for someone using Admiral. The version lives in `
 Claude Code keeps an installed plugin in its cache, one copy per version, so a change to the sidebar or the playbook
 reaches people only when the version moves.
 
-## Unreleased
+## 0.2.14 (2026-10-29)
 
 **Playbook**
 - A change to behaviour people rely on is tried on real data through its real entry early, before review, and the
