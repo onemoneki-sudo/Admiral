@@ -47,11 +47,13 @@ merge says why.
   they change with it rather than surface at the end.
 - Verify locally under the conditions CI and production have (versions, services, permissions): what can be caught
   locally is caught there, and a pass under looser conditions does not count. That includes the tree CI checks: before
-  pushing, run the affected tests on your branch with the latest default branch merged in, a merge for verification
-  only and not committed, since a branch can pass alone and fail beside what landed meanwhile.
+  pushing, run the affected tests on your branch with the latest of the branch it will merge into (its PR's base)
+  merged in, a merge for verification only and not committed, since a branch can pass alone and fail beside what
+  landed meanwhile.
 - Run a test again only when what it covers changed: after a merge that leaves the files it covers as they were, it
-  needs no rerun. Heavy runs (a database, a whole browser file, a check across the repository) run once, on the final
-  version, not on each one along the way.
+  needs no rerun. Heavy runs (a database, a whole browser file, a check across the repository) that only confirm run
+  once, on the final version, not on each one along the way; a run that shows a fix failing before and passing after,
+  or one repeated because the machine, not the code, failed it (see resources), is not such a rerun.
 - Run the whole suite when you cannot tell what is affected, or the change is global (configuration, startup,
   dependencies, CI); otherwise CI covers the rest.
 
@@ -106,8 +108,8 @@ Docs, copy and mechanical changes need none. What changes during acceptance goes
   merge), then merge that branch into yours. That needs the commit of the lower PR your branch holds to be in its final
   head's history; where the lower PR's history was rewritten, redo your own changes on a new branch from the default
   branch instead. Afterwards the diff against the default branch shows every change of yours and nothing else. Where
-  the project lets the person choose, a lower PR merged with a merge commit rather than squashed keeps the tie, and
-  none of this is needed.
+  the project lets the person choose, a lower PR merged with a merge commit rather than squashed keeps the tie: unless
+  its history was rewritten under yours, taking in the default branch is then all that is needed.
 - PRs of one batch can each pass alone and fail together. Before they go ready, check them merged together on the latest
   default branch. A PR that adds what every change must satisfy (a check across the repository, a registry, a numbered
   sequence) merges after the PRs whose additions it must cover: it takes in the default branch and fills in what they

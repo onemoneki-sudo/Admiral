@@ -70,7 +70,8 @@ describe() { # $1 = lock dir
 write_owner() {
   printf 'who=%s\npid=%s\nsince=%s\nttl=%s\n' "$who" "$pid" "$(now)" "$ttl" > "$DIR/$1/owner"
   [ -n "$pid" ] || echo "warning: $1 has no pid, so after $ttl minutes it counts as stale and may be taken over" \
-    "even while in use; record the process that uses it: admiral lock attach $1 --who \"$who\" --pid <pid>" >&2
+    "even while in use; record the process that uses it: admiral lock attach $(printf %q "$1") --who $(printf %q "$who")" \
+    "--pid <pid>" >&2
 }
 need_who() { [ -n "$who" ] || { echo "--who is required" >&2; exit 2; }; }
 need_name() { [ -n "$name" ] || { echo "lock name required" >&2; exit 2; }; }

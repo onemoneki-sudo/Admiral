@@ -49,8 +49,9 @@ Where the project's own rules differ from this playbook, the project's rules win
   resuming sends the whole session again; you hear when each segment's command exits. Nobody can approve a call
   there, so what it needs is allowed beforehand. Codex's sandbox does not let it write the main repository's `.git`,
   where a linked worktree's commits go, so either the commander commits its work or, with the person's agreement, it
-  runs with full access, guarded by the project's PreToolUse hooks. Hooks run there as in a window, once trusted; a
-  background run cannot ask, so after an Admiral update trust them in a window first.
+  runs with full access, guarded by the project's PreToolUse hooks, which must block a call outright, as nobody is
+  there to answer one that asks. Hooks run there as in a window, once trusted; a background run cannot ask, so after
+  an Admiral update trust them in a window first.
 - Executors report with `admiral state`. Rather than check on them, leave `admiral wait --lead "<commander name>"`
   running in the background: it returns when a member reports, starts waiting for the person, ends a turn or ends,
   and you hear of it then. With nothing to report it returns at its time limit (`--timeout`, an hour by default);
