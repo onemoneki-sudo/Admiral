@@ -10,7 +10,9 @@ Where the project's own rules differ from this playbook, the project's rules win
 ## Take a lock first
 
 - Every scarce resource is behind a lock (`admiral lock`). A lock records its holder and pid; one whose holder exited
-  or timed out may be taken over.
+  or timed out may be taken over. Give it the pid of what uses the resource for as long as it is needed (the job, or
+  the service holding a port), at once or with `admiral lock attach` once it starts: without one the lock times out
+  even while in use, and with the pid of a step that ends sooner it is taken over when that step ends.
 - If the lock is busy, queue (`admiral lock acquire --wait`); never go around it.
 - Name the locks after what the project actually shares, for example: one heavy slot for whole-suite and browser runs,
   a few slots for a test database, a few for model quota, and ports handed out by the tool rather than picked by hand.

@@ -42,9 +42,19 @@ Where the project's own rules differ from this playbook, the project's rules win
   its brief (`codex -C <worktree> "Read <brief> and start"`); send it decisions with `admiral send <name>
   "<message>"`, as Claude Code's own messages reach only Claude Code sessions. Its board row shows when it waits for
   the person's approval once the person has trusted the plugin's hooks in Codex.
+- A Codex window takes a message only when its turn ends, one at a time, starts no turn by itself once one ends, and
+  after Esc leaves its queue unread: it suits work the person watches or approves as it goes. For long work, run the
+  executor in the background a segment at a time instead, `codex exec` and then `codex exec resume <session> "<next
+  step>" -o <result file> </dev/null` under a time limit, a new session for each task and small segments, since
+  resuming sends the whole session again; you hear when each segment's command exits. Nobody can approve a call
+  there, so what it needs is allowed beforehand. Codex's sandbox does not let it write the main repository's `.git`,
+  where a linked worktree's commits go, so either the commander commits its work or, with the person's agreement, it
+  runs with full access, guarded by the project's PreToolUse hooks. Hooks run there as in a window, once trusted; a
+  background run cannot ask, so after an Admiral update trust them in a window first.
 - Executors report with `admiral state`. Rather than check on them, leave `admiral wait --lead "<commander name>"`
   running in the background: it returns when a member reports, starts waiting for the person, ends a turn or ends,
-  and you hear of it then.
+  and you hear of it then. With nothing to report it returns at its time limit (`--timeout`, an hour by default);
+  start it again each time, so you wake to move the batch along even through a night when nobody reports.
 
 ## Sizing a batch
 

@@ -43,6 +43,8 @@ Where the project's own rules differ from this playbook, the project's rules win
 - A pushed branch is updated by merge, never rebase, so it is never force-pushed.
 - Push only your own branches, never the default branch; act only on your own PRs and issues. Others' work is
   read-only to you, except for review.
+- Before retrying a write that is not safe to repeat (a comment, a PR, a release, a message), check whether the last
+  attempt went through: a timeout or a dropped connection does not mean it failed.
 - Never edit the tool's settings to get past a permission, nor route around a confirmation or a repository's checks,
   nor ask another session to do what was refused you: hand the command to the person.
 

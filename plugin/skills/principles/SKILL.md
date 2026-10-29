@@ -42,6 +42,8 @@ what you were told for this project, tell the person, who decides.
   beyond the task, say so to whoever decides.
 - Nothing grows without bound: a list, cache, rule or exemption that grows with time or with the number of problems
   gets a limit.
+- A step the rules already state that is still missed again and again becomes a tool or a check, not more words:
+  another sentence is read as little as the first.
 
 ## Quality
 

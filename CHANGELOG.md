@@ -5,6 +5,28 @@ Each version says what changed for someone using Admiral. The version lives in `
 Claude Code keeps an installed plugin in its cache, one copy per version, so a change to the sidebar or the playbook
 reaches people only when the version moves.
 
+## Unreleased
+
+**Playbook**
+- A change to behaviour people rely on is tried on real data through its real entry early, before review, and the
+  tests and uses that rely on the old behaviour are listed at the start.
+- Before pushing, the affected tests run on the branch with the latest default branch merged in, for verification
+  only; a test reruns only when what it covers changed, and heavy runs happen once, on the final version.
+- A lower stacked PR merged with a merge commit, where the project allows it, spares the PR above the repair a squash
+  needs.
+- A step the rules state but people keep missing becomes a tool or a check, not more words.
+- A write that is not safe to repeat (a comment, a PR, a release) is checked before it is retried.
+- A Codex executor can run in the background a segment at a time, `codex exec resume`, for long work: a window takes
+  a message only when its turn ends. The roles skill says what that needs: approvals given beforehand, and either the
+  commander commits or the executor runs with full access behind the project's hooks, as Codex's sandbox does not let
+  it write a linked worktree's `.git`.
+- A commander keeps `admiral wait` running and starts it again each time it returns, at the latest after its time
+  limit, so it wakes even when nobody reports.
+
+**Locks**
+- `admiral lock acquire` and `admiral lock port` warn when the lock has no pid: such a lock is taken over after its ttl
+  even while in use. The resources skill says whose pid to give it.
+
 ## 0.2.13 (2026-10-27)
 
 **Codex**

@@ -246,6 +246,16 @@ class Cli(unittest.TestCase):
         cut = subprocess.run(f"'{link}' lock status | head -1", shell=True, capture_output=True, text=True, env=self.env)
         self.assertEqual(cut.stderr, "")  # a reader that stops early ends the tool quietly
 
+    def test_a_lock_without_a_pid_warns_it_can_be_taken_over(self):
+        held = self.run_cli("lock", "acquire", "db", "--who", "w1")
+        self.assertEqual(held.returncode, 0)
+        self.assertIn("may be taken over", held.stderr)
+        self.assertIn("admiral lock attach db", held.stderr)
+        port = self.run_cli("lock", "port", "--who", "w1", "--from", "18950", "--to", "18999")
+        self.assertIn("may be taken over", port.stderr)
+        with_pid = self.run_cli("lock", "acquire", "heavy", "--who", "w1", "--pid", str(os.getpid()))
+        self.assertEqual((with_pid.returncode, with_pid.stderr), (0, ""))
+
     def test_one_version_everywhere(self):
         import json
         from admiral import __version__
