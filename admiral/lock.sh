@@ -15,7 +15,8 @@
 #   admiral lock port    --who "<session> <task>" [--from 8100 --to 8199]   claim a free port, prints it
 #
 # A lock is STALE (and acquire takes it over, saying so) when its recorded pid no longer runs,
-# or when it has no pid and is older than its ttl (default 180 minutes).
+# or when it has no pid and is older than its ttl (default 180 minutes), which acquire and port warn of.
+# The pid is of what uses the resource for as long as it is needed, not of a step that ends sooner.
 #
 # Waiting line. Each lock has a line of waiters, ordered by priority (higher first,
 # default 0), then by arrival. A free lock goes only to the first waiter in its line; with nobody
@@ -66,7 +67,12 @@ describe() { # $1 = lock dir
   printf '%-22s held by: %s | pid: %s | %s min ago%s\n' "$(basename "$1")" "$(field "$1" who)" \
     "$(field "$1" pid)" "$(( ($(now) - ${t:-$(now)}) / 60 ))" "$(is_stale "$1" && echo ' | STALE')"
 }
-write_owner() { printf 'who=%s\npid=%s\nsince=%s\nttl=%s\n' "$who" "$pid" "$(now)" "$ttl" > "$DIR/$1/owner"; }
+write_owner() {
+  printf 'who=%s\npid=%s\nsince=%s\nttl=%s\n' "$who" "$pid" "$(now)" "$ttl" > "$DIR/$1/owner"
+  [ -n "$pid" ] || echo "warning: $1 has no pid, so after $ttl minutes it counts as stale and may be taken over" \
+    "even while in use; record the process that uses it: admiral lock attach $(printf %q "$1") --who $(printf %q "$who")" \
+    "--pid <pid>" >&2
+}
 need_who() { [ -n "$who" ] || { echo "--who is required" >&2; exit 2; }; }
 need_name() { [ -n "$name" ] || { echo "lock name required" >&2; exit 2; }; }
 # Taking over a stale lock is check-then-write, so two waiters could both find it stale and both
