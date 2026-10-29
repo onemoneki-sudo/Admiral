@@ -28,6 +28,9 @@ The session that owns the PR wraps up at once; if it has already been closed, it
   what count; older notes are background.
 - The deferred list is gone through once: with the person's agreement, issues are opened for what is risky (security,
   permissions, data lost or leaked, wrong numbers) or hurts real use; the rest gets a line in the summary.
+- The notes on where work stuck are gone through once: each cause checked against its evidence, what would hold for
+  any task is proposed to the person as a change to the rules, and a step that was written down yet missed again as a
+  tool or a check. The rest stays with the batch.
 - The process notes are kept but not read by default; where they disagree with the code or the PRs, those are right.
 
 ## Which sessions can be closed

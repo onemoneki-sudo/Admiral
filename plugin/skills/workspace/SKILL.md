@@ -1,6 +1,6 @@
 ---
 name: workspace
-description: Isolation rules that keep parallel AI sessions on one repository from breaking each other - one worktree per task, registration, what never to touch. Read before starting work in a repository other sessions also work in, before creating a worktree or branch, before stopping a process, and before any git command that changes shared state.
+description: Isolation rules that keep parallel AI sessions on one repository from breaking each other - one worktree per task, registration, what never to touch. Read before starting work that changes a repository other sessions also work in, before creating a worktree or branch, before stopping a process, and before any git command that changes shared state.
 ---
 
 # Workspace

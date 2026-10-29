@@ -69,6 +69,11 @@ memory: a context gets compacted, a new session starts empty. The project's rule
 the task brief holds one task's goal, scope and decisions; a batch's decision log holds what was decided, by whom and
 why; the batch summary (see wrapup) is what the next batch reads.
 
+Where work sticks (a wait, a redo, a rule that got in the way), note it then, in the batch folder or the brief:
+when, what happened, the time it cost, what was done, and how it could be saved. Write only what can be checked (a PR,
+a run, a commit), and mark an inference as one: a cause recalled afterwards is often wrong. Mark a step the rules
+already state that was missed anyway (see Building). At the end, these notes become proposals to the person.
+
 ## Writing for others
 
 PRs, issues and reports read on their own: what changed and why, how it was verified, its limits and state, with no

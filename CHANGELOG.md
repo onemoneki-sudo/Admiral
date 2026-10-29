@@ -15,6 +15,8 @@ reaches people only when the version moves.
 - A lower stacked PR merged with a merge commit, where the project allows it, spares the PR above the repair a squash
   needs.
 - A step the rules state but people keep missing becomes a tool or a check, not more words.
+- Where work sticks is noted as it happens, with checkable evidence, and at a batch's end the notes become proposals
+  to the person: rule changes, or tools for steps written down yet missed.
 - A write that is not safe to repeat (a comment, a PR, a release) is checked before it is retried.
 - A Codex executor can run in the background a segment at a time, `codex exec resume`, for long work: a window takes
   a message only when its turn ends. The roles skill says what that needs: approvals given beforehand, and either the
