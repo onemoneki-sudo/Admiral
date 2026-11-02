@@ -18,6 +18,9 @@ Where the project's own rules differ from this playbook, the project's rules win
   `admiral run stop --lock <name>` ends it with its locks. Start a service in the foreground (`postgres -D`, not
   `pg_ctl start`): one that turns itself into a daemon may slip out of what the run can stop, and the run says so
   when its port is still taken afterwards.
+- Where a project has several slots for one resource (two database slots, say), `--lock 'db-1|db-2'` (quoted) takes whichever
+  comes free first, given as the run's only lock; the command learns which from `$ADMIRAL_LOCK`. `admiral run stop` names the lock actually held.
+  A job expected to finish soon queues with `--priority` (see Queueing), as `admiral lock acquire` does.
 - Taking a lock by hand instead, give it the pid of what uses the resource for as long as it is needed, at once or
   with `admiral lock attach` once it starts: without one the lock times out even while in use, and with the pid of a
   step that ends sooner it is taken over when that step ends. Stop by its pid whatever you started, and release the

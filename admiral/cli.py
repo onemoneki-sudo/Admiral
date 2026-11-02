@@ -18,9 +18,10 @@
                                  reports, waits for the person, ends a turn or ends (or, with --quiet, works on
                                  without a report that long); run it in the background to hear of it
     admiral lock ...             shared-resource locks (`admiral lock status`; see admiral/lock.sh)
-    admiral run --lock NAME --who WHO [--port] [--limit MIN] [--ready CHECK] -- COMMAND   run a command under
-                                 locks: its pid recorded on them, stopped whole at its limit, the locks released
-                                 when it ends (`admiral run stop --lock NAME` for a service; see admiral/run.py)
+    admiral run --lock 'NAME[|NAME]' --who WHO [--port] [--limit MIN] [--priority N] [--ready CHECK] -- COMMAND
+                                 run a command under locks (a|b: whichever is free): its pid recorded on them,
+                                 stopped whole at its limit, the locks released when it ends (`admiral run stop
+                                 --lock NAME` for a service; see admiral/run.py)
     admiral focus TTY            bring the terminal tab on TTY to the front (macOS)
     admiral doctor               whether each piece Admiral needs is in place, and how to fix the rest
     admiral where                print the state directory (the board files live there)

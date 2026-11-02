@@ -5,6 +5,16 @@ Each version says what changed for someone using Admiral. The version lives in `
 Claude Code keeps an installed plugin in its cache, one copy per version, so a change to the sidebar or the playbook
 reaches people only when the version moves.
 
+## Unreleased
+
+**Locks**
+- `admiral run --lock 'pg-1|pg-2'` (quoted) takes whichever of the locks comes free first, waiting in line at each and leaving
+  the others' lines once it holds one; the command learns what it holds from `$ADMIRAL_LOCK` (the first lock) and
+  `$ADMIRAL_LOCKS` (all of them). Such a choice is the run's only --lock: waiting on it while holding another could
+  deadlock two runs. `admiral run stop` names the lock actually held.
+- `admiral run --priority <n>` places the run in each lock's line as `admiral lock acquire --priority` does, so a
+  short job run through it still goes first.
+
 ## 0.2.18 (2026-11-02)
 
 **Locks**

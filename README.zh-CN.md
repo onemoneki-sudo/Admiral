@@ -324,8 +324,8 @@ admiral wait [--who <名字>]... [--lead <总指挥>]  成员回报、等你、�
 admiral board [--now | --write] [--no-github]   最新的面板，Markdown 格式（--now 现场重新生成）
 admiral statusline                              状态栏（从标准输入读 Claude Code 的 JSON）
 admiral lock acquire | release | status | port  共享资源的锁
-admiral run --lock <锁> --who <名> [--port] [--limit <分钟>] [--ready <检查>] -- <命令>
-                                                在锁下跑命令：到时连子进程一起停，结束就放锁
+admiral run --lock '<锁>[|<锁>]' --who <名> [--port] [--limit <分钟>] [--priority <p>] [--ready <检查>] -- <命令>
+                                                在锁下跑命令（a|b 拿空的那把），到时连子进程一起停，结束放锁
 admiral run stop --lock <锁>                    停掉用 --ready 起的服务，并放掉它的锁
 admiral focus <tty>                             把一个对话的标签页调到最前（macOS：终端、iTerm2）
 admiral demo [--lang zh]                        一支虚构的舰队，不用自己的舰队也能看效果

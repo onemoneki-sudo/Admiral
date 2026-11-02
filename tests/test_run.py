@@ -227,6 +227,76 @@ class Run(unittest.TestCase):
             pid = int(fh.read())
         self.assertTrue(gone_soon(pid), "a process that left the group on TERM was left running")
 
+    def line(self, name):
+        q = os.path.join(self.locks, f".q.{name}")
+        return [f for f in os.listdir(q) if not f.startswith(".")] if os.path.isdir(q) else []
+
+    def test_any_of_takes_the_free_one_and_tells_the_command(self):
+        self.assertEqual(self.admiral("lock", "acquire", "pg-1", "--who", "other job").returncode, 0)
+        r = self.admiral("run", "--lock", "pg-1|pg-2", "--who", "s t", "--",
+                         "sh", "-c", 'echo "$ADMIRAL_LOCK/$ADMIRAL_LOCKS"')
+        self.assertEqual(r.returncode, 0, r.stderr)
+        self.assertEqual(r.stdout.strip(), "pg-2/pg-2")
+        self.assertEqual(self.visible(), ["pg-1"])  # the other job's, untouched
+        # waiting on a choice while holding another lock could deadlock two runs: refused
+        r = self.admiral("run", "--lock", "pg-1|pg-2", "--lock", "heavy", "--who", "s t", "--", "true")
+        self.assertNotEqual(r.returncode, 0)
+        self.assertIn("taken on its own", r.stderr)
+
+    def test_a_lock_named_like_a_port_is_still_the_command_s(self):
+        r = self.admiral("run", "--lock", "port-worker", "--who", "s t", "--", "sh", "-c", 'echo "$ADMIRAL_LOCK"')
+        self.assertEqual((r.returncode, r.stdout.strip()), (0, "port-worker"), r.stderr)
+
+    def test_any_of_waits_for_whichever_comes_free_and_leaves_the_other_line(self):
+        for n in ("pg-1", "pg-2"):
+            self.assertEqual(self.admiral("lock", "acquire", n, "--who", f"holder {n}").returncode, 0)
+        out = os.path.join(self.root, "got")
+        p = self.background("run", "--lock", "pg-1|pg-2", "--who", "s t", "--",
+                            "sh", "-c", f'echo "$ADMIRAL_LOCK" > {out}')
+        self.wait_for(lambda: self.line("pg-1") and self.line("pg-2"))  # in line at both
+        self.assertEqual(self.admiral("lock", "release", "pg-2", "--who", "holder pg-2").returncode, 0)
+        p.wait(timeout=30)
+        self.assertEqual(p.returncode, 0, p.stderr.read())
+        with open(out) as fh:
+            self.assertEqual(fh.read().strip(), "pg-2")
+        self.assertEqual((self.line("pg-1"), self.line("pg-2")), ([], []))  # out of the other line too
+        self.assertEqual(self.owner("pg-1")["who"], "holder pg-1")
+
+    def test_a_choice_stopped_while_waiting_leaves_every_line(self):
+        for n in ("pg-1", "pg-2"):
+            self.assertEqual(self.admiral("lock", "acquire", n, "--who", f"holder {n}").returncode, 0)
+        p = self.background("run", "--lock", "pg-1|pg-2", "--who", "s t", "--", "true")
+        self.wait_for(lambda: self.line("pg-1") and self.line("pg-2"))
+        p.terminate()
+        p.wait(timeout=30)
+        self.assertEqual((self.line("pg-1"), self.line("pg-2")), ([], []))
+        self.assertEqual([self.owner(n)["who"] for n in ("pg-1", "pg-2")], ["holder pg-1", "holder pg-2"])
+
+    def test_a_short_job_given_priority_goes_first(self):
+        self.assertEqual(self.admiral("lock", "acquire", "heavy", "--who", "holder").returncode, 0)
+        out = os.path.join(self.root, "order")
+        long = self.background("run", "--lock", "heavy", "--who", "s long", "--", "sh", "-c", f"echo long >> {out}")
+        self.wait_for(lambda: len(self.line("heavy")) == 1)
+        short = self.background("run", "--lock", "heavy", "--who", "s short", "--priority", "1", "--",
+                                "sh", "-c", f"echo short >> {out}")
+        self.wait_for(lambda: len(self.line("heavy")) == 2)
+        self.assertEqual(self.admiral("lock", "release", "heavy", "--who", "holder").returncode, 0)
+        long.wait(timeout=30)
+        short.wait(timeout=30)
+        with open(out) as fh:
+            self.assertEqual(fh.read().split(), ["short", "long"])
+
+    def test_stop_names_the_lock_held_not_the_choice(self):
+        r = self.admiral("run", "--lock", "pg-1|pg-2", "--who", "s t", "--ready", '[ "$ADMIRAL_LOCK" = pg-1 ]',
+                         "--ready-timeout", "5", "--", "sleep", "600")  # the check sees the lock taken too
+        self.assertEqual(r.returncode, 0, r.stderr)
+        self.assertIn("admiral run stop --lock pg-1`", r.stdout)
+        r = self.admiral("run", "stop", "--lock", "pg-1|pg-2")
+        self.assertNotEqual(r.returncode, 0)
+        self.assertIn("pg-1 (s t [run ", r.stderr)
+        self.assertEqual(self.admiral("run", "stop", "--lock", "pg-1").returncode, 0)
+        self.assertEqual(self.visible(), [])
+
     def test_it_needs_a_lock_and_a_command(self):
         self.assertNotEqual(self.admiral("run", "--who", "s t", "--", "true").returncode, 0)
         self.assertNotEqual(self.admiral("run", "--lock", "x", "--who", "s t").returncode, 0)
