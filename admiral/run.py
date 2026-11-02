@@ -544,9 +544,9 @@ def serve(cfg, a, argv):
                 and alive(rec.get("pid"), rec.get("pidStart"))
             if ok and not cut["why"]:
                 port = f" on port {rec['port']}" if rec.get("port") else ""
+                stop_with = f"admiral run stop --lock {shlex.quote(rec['locks'][0])}"
                 print(f"ready{port}: pid {rec['pid']}, holding {', '.join(rec['locks'])}; output in {log}; stop it "
-                      f"with `admiral run stop --lock {shlex.quote(rec['locks'][0])}` (it stops by itself after {a.limit:g} "
-                      "minutes)")
+                      f"with `{stop_with}` (it stops by itself after {a.limit:g} minutes)")
                 ready = True
                 return 0
         say(f"{cut['why']} before it was ready; stopping it")
