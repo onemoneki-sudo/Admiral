@@ -20,9 +20,10 @@ person said at the start to do directly, it does.
 
 Before a feature or fix, write down its goal, how it will be accepted (the cases it must hold in, and those it leaves
 alone, so that a review does not take every edge case for a failure) and what is out of scope; a small fix takes three
-lines, and an issue that already says it is cited. Decisions made along the way go into the brief. A batch of
-parallel sessions keeps one folder outside the repository for its briefs, a status note per session and the decision
-log.
+lines, and an issue that already says it is cited. Work that picks things out (the tests a change affects, the rows
+a filter keeps) is accepted also on what it must leave out: accepted only on what it must pick, a result that picks
+everything passes. Decisions made along the way go into the brief. A batch of parallel sessions keeps one folder
+outside the repository for its briefs, a status note per session and the decision log.
 
 Settle how the work splits into PRs at the start: one PR for each result the person can accept at once, and one for each
 independent small fix, since each PR adds review and delivery overhead, including any acceptance and CI the project
