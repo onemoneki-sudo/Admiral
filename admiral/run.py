@@ -1,8 +1,14 @@
 """`admiral run`: a command run under locks, held for exactly as long as it runs and stopped whole.
 
-    admiral run --lock <name> [--lock <name>]... [--port] --who "<session> <task>" [--limit <minutes>]
-                [--ready "<check>" [--ready-timeout <seconds>]] [--log <file>] -- <command> [<arg>]...
-    admiral run stop --lock <name>
+    admiral run --lock <name>[|<name>]... [--lock ...]... [--port] --who "<session> <task>" [--limit <minutes>]
+                [--priority <n>] [--ready "<check>" [--ready-timeout <seconds>]] [--log <file>] -- <command>...
+    admiral run stop --lock <the lock it holds>
+
+Each --lock is taken (all of them); `--lock 'pg-1|pg-2'` (quoted: | is the shell's) takes whichever of those comes
+free first, and is then the run's only --lock (waiting on a choice while holding another lock could deadlock two
+runs). The command, and the --ready check, get the locks taken as $ADMIRAL_LOCK (the first) and $ADMIRAL_LOCKS (all,
+space-separated). --priority places it in each lock's line as `admiral lock acquire --priority` does. `admiral run
+stop` names a lock the run actually holds (pg-1, not pg-1|pg-2), as `admiral lock status` and the ready line show it.
 
 It waits its turn for each lock (`admiral lock acquire --wait`), with --port also claims a free port (given to the
 command as $PORT), starts the command in a process group of its own, records the command's pid on every lock, and
@@ -27,6 +33,7 @@ import hashlib
 import json
 import os
 import re
+import shlex
 import shutil
 import signal
 import socket
@@ -74,12 +81,63 @@ def owner(cfg, name):
         return {}
 
 
-def take_locks(cfg, names, who, port, ttl, stopped):
-    """(locks held, the port or None, error or ""). Locks are taken in name order, so two runs needing the same two
-    never hold one each while waiting for the other."""
+def groups(locks):
+    """Each --lock as the names it may be (`pg-1|pg-2`: either), in the order they are taken: by their names, so two
+    runs needing the same locks never hold one each while waiting for the other."""
+    out = []
+    for given in locks:
+        names = list(dict.fromkeys(n.strip() for n in given.split("|") if n.strip()))
+        if names and names not in out:
+            out.append(names)
+    return sorted(out, key=sorted)
+
+
+def take_any(cfg, names, who, ttl, prio, stopped):
+    """Whichever of `names` comes free first, as the lock tool's own loop over several locks under one --who takes
+    it: in line at each, polling, and out of the other lines once one is held. (the name, error or "")."""
+    me, shown = str(os.getpid()), ""
+
+    def leave():
+        """Out of every line; the lock it may have taken just now, for the caller to let go."""
+        for name in names:
+            lock_tool(cfg, "leave", name, "--who", who)
+        held = [n for n in names if owner(cfg, n).get("who") == who and owner(cfg, n).get("pid") == me]
+        return held[0] if held else None
+    while True:
+        for name in names:
+            r = lock_tool(cfg, "acquire", name, "--who", who, "--pid", me, "--ttl", str(ttl), *prio)
+            if r.returncode == 0:
+                for line in r.stdout.splitlines():
+                    if not line.startswith("acquired"):
+                        say(line)
+                return name, ""
+            if r.returncode != 1:  # cut short or failed: out of every line, keeping only what it holds
+                return leave(), f"could not take {name}: {(r.stderr or r.stdout).strip()[-300:]}"
+        line = "waiting for any of " + ", ".join(names)
+        if line != shown:
+            say(line)
+            shown = line
+        end = time.monotonic() + 3
+        while time.monotonic() < end:
+            if stopped():
+                return leave(), "stopped while waiting for the locks"
+            time.sleep(0.1)
+
+
+def take_locks(cfg, locks, who, port, ttl, stopped, priority=None):
+    """(locks held, the port or None, error or "")."""
     held, me = [], str(os.getpid())
-    for name in sorted(set(names)):
-        r = lock_tool(cfg, "acquire", name, "--who", who, "--wait", "--pid", me, "--ttl", str(ttl), stopped=stopped)
+    prio = ["--priority", str(priority)] if priority is not None else []
+    for names in groups(locks):
+        if len(names) > 1:
+            name, err = take_any(cfg, names, who, ttl, prio, stopped)
+            held += [name] if name else []
+            if err:
+                return held, None, err
+            continue
+        name = names[0]
+        r = lock_tool(cfg, "acquire", name, "--who", who, "--wait", "--pid", me, "--ttl", str(ttl), *prio,
+                      stopped=stopped)
         for line in r.stdout.splitlines():
             if not line.startswith("acquired"):
                 say(line)
@@ -336,12 +394,15 @@ def supervise(cfg, a, run_id):
     save()
     held, child, pids = [], None, {str(me)}
     try:
-        held, port, err = take_locks(cfg, a.lock, who, a.port, ttl, stopped=lambda: bool(stop["why"]))
+        held, port, err = take_locks(cfg, a.lock, who, a.port, ttl, stopped=lambda: bool(stop["why"]),
+                                     priority=a.priority)
         save(locks=held)
         if err or stop["why"]:
             say(err or stop["why"])
             return 1
-        env = dict(os.environ, **({"PORT": str(port)} if port else {}))
+        chosen = [n for n in held if not (port and n == f"port-{port}")]
+        env = dict(os.environ, ADMIRAL_LOCK=chosen[0], ADMIRAL_LOCKS=" ".join(chosen),
+                   **({"PORT": str(port)} if port else {}))
         try:
             child = subprocess.Popen(a.command, start_new_session=True, env=env, stdin=subprocess.DEVNULL)
         except OSError as e:
@@ -355,7 +416,7 @@ def supervise(cfg, a, run_id):
         def record():  # beside the looks, which must not wait on it
             for name in held:
                 lock_tool(cfg, "attach", name, "--who", who, "--pid", str(child.pid))
-            save(phase="running", pid=child.pid, pidStart=seen.known[child.pid], pgid=pgid, port=port)
+            save(phase="running", pid=child.pid, pidStart=seen.known[child.pid], pgid=pgid, port=port, chosen=chosen)
             for name in held:
                 put(holder_path(cfg, name), {"id": run_id})
         recording = threading.Thread(target=record)
@@ -474,15 +535,18 @@ def serve(cfg, a, argv):
             if left <= 0:
                 say(f"not ready after {a.ready_timeout:g} seconds; stopping it. Its output: {log}")
                 return 1
-            ok = check(a.ready, dict(os.environ, **({"PORT": str(rec["port"])} if rec.get("port") else {})), left,
-                       lambda: bool(cut["why"]))
+            chosen = rec.get("chosen") or []
+            env = dict(os.environ, ADMIRAL_LOCK=chosen[0] if chosen else "", ADMIRAL_LOCKS=" ".join(chosen),
+                       **({"PORT": str(rec["port"])} if rec.get("port") else {}))
+            ok = check(a.ready, env, left, lambda: bool(cut["why"]))
             now = get(status_path(cfg, run_id)) or {}
             ok = ok and sup.poll() is None and now.get("phase") == "running" and now.get("pid") == rec.get("pid") \
                 and alive(rec.get("pid"), rec.get("pidStart"))
             if ok and not cut["why"]:
                 port = f" on port {rec['port']}" if rec.get("port") else ""
+                stop_with = f"admiral run stop --lock {shlex.quote(rec['locks'][0])}"
                 print(f"ready{port}: pid {rec['pid']}, holding {', '.join(rec['locks'])}; output in {log}; stop it "
-                      f"with `admiral run stop --lock {a.lock[0]}` (it stops by itself after {a.limit:g} minutes)")
+                      f"with `{stop_with}` (it stops by itself after {a.limit:g} minutes)")
                 ready = True
                 return 0
         say(f"{cut['why']} before it was ready; stopping it")
@@ -493,7 +557,9 @@ def serve(cfg, a, argv):
             try:
                 sup.wait(timeout=GRACE + 20)
             except subprocess.TimeoutExpired:
-                say(f"its supervisor (pid {sup.pid}) did not stop; `admiral run stop --lock {a.lock[0]}`")
+                held = ((get(status_path(cfg, run_id)) or {}).get("locks") or [])[:1]
+                say(f"its supervisor (pid {sup.pid}) did not stop; "
+                    + (f"`admiral run stop --lock {shlex.quote(held[0])}`" if held else f"stop it: kill {sup.pid}"))
 
 
 def tail(path, lines=15):
@@ -507,6 +573,11 @@ def tail(path, lines=15):
 def stop_run(cfg, name):
     """Stop the run holding `name`: its supervisor stops the command and releases the locks. With the supervisor
     gone, this does it, as far as it can tell the processes are still the run's own."""
+    if "|" in name:  # each may be held by a run of its own
+        held = [f"{n} ({(get(status_path(cfg, (get(holder_path(cfg, n)) or {}).get('id', '-'))) or {}).get('who')})"
+                for n in name.split("|") if get(holder_path(cfg, n))]
+        return False, ("name the lock the run holds, one of: " + "; ".join(held) if held
+                       else f"no run holds any of {name}")
     rec = get(status_path(cfg, (get(holder_path(cfg, name)) or {}).get("id", "-")))
     if not rec:
         return False, f"no run holds {name}"
@@ -564,7 +635,11 @@ def main(cfg, argv):
     run_id = argv[1] if argv[:1] == ["--supervise"] and len(argv) > 1 else ""
     args = argv[2:] if run_id else argv
     ap = argparse.ArgumentParser(prog="admiral run", description=__doc__.split("\n\n")[0])
-    ap.add_argument("--lock", action="append", default=[], help="a lock to hold while it runs (repeatable)")
+    ap.add_argument("--lock", action="append", default=[],
+                    help="a lock to hold while it runs (repeatable: all of them); 'a|b', quoted: whichever comes "
+                         "free first")
+    ap.add_argument("--priority", type=int, default=None,
+                    help="its place in each lock's line, as for admiral lock acquire (higher first; default 0)")
     ap.add_argument("--port", action="store_true", help="also claim a free port, given to the command as $PORT")
     ap.add_argument("--who", required=True, help='"<session> <task>", as for admiral lock')
     ap.add_argument("--limit", type=float, default=LIMIT, help=f"minutes before it is stopped (default {LIMIT})")
@@ -581,6 +656,13 @@ def main(cfg, argv):
         ap.error("--lock is required: the name the run is held and stopped by")
     if a.limit <= 0:
         ap.error("--limit is a number of minutes above 0")
+    if a.priority is not None and not -99 <= a.priority <= 99:
+        ap.error("--priority is an integer from -99 to 99")
+    if not all(n.strip() for given in a.lock for n in given.split("|")):
+        ap.error("--lock names a lock, or several as a|b")
+    if len(groups(a.lock)) > 1 and any(len(g) > 1 for g in groups(a.lock)):
+        # waiting on a choice while holding another lock, two runs could each hold what the other waits for
+        ap.error("a choice of locks (a|b) is taken on its own: give it no other --lock")
     if a.ready and not run_id:
         return serve(cfg, a, args)
     return supervise(cfg, a, run_id or uuid.uuid4().hex[:8])
