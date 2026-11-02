@@ -14,9 +14,13 @@
     admiral codex-hook           what the plugin's Codex hooks run: records the Codex session (its event on stdin)
     admiral send NAME MESSAGE    put a message into the Codex session NAME, at its next call while it works
                                  (Claude Code sessions: SendMessage)
-    admiral wait [--who NAME]... [--lead COMMANDER] [--timeout SECONDS]   return when a member reports, waits for
-                                 the person, ends a turn or ends; run it in the background to hear of it
+    admiral wait [--who NAME]... [--lead COMMANDER] [--timeout SECONDS] [--quiet SECONDS]   return when a member
+                                 reports, waits for the person, ends a turn or ends (or, with --quiet, works on
+                                 without a report that long); run it in the background to hear of it
     admiral lock ...             shared-resource locks (`admiral lock status`; see admiral/lock.sh)
+    admiral run --lock NAME --who WHO [--port] [--limit MIN] [--ready CHECK] -- COMMAND   run a command under
+                                 locks: its pid recorded on them, stopped whole at its limit, the locks released
+                                 when it ends (`admiral run stop --lock NAME` for a service; see admiral/run.py)
     admiral focus TTY            bring the terminal tab on TTY to the front (macOS)
     admiral doctor               whether each piece Admiral needs is in place, and how to fix the rest
     admiral where                print the state directory (the board files live there)
@@ -56,6 +60,9 @@ def main(argv=None):
         script = os.path.join(os.path.dirname(os.path.abspath(__file__)), "lock.sh")
         signal.signal(signal.SIGPIPE, signal.SIG_DFL)  # Python ignores it, and bash would inherit that: a reader
         os.execve("/bin/bash", ["bash", script, *argv[1:]], env)  # that stops early must end the tool quietly
+    if argv[:1] == ["run"]:  # its own parser: everything after -- is the command's
+        from . import run
+        sys.exit(run.main(config.load(), argv[1:]))
     ap = argparse.ArgumentParser(prog="admiral", description="Command a fleet of AI coding sessions.")
     ap.add_argument("--version", action="version", version=f"admiral {__version__}")
     sub = ap.add_subparsers(dest="cmd", required=True)

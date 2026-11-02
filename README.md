@@ -150,7 +150,9 @@ Six skills Claude Code loads when they apply, so dozens of sessions stay out of 
 
 `admiral lock` guards what the sessions share: one full test run at a time, a few database slots, model quota, ports.
 Short jobs go first; a commander raises a long job left waiting; a session that crashed never holds a lock for good,
-the next in line takes it over.
+the next in line takes it over. `admiral run` holds a lock for exactly as long as a command runs: it records the
+command's pid, stops it and everything it started at its time limit, and releases the lock when it ends, so a test
+server or a private database is never left running with nobody holding it.
 
 The skills are defaults that hold for any project, not a checklist: where your project's own rules differ, they win, so
 the details that are yours (thresholds, tools, CI, reviewers) live in your project's rules.
@@ -356,6 +358,9 @@ admiral wait [--who <name>]... [--lead <c>]     return when a member reports, wa
 admiral board [--now | --write] [--no-github]   the latest board as Markdown (--now builds it afresh)
 admiral statusline                              the status line (reads Claude Code's JSON on stdin)
 admiral lock acquire | release | status | port  shared-resource locks
+admiral run --lock <n> --who <w> [--port] [--limit <min>] [--ready <check>] -- <command>
+                                                a command under locks, stopped whole at its limit, locks released
+admiral run stop --lock <n>                     stop a service started with --ready, and release its locks
 admiral focus <tty>                             bring a session's tab to the front (macOS: Terminal, iTerm2)
 admiral demo                                    a made-up fleet, to see Admiral without one
 admiral where                                   the state directory
