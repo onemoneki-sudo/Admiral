@@ -70,12 +70,17 @@ def path_of(cfg, reg):
     return session_path(cfg, reg["sessionId"]) if reg.get("sessionId") else reg_path(cfg, reg["who"])
 
 
+def from_codex():
+    """Whether this command runs in a Codex session."""
+    return bool(os.environ.get("CODEX_THREAD_ID")) and not os.environ.get("CLAUDE_CODE_SESSION_ID")
+
+
 def caller(cfg):
     """(session ID, names) of the Claude Code session running this command, as Claude Code hands its commands
     (CLAUDE_CODE_SESSION_ID, CLAUDE_PID): its name now first, then its former ones; or of the Codex session, by the
     CODEX_THREAD_ID Codex hands its commands, once the plugin's hooks have recorded it. ("", []) outside a session."""
     thread = os.environ.get("CODEX_THREAD_ID", "")
-    if thread and not os.environ.get("CLAUDE_CODE_SESSION_ID"):
+    if from_codex():
         found = [read_json(f) or {} for f in glob.glob(cfg.sub("codex", glob.escape(os.path.basename(thread)) + ".*.json"))]
         d = max(found, key=lambda r: r.get("statusUpdatedAt") or 0, default=None)  # one record per process it runs in
         return (thread, [d["name"]] if d.get("name") else []) if d else ("", [])
@@ -127,12 +132,16 @@ def renamed(reg, who):
     return dict(reg, who=who, aka=list(dict.fromkeys(names_of(reg))))
 
 
-def register(cfg, who, task="", branch="", worktree="", files="", lead=""):
+def register(cfg, who, task="", branch="", worktree="", files="", lead="", agent=""):
     """Create or replace a registration; a phase already reported is kept. Made by the session it names (or by a
     session registering itself under another name), it is kept under that session and follows it through renames;
-    one made for another session is kept under its name."""
+    one made for another session is kept under its name, as is one for a Codex session made from outside Codex."""
     sid, names = caller(cfg)
+    if agent == "codex" and not from_codex():
+        sid, names = "", []  # a Claude Code session registering a Codex one: never itself
     fields = {"task": task, "branch": branch, "worktree": worktree, "files": files, "lead": lead, "since": time.time()}
+    if agent:
+        fields["agent"] = agent
     if sid and (who in names or itself(cfg, who, sid, names)):
         own = read_json(session_path(cfg, sid))
         # made for it under this name before it registered itself: taken over, its phase with it

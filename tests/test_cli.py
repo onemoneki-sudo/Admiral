@@ -1,5 +1,6 @@
 """The `admiral` command end to end, on a temporary state directory."""
 
+import itertools
 import json
 import os
 import shlex
@@ -259,6 +260,40 @@ class Cli(unittest.TestCase):
         self.assertIn("may be taken over", port.stderr)
         with_pid = self.run_cli("lock", "acquire", "heavy", "--who", "w1", "--pid", str(os.getpid()))
         self.assertEqual((with_pid.returncode, with_pid.stderr), (0, ""))
+
+    def test_a_commander_registers_a_codex_executor_as_another_session(self):
+        self.in_session(4242, "sid-lead", "lead-session")
+        out = self.run_cli("register", "--who", "codex-exec", "--agent", "codex", "--worktree", "/w/wt1",
+                           "--lead", "lead-session")
+        self.assertEqual(out.stdout.strip(), "registered codex-exec")
+        reg = self.reg("codex-exec")
+        self.assertNotIn("sessionId", reg)  # the board finds the Codex session by its worktree, not this session
+        self.assertEqual(reg["agent"], "codex")
+
+    def test_the_codex_hook_stops_a_call_to_hand_over_a_message(self):
+        from admiral import codex, config, registry
+        cfg = config.load(self.env["ADMIRAL_CONFIG"])
+        os.makedirs(os.path.dirname(codex.inbox_path(cfg, "t-9")))
+        registry.write_json(codex.inbox_path(cfg, "t-9"), [{"from": "lead", "message": "switch to plan B"}])
+        event = json.dumps({"session_id": "t-9", "hook_event_name": "PreToolUse", "tool_use_id": "c1"})
+        r = subprocess.run([sys.executable, "-m", "admiral", "codex-hook"], input=event, capture_output=True,
+                           text=True, env=self.env)
+        self.assertEqual(r.returncode, 2)
+        self.assertIn("From lead: switch to plan B", r.stderr)
+        # what the plugin's PreToolUse and Stop hooks run passes that on, and lets every other outcome through
+        with open(os.path.join(ROOT, "plugin", "codex", "hooks.json")) as fh:
+            hooks = json.load(fh)["hooks"]
+        home = os.path.join(self.dir, "home")
+        os.makedirs(os.path.join(home, ".local", "bin"))
+        fake = os.path.join(home, ".local", "bin", "admiral")
+        for (code, want), event in itertools.product(((2, 2), (1, 0), (0, 0)), ("PreToolUse", "Stop")):
+            command = hooks[event][0]["hooks"][0]["command"]
+            with open(fake, "w") as fh:
+                fh.write(f"#!/bin/sh\necho said >&2\nexit {code}\n")
+            os.chmod(fake, 0o755)
+            r = subprocess.run(["sh", "-c", command], capture_output=True, text=True, env=dict(self.env, HOME=home))
+            self.assertEqual(r.returncode, want)
+            self.assertEqual(r.stdout, "")
 
     def test_one_version_everywhere(self):
         import json

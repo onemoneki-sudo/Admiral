@@ -1854,6 +1854,62 @@ class Relay(World):
         self.assertTrue(ok, msg)
         self.assertEqual(calls, [["codex", "queue", "--thread", "t-1", "--message", "brief: see /tmp/brief.md"]])
 
+    def test_send_reaches_a_working_codex_session_at_its_next_call(self):
+        from admiral import codex, relay
+        self.register("exec-codex", worktree="/w/app/wt1", lead="Commander-A")
+        self.codex("t-1", "SessionStart", "UserPromptSubmit")
+        ok, msg = relay.send(self.cfg, "exec-codex", "stop: use the new schema", self.starts, run=None)
+        self.assertTrue(ok, msg)
+        self.assertIn("next call", msg)  # not queued: a long turn would read it only at its end
+        event = {"session_id": "t-1", "hook_event_name": "PreToolUse", "cwd": "/w/app/wt1", "tool_use_id": "c1",
+                 "tool_input": {"command": "make migrate"}}
+        blocked = codex.hook(self.cfg, event, self.starts, find_pid=lambda: 50, name_of=lambda s: "", now=NOW)
+        self.assertIn("stop: use the new schema", blocked)
+        self.assertIn("not run", blocked)
+        self.assertEqual(self.codex_record("t-1")["running"], {})  # the call never ran: nothing waits for its end
+        again = codex.hook(self.cfg, dict(event, tool_use_id="c2"), self.starts, find_pid=lambda: 50,
+                           name_of=lambda s: "", now=NOW)
+        self.assertIsNone(again)  # handed over once
+
+    def test_a_turn_about_to_end_goes_on_with_the_messages_left_for_it(self):
+        from admiral import codex
+        self.codex("t-1", "SessionStart", "UserPromptSubmit")
+        self.assertEqual(codex.post(self.cfg, "t-1", "Commander-A", "also check the docs", self.starts), "left")
+        stop = {"session_id": "t-1", "hook_event_name": "Stop", "cwd": "/w/app/wt1"}
+        went_on = codex.hook(self.cfg, stop, self.starts, find_pid=lambda: 50, name_of=lambda s: "", now=NOW)
+        self.assertIn("From Commander-A: also check the docs", went_on)
+        self.assertEqual(self.codex_record("t-1")["status"], "busy")  # still at work, so a send still waits for it
+        self.assertIsNone(codex.hook(self.cfg, stop, self.starts, find_pid=lambda: 50, name_of=lambda s: "",
+                                     now=NOW))  # nothing more: the turn ends
+        self.assertEqual(self.codex_record("t-1")["status"], "idle")
+        self.assertEqual(codex.post(self.cfg, "t-1", "Commander-A", "next", self.starts), "")  # for codex queue
+
+    def test_a_message_goes_to_the_inbox_only_while_the_session_works(self):
+        from admiral import codex
+        self.codex("t-1", "SessionStart", "UserPromptSubmit", "Stop")
+        self.assertEqual(codex.post(self.cfg, "t-1", "lead", "hi", self.starts), "")  # for codex queue instead
+        self.codex("t-1", "UserPromptSubmit", pid=50)
+        self.codex("t-1", "SessionStart", "UserPromptSubmit", pid=51)  # a second process of the session
+        codex.post(self.cfg, "t-1", "lead", "for whichever calls next", self.starts)
+        stop = {"session_id": "t-1", "hook_event_name": "Stop", "cwd": "/w/app/wt1"}
+        self.assertIn("for whichever calls next", codex.hook(self.cfg, stop, self.starts, find_pid=lambda: 51,
+                                                             name_of=lambda s: "", now=NOW))
+        pre = {"session_id": "t-1", "hook_event_name": "PreToolUse", "cwd": "/w/app/wt1", "tool_use_id": "c1"}
+        self.assertIsNone(codex.hook(self.cfg, pre, self.starts, find_pid=lambda: 50, name_of=lambda s: "",
+                                     now=NOW))  # handed over once, to whichever process came first
+
+    def test_messages_keep_their_order_and_none_is_dropped(self):
+        from admiral import codex, registry, relay
+        self.register("exec-codex", worktree="/w/app/wt1")
+        self.codex("t-1", "SessionStart", "UserPromptSubmit")
+        for n in range(codex.INBOX_MAX):
+            self.assertEqual(codex.post(self.cfg, "t-1", "lead", f"m{n}", self.starts), "left")
+        ok, msg = relay.send(self.cfg, "exec-codex", "one too many", self.starts, run=None)
+        self.assertFalse(ok)
+        self.assertIn("wait for exec-codex already", msg)  # refused, never an older one dropped
+        box = codex.take(self.cfg, "t-1")
+        self.assertEqual([m["message"] for m in box], [f"m{n}" for n in range(codex.INBOX_MAX)])
+
     def test_send_tells_a_claude_session_from_a_missing_one(self):
         from admiral import relay
         self.session(7, "claude-worker")

@@ -5,6 +5,22 @@ Each version says what changed for someone using Admiral. The version lives in `
 Claude Code keeps an installed plugin in its cache, one copy per version, so a change to the sidebar or the playbook
 reaches people only when the version moves.
 
+## Unreleased
+
+**Codex**
+- `admiral send` reaches a Codex session in the middle of its turn: the message waits for its next call, which the
+  plugin's PreToolUse hook stops, handing the model the message instead, so a long turn no longer runs on the old
+  plan until it ends; a turn about to end before another call goes on with it. A session between turns gets it
+  through `codex queue`, as before. Codex asks you to trust the hooks again.
+- `admiral register --agent codex` registers a Codex session from a Claude Code session that is not named as a
+  commander; without it the registration was taken as that session's own, and the board tied the Codex executor to
+  it.
+
+**Playbook**
+- roles: register a Codex executor with `--agent codex`; a brief names the few reasons to stop and leaves the rest
+  to the executor's judgement; a background segment stopped by its pid leaves its processes and locks, which the next
+  segment cleans up first.
+
 ## 0.2.14 (2026-10-29)
 
 **Playbook**

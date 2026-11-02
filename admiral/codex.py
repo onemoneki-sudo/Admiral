@@ -27,6 +27,7 @@ ASKS = {"request_user_input"}  # tools that put a question to the person: the se
 CODEX_HOME = os.environ.get("CODEX_HOME") or os.path.expanduser("~/.codex")
 # what Codex writes to a session's transcript once it goes on: a call's output, a message, the turn's end
 MOVED_ON = {"function_call_output", "custom_tool_call_output", "agent_message", "task_complete", "turn_aborted"}
+INBOX_MAX = 20  # messages left for one session and not yet taken: far more than a commander sends between two calls
 TAIL = 256 * 1024  # bytes of the transcript read from its end: far more than one call's worth
 
 
@@ -187,20 +188,94 @@ def locked(cfg):
     return fh
 
 
+def inbox_path(cfg, sid):
+    return os.path.join(sessions_dir(cfg), "inbox", os.path.basename(sid) + ".json")
+
+
+def working(cfg, sid, starts):
+    """Whether a live process of this session is in the middle of a turn. Called with the records locked."""
+    recs = [read_json(f) or {} for f in records_of(cfg, sid)]
+    alive = starts([d["pid"] for d in recs if isinstance(d.get("pid"), int)])
+    return any(d.get("status") in ("busy", "waiting") and d.get("procStart")
+               and (alive.get(d.get("pid")) or (None,))[0] == d["procStart"] for d in recs)
+
+
+def post(cfg, sid, sender, message, starts, now=None):
+    """Leave a message for a session in the middle of its turn, for its next call to take: "left"; "full" when
+    INBOX_MAX wait already; "" when it is not working, for `codex queue` to take instead. Decided with the records
+    locked, so a turn that ends meanwhile either takes the message (record) or is seen to have ended."""
+    with locked(cfg):
+        if not working(cfg, sid, starts):
+            return ""
+        box = read_json(inbox_path(cfg, sid)) or []
+        if len(box) >= INBOX_MAX:
+            return "full"
+        os.makedirs(os.path.dirname(inbox_path(cfg, sid)), exist_ok=True)
+        write_json(inbox_path(cfg, sid), box + [{"from": sender, "message": message,
+                                                 "at": time.time() if now is None else now}])
+        return "left"
+
+
+def _take(cfg, sid):
+    """The messages left for a session, in the order they were sent, taken out. Called with the records locked."""
+    box = read_json(inbox_path(cfg, sid)) or []
+    if box:
+        os.remove(inbox_path(cfg, sid))
+    return box
+
+
+def take(cfg, sid):
+    with locked(cfg):
+        return _take(cfg, sid)
+
+
+def said(box):
+    return "\n\n".join(f"From {m.get('from') or 'your commander'}: {m.get('message', '')}" for m in box)
+
+
+def turn_on(box):
+    """What a turn kept going for messages tells the model."""
+    return (f"Admiral: before you end this turn, read {'a message' if len(box) == 1 else 'messages'} sent to you "
+            f"while you worked.\n\n{said(box)}\n\nAct on it, then end the turn.")
+
+
+def letter(box):
+    """What a call stopped for messages tells the model: the messages, and that its call was not run."""
+    return (f"Admiral: this call was not run, so that you read {'a message' if len(box) == 1 else 'messages'} "
+            f"first. This is no refusal of the call.\n\n{said(box)}\n\nAct on it now; run the call again only if "
+            "it still fits.")
+
+
 def hook(cfg, event, starts, find_pid=codex_pid, name_of=thread_name, now=None):
     """Record what one Codex hook event says of its session, in the record of the Codex process the hook runs under;
-    SessionEnd removes that record."""
+    SessionEnd removes that record. Returns what blocks the event, when messages were left for the session: a call
+    (PreToolUse) is not run, and the model reads them at once instead of at its turn's end; a turn about to end
+    (Stop) goes on with them. Messages still there when a session is interrupted or ends wait for its next call."""
     sid, kind = str(event.get("session_id") or ""), event.get("hook_event_name") or ""
     if not sid or "/" in sid or sid.startswith(".") or (kind not in STATUS and kind != "SessionEnd"):
-        return
+        return None
+    if kind == "PreToolUse" and os.path.exists(inbox_path(cfg, sid)):
+        box = take(cfg, sid)
+        if box:
+            return letter(box)  # the call does not run, so nothing of it is recorded
+    return record(cfg, sid, kind, event, starts, find_pid, name_of, now)
+
+
+def record(cfg, sid, kind, event, starts, find_pid, name_of, now):
     pid = find_pid()
-    if pid is None:
-        return
-    proc_start = (starts([pid]).get(pid) or (None,))[0]
+    proc_start = (starts([pid]).get(pid) or (None,))[0] if pid is not None else None
     if not proc_start:  # without it a reused pid could pass for this session, and the record could never be pruned
-        return
+        if kind == "Stop" and os.path.exists(inbox_path(cfg, sid)):
+            box = take(cfg, sid)
+            return turn_on(box) if box else None
+        return None
     path = record_path(cfg, sid, pid)
+    name = name_of(sid) if kind != "SessionEnd" else ""  # read before the lock: other hooks wait while it is held
     with locked(cfg):
+        if kind == "Stop":  # taken with the turn's end recorded, so post() either sees it working or not at all
+            box = _take(cfg, sid)
+            if box:
+                return turn_on(box)  # the turn goes on: the session is still working
         if kind == "SessionEnd":
             try:
                 os.remove(path)
@@ -241,7 +316,7 @@ def hook(cfg, event, starts, find_pid=codex_pid, name_of=thread_name, now=None):
             ms = old.get("statusUpdatedAt", ms)  # still waiting: since the wait began, which the transcript is read from
         write_json(path, {"pid": pid, "procStart": proc_start, "sessionId": sid,
                           "cwd": event.get("cwd") or old.get("cwd", ""), "status": status, "statusUpdatedAt": ms,
-                          "startedAt": old.get("startedAt", ms), "name": name_of(sid) or old.get("name", ""),
+                          "startedAt": old.get("startedAt", ms), "name": name or old.get("name", ""),
                           "pending": pending, "running": running, "asked": asked, "agent": "codex"})
         if kind == "SessionStart":
             prune(cfg, starts)

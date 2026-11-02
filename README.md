@@ -214,7 +214,7 @@ Then two steps that are yours, since Admiral never edits Claude Code's settings 
    ```
    Codex takes the same marketplace (`codex plugin marketplace add ~/admiral`, then `codex plugin add
    admiral@admiral`): the playbook's skills, and hooks that put each Codex session on the board, working, idle or
-   waiting for your approval. Codex runs a plugin's hooks only once you trust them (it asks, "Hooks need review",
+   waiting for your approval, and hand it what you `admiral send` at its next call while it works. Codex runs a plugin's hooks only once you trust them (it asks, "Hooks need review",
    when a session opens), and again after each Admiral update: until you do, a session is not on the board. Codex
    tells no hook when you approve, so the board reads it from the session's transcript: the session shows as
    working again once the call you approved writes its first output, within seconds for most. A Codex session goes
@@ -349,7 +349,8 @@ batch shows, marked commander not running. The board never closes a plan itself.
 ```
 admiral register | state | done | list          registrations
 admiral plan add | rm | list | close            commanders' plans
-admiral send <name> "<message>"                 a message into a Codex session (Claude Code's: SendMessage)
+admiral send <name> "<message>"                 a message into a Codex session, at its next call while it works
+                                                (Claude Code's: SendMessage)
 admiral wait [--who <name>]... [--lead <c>]     return when a member reports, waits for you, ends a turn or ends
 admiral board [--now | --write] [--no-github]   the latest board as Markdown (--now builds it afresh)
 admiral statusline                              the status line (reads Claude Code's JSON on stdin)
@@ -372,7 +373,8 @@ admiral doctor                                  whether each piece is in place, 
 - **Adds**: one thing to what your sessions read, the playbook's reminder at the end of the system prompt, about 1 KB;
   `[playbook] remind = false` turns it off.
 - **Sends**: only the `gh` calls to GitHub, as you, listing PRs and checks, and the messages you `admiral send`, to the
-  Codex session on this machine through `codex queue`. No model is called and nothing is uploaded.
+  Codex session on this machine, through `codex queue` or, while it works, a file the plugin's hook hands it from.
+  No model is called and nothing is uploaded.
 
 ## Why it spends no tokens
 
