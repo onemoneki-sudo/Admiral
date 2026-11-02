@@ -5,6 +5,21 @@ Each version says what changed for someone using Admiral. The version lives in `
 Claude Code keeps an installed plugin in its cache, one copy per version, so a change to the sidebar or the playbook
 reaches people only when the version moves.
 
+## Unreleased
+
+**Locks**
+- `admiral run --lock <name> --who <who> [--limit <minutes>] -- <command>` runs a command under its locks: it waits
+  its turn, records the command's own pid on each lock, stops the command and everything it started at its time limit
+  (180 minutes by default) or when told to, and releases the locks when it ends. A time limit put on a shell stopped
+  the shell alone, leaving what it started holding ports and databases.
+- With `--port` it also claims a free port, given to the command as `$PORT`; with `--ready "<check>"` it starts a
+  service, returns once the check passes and keeps it until `admiral run stop --lock <name>` or its limit.
+- A process that turns itself into a daemon (`pg_ctl start`) is stopped too once it has been seen leaving the
+  command's process group; one never seen is reported when its port is still taken after the stop.
+- A run holds its locks under its own name (`<who> [run <id>]`) and knows every process by its pid and start time,
+  so it never releases another run's lock or signals a process that only reuses a pid of its own.
+- resources: run what uses a locked resource with `admiral run`, and start services in the foreground.
+
 ## 0.2.17 (2026-11-02)
 
 **Commanders**

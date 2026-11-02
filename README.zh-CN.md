@@ -134,7 +134,8 @@ Admiral 先运行它，原样保留）。
 | wrapup | 合并之后：安全清理，然后关闭；一批结束时留一份短摘要 |
 
 `admiral lock` 守住对话之间共享的东西：同一时间只跑一次完整测试，几个数据库名额，模型额度，端口。短任务优先；
-长任务等得太久，由总指挥提级；崩溃的对话不会一直占着锁，下一个排队的会接手。
+长任务等得太久，由总指挥提级；崩溃的对话不会一直占着锁，下一个排队的会接手。`admiral run` 让锁跟命令同生共死：
+登记命令自己的 pid，到时间连它起的子进程一起停，命令结束就放锁，测试服务或私有数据库不会没人管地一直开着。
 
 这些技能是任何项目都适用的默认做法，不是清单：你的项目有自己的规定时，以项目为准，所以属于你自己的细节（阈值、
 工具、CI、审查人）写在项目自己的规则里。
@@ -323,6 +324,9 @@ admiral wait [--who <名字>]... [--lead <总指挥>]  成员回报、等你、�
 admiral board [--now | --write] [--no-github]   最新的面板，Markdown 格式（--now 现场重新生成）
 admiral statusline                              状态栏（从标准输入读 Claude Code 的 JSON）
 admiral lock acquire | release | status | port  共享资源的锁
+admiral run --lock <锁> --who <名> [--port] [--limit <分钟>] [--ready <检查>] -- <命令>
+                                                在锁下跑命令：到时连子进程一起停，结束就放锁
+admiral run stop --lock <锁>                    停掉用 --ready 起的服务，并放掉它的锁
 admiral focus <tty>                             把一个对话的标签页调到最前（macOS：终端、iTerm2）
 admiral demo [--lang zh]                        一支虚构的舰队，不用自己的舰队也能看效果
 admiral where                                   状态目录
