@@ -5,6 +5,15 @@ Each version says what changed for someone using Admiral. The version lives in `
 Claude Code keeps an installed plugin in its cache, one copy per version, so a change to the sidebar or the playbook
 reaches people only when the version moves.
 
+## Unreleased
+
+**Codex**
+- A message `admiral send` hands over mid-turn tells the model that it is its commander's new instruction and
+  overrides the plan where they differ. Seen live: worded as before, Codex retried the call it was stopped at and
+  went on with the old plan.
+- roles: a Codex executor's brief says that its commander's messages may come that way and override the brief; told
+  nothing of it, Codex stops at such a message rather than act on it.
+
 ## 0.2.15 (2026-11-02)
 
 **Codex**

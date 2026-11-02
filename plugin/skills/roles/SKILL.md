@@ -43,7 +43,9 @@ Where the project's own rules differ from this playbook, the project's rules win
   (`codex -C <worktree> "Read <brief> and start"`); send it decisions with `admiral send <name> "<message>"`, as
   Claude Code's own messages reach only Claude Code sessions. One at work reads the message at its next call, which
   the plugin's hook stops to hand it over, or before its turn ends; one between turns, when its next turn starts. Its
-  board row shows when it waits for the person's approval once the person has trusted the plugin's hooks in Codex.
+  brief says that its commander's messages may come that way and override the brief where they differ: told nothing
+  of it, Codex stops at such a message rather than act on it. Its board row shows when it waits for the person's
+  approval once the person has trusted the plugin's hooks in Codex.
 - A Codex window starts no turn by itself once one ends: it suits work the person watches or approves as it goes. For
   long work, run the executor in the background a segment at a time instead, `codex exec` and then `codex exec resume
   <session> "<next step>" -o <result file> </dev/null` under a time limit, a new session for each task and small
