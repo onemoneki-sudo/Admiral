@@ -23,6 +23,8 @@ from .registry import read_json, write_json
 STATUS = {"SessionStart": "idle", "UserPromptSubmit": "busy", "PreToolUse": "busy", "PostToolUse": "busy",
           "PermissionRequest": "waiting", "Stop": "idle", "Interrupt": "idle"}
 CLEARS = {"SessionStart", "UserPromptSubmit", "Stop", "Interrupt"}  # no call is left waiting after these
+# a call's events give the call's working directory as their cwd (its workdir, which may be anywhere), not the session's
+CALLS = {"PreToolUse", "PostToolUse", "PermissionRequest"}
 ASKS = {"request_user_input"}  # tools that put a question to the person: the session waits while one runs
 CODEX_HOME = os.environ.get("CODEX_HOME") or os.path.expanduser("~/.codex")
 # what Codex writes to a session's transcript once it goes on: a call's output, a message, the turn's end
@@ -79,6 +81,12 @@ def threads(query, args):
 def thread_name(sid):
     """The name Codex keeps for a session; "" when it has none."""
     row = threads("SELECT name FROM threads WHERE id = ?", (sid,))
+    return (row[0] or "") if row else ""
+
+
+def thread_cwd(sid):
+    """The directory Codex keeps for a session; "" when its thread list does not say."""
+    row = threads("SELECT cwd FROM threads WHERE id = ?", (sid,))
     return (row[0] or "") if row else ""
 
 
@@ -251,7 +259,7 @@ def heads(box):
             f"{'overrides' if one else 'override'} the plan you were following where they differ:")
 
 
-def hook(cfg, event, starts, find_pid=codex_pid, name_of=thread_name, now=None):
+def hook(cfg, event, starts, find_pid=codex_pid, name_of=thread_name, now=None, home_of=thread_cwd):
     """Record what one Codex hook event says of its session, in the record of the Codex process the hook runs under;
     SessionEnd removes that record. Returns what blocks the event, when messages were left for the session: a call
     (PreToolUse) is not run, and the model reads them at once instead of at its turn's end; a turn about to end
@@ -263,10 +271,10 @@ def hook(cfg, event, starts, find_pid=codex_pid, name_of=thread_name, now=None):
         box = take(cfg, sid)
         if box:
             return letter(box)  # the call does not run, so nothing of it is recorded
-    return record(cfg, sid, kind, event, starts, find_pid, name_of, now)
+    return record(cfg, sid, kind, event, starts, find_pid, name_of, now, home_of)
 
 
-def record(cfg, sid, kind, event, starts, find_pid, name_of, now):
+def record(cfg, sid, kind, event, starts, find_pid, name_of, now, home_of=thread_cwd):
     pid = find_pid()
     proc_start = (starts([pid]).get(pid) or (None,))[0] if pid is not None else None
     if not proc_start:  # without it a reused pid could pass for this session, and the record could never be pruned
@@ -276,6 +284,13 @@ def record(cfg, sid, kind, event, starts, find_pid, name_of, now):
         return None
     path = record_path(cfg, sid, pid)
     name = name_of(sid) if kind != "SessionEnd" else ""  # read before the lock: other hooks wait while it is held
+    # a call's event says where the call runs, which is not where the session is: the session's directory is the one
+    # its own events gave, else the one Codex keeps for it (a record a call begins, its process's first events missed)
+    home = ""
+    if kind in CALLS:
+        mine = read_json(path) or {}
+        if mine.get("procStart") != proc_start or not mine.get("cwd"):
+            home = home_of(sid)
     with locked(cfg):
         if kind == "Stop":  # taken with the turn's end recorded, so post() either sees it working or not at all
             box = _take(cfg, sid)
@@ -319,8 +334,10 @@ def record(cfg, sid, kind, event, starts, find_pid, name_of, now):
         ms = int((time.time() if now is None else now) * 1000)
         if status == "waiting" and old.get("status") == "waiting":
             ms = old.get("statusUpdatedAt", ms)  # still waiting: since the wait began, which the transcript is read from
+        cwd = ((old.get("cwd") or home or event.get("cwd") or "") if kind in CALLS
+               else event.get("cwd") or old.get("cwd", ""))
         write_json(path, {"pid": pid, "procStart": proc_start, "sessionId": sid,
-                          "cwd": event.get("cwd") or old.get("cwd", ""), "status": status, "statusUpdatedAt": ms,
+                          "cwd": cwd, "status": status, "statusUpdatedAt": ms,
                           "startedAt": old.get("startedAt", ms), "name": name or old.get("name", ""),
                           "pending": pending, "running": running, "asked": asked, "agent": "codex"})
         if kind == "SessionStart":
