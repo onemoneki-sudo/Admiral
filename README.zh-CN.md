@@ -193,9 +193,9 @@ git clone https://github.com/onemoneki-sudo/Admiral.git ~/admiral   # 试 demo �
    claude plugin install admiral@admiral
    ```
    Codex 用同一个插件市场安装（`codex plugin marketplace add ~/admiral`，再 `codex plugin add admiral@admiral`）：
-   协作规则的技能，以及把每个 Codex 对话放上面板的 hook（工作中、空闲、等你批准）。Codex 只在你信任插件的 hook
-   之后才运行它们（开对话时会提示「Hooks need review」），Admiral 每次更新后还会再问一次：信任之前，这个对话不在
-   面板上。你点批准时 Codex 不通知任何 hook，所以面板从对话记录里看：批准的命令一写出第一段输出（多数几秒内），
+   协作规则的技能，以及把每个 Codex 对话放上面板的 hook（工作中、空闲、等你批准），它干活时也由 hook 在下一次调用时把
+   `admiral send` 的消息交给它。Codex 只在你信任插件的 hook 之后才运行它们（开对话时会提示「Hooks need review」），
+   Admiral 每次更新后还会再问一次：信任之前，这个对话不在面板上。你点批准时 Codex 不通知任何 hook，所以面板从对话记录里看：批准的命令一写出第一段输出（多数几秒内），
    就显示回工作中。Codex 对话在面板上用它的登记名：没有别的登记指名它时，用 `--worktree` 是它所在目录的那条
    登记，所以总指挥可以在它开工前替它登记；没有登记时用 Codex 给它的名字。侧边栏和开工提醒只有 Claude Code 有。
 
@@ -316,7 +316,8 @@ admiral plan close --lead "<总指挥>"
 ```
 admiral register | state | done | list          登记
 admiral plan add | rm | list | close            总指挥的计划
-admiral send <名字> "<消息>"                     往 Codex 对话里发消息（Claude Code 对话用 SendMessage）
+admiral send <名字> "<消息>"                     往 Codex 对话里发消息，它正在干活时下一次调用就收到
+                                                （Claude Code 对话用 SendMessage）
 admiral wait [--who <名字>]... [--lead <总指挥>]  成员回报、等你、做完一轮或结束时返回
 admiral board [--now | --write] [--no-github]   最新的面板，Markdown 格式（--now 现场重新生成）
 admiral statusline                              状态栏（从标准输入读 Claude Code 的 JSON）
@@ -337,8 +338,8 @@ admiral doctor                                  逐项检查是否装好，没�
   `~/.local/bin/admiral` 链接和克隆目录里的 `.python-path`。
 - **添加**：只往对话读到的内容里加一样东西，就是系统提示末尾约 1 KB 的协作规则提醒；`[playbook] remind = false`
   可以关掉。
-- **发送**：只有以你的身份调用 `gh` 向 GitHub 查询 PR 和检查，以及你用 `admiral send` 经 `codex queue` 发给本机
-  Codex 对话的消息。不调用任何模型，不上传任何东西。
+- **发送**：只有以你的身份调用 `gh` 向 GitHub 查询 PR 和检查，以及你用 `admiral send` 发给本机 Codex 对话的消息：
+  经 `codex queue`，或者在它干活时写进一个文件，由插件的 hook 交给它。不调用任何模型，不上传任何东西。
 
 ## 为什么不花 token
 

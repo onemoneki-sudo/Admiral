@@ -1854,6 +1854,40 @@ class Relay(World):
         self.assertTrue(ok, msg)
         self.assertEqual(calls, [["codex", "queue", "--thread", "t-1", "--message", "brief: see /tmp/brief.md"]])
 
+    def test_send_reaches_a_working_codex_session_at_its_next_call(self):
+        from admiral import codex, relay
+        self.register("exec-codex", worktree="/w/app/wt1", lead="Commander-A")
+        self.codex("t-1", "SessionStart", "UserPromptSubmit")
+        ok, msg = relay.send(self.cfg, "exec-codex", "stop: use the new schema", self.starts, run=None)
+        self.assertTrue(ok, msg)
+        self.assertIn("next call", msg)  # not queued: a long turn would read it only at its end
+        event = {"session_id": "t-1", "hook_event_name": "PreToolUse", "cwd": "/w/app/wt1", "tool_use_id": "c1",
+                 "tool_input": {"command": "make migrate"}}
+        blocked = codex.hook(self.cfg, event, self.starts, find_pid=lambda: 50, name_of=lambda s: "", now=NOW)
+        self.assertIn("stop: use the new schema", blocked)
+        self.assertIn("not run", blocked)
+        self.assertEqual(self.codex_record("t-1")["running"], {})  # the call never ran: nothing waits for its end
+        again = codex.hook(self.cfg, dict(event, tool_use_id="c2"), self.starts, find_pid=lambda: 50,
+                           name_of=lambda s: "", now=NOW)
+        self.assertIsNone(again)  # handed over once
+
+    def test_a_message_left_when_the_turn_ends_goes_to_the_next_turn(self):
+        from admiral import codex
+        self.codex("t-1", "SessionStart", "UserPromptSubmit")
+        codex.post(self.cfg, "t-1", "Commander-A", "also check the docs")
+        stop = {"session_id": "t-1", "hook_event_name": "Stop", "cwd": "/w/app/wt1"}
+        queued = []
+        codex.hook(self.cfg, stop, self.starts, find_pid=lambda: 50, name_of=lambda s: "", now=NOW,
+                   requeue=lambda sid, text: queued.append((sid, text)) or True)
+        self.assertEqual(queued, [("t-1", "From Commander-A: also check the docs")])
+        self.assertFalse(os.path.exists(codex.inbox_path(self.cfg, "t-1")))
+        codex.post(self.cfg, "t-1", "Commander-A", "and the tests")
+        codex.hook(self.cfg, stop, self.starts, find_pid=lambda: 50, name_of=lambda s: "", now=NOW,
+                   requeue=lambda sid, text: False)  # Codex did not take it: the next turn's first call does
+        pre = {"session_id": "t-1", "hook_event_name": "PreToolUse", "cwd": "/w/app/wt1", "tool_use_id": "c1"}
+        self.assertIn("and the tests", codex.hook(self.cfg, pre, self.starts, find_pid=lambda: 50,
+                                                  name_of=lambda s: "", now=NOW))
+
     def test_send_tells_a_claude_session_from_a_missing_one(self):
         from admiral import relay
         self.session(7, "claude-worker")

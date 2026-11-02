@@ -2,8 +2,9 @@
 returns as soon as a member reports.
 
 Claude Code sessions message each other with Claude Code's own tool, and nothing outside Claude Code can put a
-message into one, so `send` serves Codex sessions, through `codex queue`: a session open in a terminal takes the
-message up within seconds, one that is closed when it is resumed. An executor reports with `admiral state`, whatever
+message into one, so `send` serves Codex sessions: one at work takes the message at its next call, which the
+plugin's hook stops to hand it over; any other through `codex queue`, a session open in a terminal within seconds,
+one that is closed when it is resumed. An executor reports with `admiral state`, whatever
 its agent; its commander, run in the background, `admiral wait` ends when one does, or starts waiting for the person,
 or ends a turn, and Claude Code tells a session when a command it left in the background exits. Which session a name
 means is decided as the board decides it (board.attach), so a message never goes where the board would not show it.
@@ -73,10 +74,17 @@ def codex_thread(cfg, who, starts):
 
 
 def send(cfg, who, message, starts, run=subprocess.run):
-    """(ok, what happened)."""
+    """(ok, what happened). A session in the middle of a turn takes the message at its next call, through the
+    plugin's hook, rather than when the turn ends, which may be long after; any other is queued for its next turn."""
     thread, why = codex_thread(cfg, who, starts)
     if not thread:
         return False, why
+    if any(s.get("sessionId") == thread and s.get("status") in ("busy", "waiting")
+           for s in sessions_of(cfg, who, starts)):
+        names = registry.caller(cfg)[1]
+        codex.post(cfg, thread, names[0] if names else "", message)
+        return True, (f"left for {who} (Codex session {thread[:8]}), working now: it reads it at its next call, "
+                      "or at its next turn if this one ends first")
     r = run(["codex", "queue", "--thread", thread, "--message", message], capture_output=True, text=True,
             stdin=subprocess.DEVNULL, timeout=60)
     if r.returncode != 0:

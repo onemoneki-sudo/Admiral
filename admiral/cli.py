@@ -1,6 +1,7 @@
 """The `admiral` command.
 
     admiral register --who NAME [--task T] [--branch B] [--worktree PATH] [--files F] [--lead COMMANDER]
+                     [--agent codex]   codex: a Codex session registered from outside it, as a commander does
     admiral state    --who NAME --phase PHASE [--note TEXT]
     admiral done     --who NAME
     admiral list
@@ -11,7 +12,8 @@
     admiral board    [--now | --write] [--no-github]   the latest board; --now builds it afresh, --write publishes
     admiral statusline           the Claude Code status line (reads the session's JSON on stdin)
     admiral codex-hook           what the plugin's Codex hooks run: records the Codex session (its event on stdin)
-    admiral send NAME MESSAGE    put a message into the Codex session NAME (Claude Code sessions: SendMessage)
+    admiral send NAME MESSAGE    put a message into the Codex session NAME, at its next call while it works
+                                 (Claude Code sessions: SendMessage)
     admiral wait [--who NAME]... [--lead COMMANDER] [--timeout SECONDS]   return when a member reports, waits for
                                  the person, ends a turn or ends; run it in the background to hear of it
     admiral lock ...             shared-resource locks (`admiral lock status`; see admiral/lock.sh)
@@ -61,6 +63,8 @@ def main(argv=None):
     for f in ("--task", "--branch", "--worktree", "--files", "--lead"):
         r.add_argument(f, default="")
     r.add_argument("--who", required=True)
+    r.add_argument("--agent", choices=["claude", "codex"], default="",
+                   help="codex: a Codex session, registered for it from outside Codex, never as this session")
     s = sub.add_parser("state")
     s.add_argument("--who", required=True)
     s.add_argument("--phase", required=True)
@@ -102,18 +106,24 @@ def main(argv=None):
         sys.exit(doctor.main())
     if a.cmd == "codex-hook":
         try:  # a hook must never stand in Codex's way: whatever goes wrong, it says nothing and lets Codex go on
-            codex.hook(config.load(), json.load(sys.stdin), sessions.proc_starts)
+            blocked = codex.hook(config.load(), json.load(sys.stdin), sessions.proc_starts)
         except Exception:
-            pass
+            blocked = None
+        if blocked:  # messages left for the session: Codex hands the model this instead of running the call
+            print(blocked, file=sys.stderr)
+            sys.exit(2)
         return
     cfg = config.load()
 
     if a.cmd == "register":
-        reg = registry.register(cfg, a.who, a.task, a.branch, a.worktree, a.files, a.lead)
+        reg = registry.register(cfg, a.who, a.task, a.branch, a.worktree, a.files, a.lead, a.agent)
         sid, names = registry.caller(cfg)
         if reg.get("sessionId") and a.who not in names:  # itself, under another name: the board knows it anyway
             print(f"registered {a.who}, for this session ({names[0] if names else sid[:8]})")
             warn_not_running(cfg, a.lead)
+        elif a.agent == "codex":
+            warn_not_running(cfg, a.lead)  # the Codex session itself may well not be open yet
+            print(f"registered {a.who}")
         else:
             warn_not_running(cfg, a.who, a.lead)
             print(f"registered {a.who}")

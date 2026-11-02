@@ -37,14 +37,15 @@ Where the project's own rules differ from this playbook, the project's rules win
 - Numbers the batch's work must not repeat (a migration's, a version's) are handed out with the dispatch.
 - Learn progress from the board (`admiral board`), not by asking each session.
 - An executor may be a Codex session, alone or beside Claude Code ones in one batch. Register it yourself before it
-  starts, its worktree included (`admiral register --who <name> --worktree <path> --lead "<commander name>"`): the
-  board knows a Codex session without a name by its directory. Give the person the command that opens it there with
-  its brief (`codex -C <worktree> "Read <brief> and start"`); send it decisions with `admiral send <name>
-  "<message>"`, as Claude Code's own messages reach only Claude Code sessions. Its board row shows when it waits for
-  the person's approval once the person has trusted the plugin's hooks in Codex.
-- A Codex window takes a message only when its turn ends, one at a time, starts no turn by itself once one ends, and
-  after Esc leaves its queue unread: it suits work the person watches or approves as it goes. For long work, run the
-  executor in the background a segment at a time instead, `codex exec` and then `codex exec resume <session> "<next
+  starts, its worktree included (`admiral register --who <name> --agent codex --worktree <path> --lead "<commander
+  name>"`; without `--agent codex` a session that is not named as a commander registers itself): the board knows a
+  Codex session without a name by its directory. Give the person the command that opens it there with its brief
+  (`codex -C <worktree> "Read <brief> and start"`); send it decisions with `admiral send <name> "<message>"`, as
+  Claude Code's own messages reach only Claude Code sessions. One at work reads the message at its next call, which
+  the plugin's hook stops to hand it over; one between turns, when its next turn starts. Its board row shows when it
+  waits for the person's approval once the person has trusted the plugin's hooks in Codex.
+- A Codex window starts no turn by itself once one ends: it suits work the person watches or approves as it goes.
+  For long work, run the executor in the background a segment at a time instead, `codex exec` and then `codex exec resume <session> "<next
   step>" -o <result file> </dev/null` under a time limit, a new session for each task and small segments, since
   resuming sends the whole session again; you hear when each segment's command exits. Nobody can approve a call
   there, so what it needs is allowed beforehand. Codex's sandbox does not let it write the main repository's `.git`,
@@ -52,6 +53,11 @@ Where the project's own rules differ from this playbook, the project's rules win
   runs with full access, guarded by the project's PreToolUse hooks, which must block a call outright, as nobody is
   there to answer one that asks. Hooks run there as in a window, once trusted; a background run cannot ask, so after
   an Admiral update trust them in a window first.
+- Its brief names the few reasons it must stop: a hook or a rule blocked it, or going on would leave the brief's
+  scope. Anything else that fails on the way (a query, a tool it may not use) it judges within the rules and says how
+  in its report: told to stop at any failure, a Codex executor stops at the first one, however minor.
+- A segment stopped by its pid leaves what it started running (a server, a test run) and its locks held. The next
+  segment's first step is to find its own locks and processes and clean them up before going on.
 - Executors report with `admiral state`. Rather than check on them, leave `admiral wait --lead "<commander name>"`
   running in the background: it returns when a member reports, starts waiting for the person, ends a turn or ends,
   and you hear of it then. With nothing to report it returns at its time limit (`--timeout`, an hour by default);
