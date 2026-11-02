@@ -10,8 +10,8 @@ reaches people only when the version moves.
 **Codex**
 - `admiral send` reaches a Codex session in the middle of its turn: the message waits for its next call, which the
   plugin's PreToolUse hook stops, handing the model the message instead, so a long turn no longer runs on the old
-  plan until it ends. A session between turns gets it through `codex queue`, as before, and so does one whose turn
-  ends before another call. Codex asks you to trust the hooks again.
+  plan until it ends; a turn about to end before another call goes on with it. A session between turns gets it
+  through `codex queue`, as before. Codex asks you to trust the hooks again.
 - `admiral register --agent codex` registers a Codex session from a Claude Code session that is not named as a
   commander; without it the registration was taken as that session's own, and the board tied the Codex executor to
   it.

@@ -8,7 +8,6 @@ import os
 import shutil
 import sys
 import tempfile
-import time
 import unittest
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
@@ -1872,25 +1871,20 @@ class Relay(World):
                            name_of=lambda s: "", now=NOW)
         self.assertIsNone(again)  # handed over once
 
-    def test_a_message_left_when_the_turn_ends_goes_to_the_next_turn(self):
+    def test_a_turn_about_to_end_goes_on_with_the_messages_left_for_it(self):
         from admiral import codex
         self.codex("t-1", "SessionStart", "UserPromptSubmit")
         self.assertEqual(codex.post(self.cfg, "t-1", "Commander-A", "also check the docs", self.starts), "left")
         stop = {"session_id": "t-1", "hook_event_name": "Stop", "cwd": "/w/app/wt1"}
-        queued = []
-        codex.hook(self.cfg, stop, self.starts, find_pid=lambda: 50, name_of=lambda s: "", now=NOW,
-                   requeue=lambda sid, text, timeout: queued.append((sid, text)) or True)
-        self.assertEqual(queued, [("t-1", "From Commander-A: also check the docs")])
-        self.assertFalse(os.path.exists(codex.inbox_path(self.cfg, "t-1")))
-        self.codex("t-1", "UserPromptSubmit")
-        codex.post(self.cfg, "t-1", "Commander-A", "and the tests", self.starts)
-        codex.hook(self.cfg, stop, self.starts, find_pid=lambda: 50, name_of=lambda s: "", now=NOW,
-                   requeue=lambda sid, text, timeout: False)  # Codex did not take it: the next turn's first call does
-        pre = {"session_id": "t-1", "hook_event_name": "PreToolUse", "cwd": "/w/app/wt1", "tool_use_id": "c1"}
-        self.assertIn("and the tests", codex.hook(self.cfg, pre, self.starts, find_pid=lambda: 50,
-                                                  name_of=lambda s: "", now=NOW))
+        went_on = codex.hook(self.cfg, stop, self.starts, find_pid=lambda: 50, name_of=lambda s: "", now=NOW)
+        self.assertIn("From Commander-A: also check the docs", went_on)
+        self.assertEqual(self.codex_record("t-1")["status"], "busy")  # still at work, so a send still waits for it
+        self.assertIsNone(codex.hook(self.cfg, stop, self.starts, find_pid=lambda: 50, name_of=lambda s: "",
+                                     now=NOW))  # nothing more: the turn ends
+        self.assertEqual(self.codex_record("t-1")["status"], "idle")
+        self.assertEqual(codex.post(self.cfg, "t-1", "Commander-A", "next", self.starts), "")  # for codex queue
 
-    def test_a_message_never_waits_in_the_inbox_of_a_session_between_turns(self):
+    def test_a_message_goes_to_the_inbox_only_while_the_session_works(self):
         from admiral import codex
         self.codex("t-1", "SessionStart", "UserPromptSubmit", "Stop")
         self.assertEqual(codex.post(self.cfg, "t-1", "lead", "hi", self.starts), "")  # for codex queue instead
@@ -1898,11 +1892,11 @@ class Relay(World):
         self.codex("t-1", "SessionStart", "UserPromptSubmit", pid=51)  # a second process of the session
         codex.post(self.cfg, "t-1", "lead", "for whichever calls next", self.starts)
         stop = {"session_id": "t-1", "hook_event_name": "Stop", "cwd": "/w/app/wt1"}
-        codex.hook(self.cfg, stop, self.starts, find_pid=lambda: 51, name_of=lambda s: "", now=NOW,
-                   requeue=lambda *a: self.fail("queued while process 50 still works"))
-        pre = {"session_id": "t-1", "hook_event_name": "PreToolUse", "cwd": "/w/app/wt1", "tool_use_id": "c1"}
-        self.assertIn("for whichever calls next", codex.hook(self.cfg, pre, self.starts, find_pid=lambda: 50,
+        self.assertIn("for whichever calls next", codex.hook(self.cfg, stop, self.starts, find_pid=lambda: 51,
                                                              name_of=lambda s: "", now=NOW))
+        pre = {"session_id": "t-1", "hook_event_name": "PreToolUse", "cwd": "/w/app/wt1", "tool_use_id": "c1"}
+        self.assertIsNone(codex.hook(self.cfg, pre, self.starts, find_pid=lambda: 50, name_of=lambda s: "",
+                                     now=NOW))  # handed over once, to whichever process came first
 
     def test_messages_keep_their_order_and_none_is_dropped(self):
         from admiral import codex, registry, relay
@@ -1913,13 +1907,8 @@ class Relay(World):
         ok, msg = relay.send(self.cfg, "exec-codex", "one too many", self.starts, run=None)
         self.assertFalse(ok)
         self.assertIn("wait for exec-codex already", msg)  # refused, never an older one dropped
-        # a turn's end cut off while handing them on: the next call takes them, before any sent since
-        os.rename(codex.inbox_path(self.cfg, "t-1"), codex.handing_path(self.cfg, "t-1"))
-        codex.post(self.cfg, "t-1", "lead", "newest", self.starts)
-        old = time.time() - codex.HANDING_STALE - 1
-        os.utime(codex.handing_path(self.cfg, "t-1"), (old, old))
         box = codex.take(self.cfg, "t-1")
-        self.assertEqual([m["message"] for m in box], [f"m{n}" for n in range(codex.INBOX_MAX)] + ["newest"])
+        self.assertEqual([m["message"] for m in box], [f"m{n}" for n in range(codex.INBOX_MAX)])
 
     def test_send_tells_a_claude_session_from_a_missing_one(self):
         from admiral import relay

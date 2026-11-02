@@ -28,8 +28,6 @@ CODEX_HOME = os.environ.get("CODEX_HOME") or os.path.expanduser("~/.codex")
 # what Codex writes to a session's transcript once it goes on: a call's output, a message, the turn's end
 MOVED_ON = {"function_call_output", "custom_tool_call_output", "agent_message", "task_complete", "turn_aborted"}
 INBOX_MAX = 20  # messages left for one session and not yet taken: far more than a commander sends between two calls
-HANDING_STALE = 20  # seconds: messages a turn's end was handing on this long ago were cut off on the way
-ENDS = {"Stop": 6, "Interrupt": 1.5, "SessionEnd": 1.5}  # seconds `codex queue` may take, within each hook's deadline
 TAIL = 256 * 1024  # bytes of the transcript read from its end: far more than one call's worth
 
 
@@ -194,12 +192,6 @@ def inbox_path(cfg, sid):
     return os.path.join(sessions_dir(cfg), "inbox", os.path.basename(sid) + ".json")
 
 
-def handing_path(cfg, sid):
-    """Messages being handed to `codex queue` as a turn ends: kept until Codex has taken them, so a hook cut off in
-    between loses none (the next call takes them instead, when they have waited too long to be on their way)."""
-    return os.path.join(sessions_dir(cfg), "inbox", os.path.basename(sid) + ".handing.json")
-
-
 def working(cfg, sid, starts):
     """Whether a live process of this session is in the middle of a turn. Called with the records locked."""
     recs = [read_json(f) or {} for f in records_of(cfg, sid)]
@@ -211,7 +203,7 @@ def working(cfg, sid, starts):
 def post(cfg, sid, sender, message, starts, now=None):
     """Leave a message for a session in the middle of its turn, for its next call to take: "left"; "full" when
     INBOX_MAX wait already; "" when it is not working, for `codex queue` to take instead. Decided with the records
-    locked, so a turn that ends meanwhile hands the message on (end_turn) rather than leaving it behind."""
+    locked, so a turn that ends meanwhile either takes the message (record) or is seen to have ended."""
     with locked(cfg):
         if not working(cfg, sid, starts):
             return ""
@@ -224,47 +216,27 @@ def post(cfg, sid, sender, message, starts, now=None):
         return "left"
 
 
-def _remove(path):
-    try:
-        os.remove(path)
-    except FileNotFoundError:
-        pass
+def _take(cfg, sid):
+    """The messages left for a session, in the order they were sent, taken out. Called with the records locked."""
+    box = read_json(inbox_path(cfg, sid)) or []
+    if box:
+        os.remove(inbox_path(cfg, sid))
+    return box
 
 
-def take(cfg, sid, now=None):
-    """The messages left for a session, in the order they were sent, taken out: those a turn's end was handing on
-    only once that has plainly failed."""
+def take(cfg, sid):
     with locked(cfg):
-        box = []
-        handing = handing_path(cfg, sid)
-        if os.path.exists(handing) and (time.time() if now is None else now) - os.path.getmtime(handing) > HANDING_STALE:
-            box = read_json(handing) or []
-            _remove(handing)
-        inbox = read_json(inbox_path(cfg, sid)) or []
-        if inbox:
-            _remove(inbox_path(cfg, sid))
-        return box + inbox
-
-
-def end_turn(cfg, sid, starts, requeue, timeout):
-    """When a turn ends, the messages its calls did not take go to `codex queue`, for the session's next turn, unless
-    another process of the session still works and will take them. Those Codex does not take wait for the next call."""
-    with locked(cfg):
-        inbox = read_json(inbox_path(cfg, sid)) or []
-        if not inbox or working(cfg, sid, starts):
-            return
-        box = (read_json(handing_path(cfg, sid)) or []) + inbox
-        write_json(handing_path(cfg, sid), box)
-        _remove(inbox_path(cfg, sid))
-    taken = requeue(sid, said(box), timeout)
-    with locked(cfg):
-        if not taken:  # back in front of any sent since, in the order they were sent
-            write_json(inbox_path(cfg, sid), box + (read_json(inbox_path(cfg, sid)) or []))
-        _remove(handing_path(cfg, sid))
+        return _take(cfg, sid)
 
 
 def said(box):
     return "\n\n".join(f"From {m.get('from') or 'your commander'}: {m.get('message', '')}" for m in box)
+
+
+def turn_on(box):
+    """What a turn kept going for messages tells the model."""
+    return (f"Admiral: before you end this turn, read {'a message' if len(box) == 1 else 'messages'} sent to you "
+            f"while you worked.\n\n{said(box)}\n\nAct on it, then end the turn.")
 
 
 def letter(box):
@@ -274,42 +246,35 @@ def letter(box):
             "it still fits.")
 
 
-def queue(sid, text, timeout=6):
-    """Put a message into a Codex session for its next turn; whether Codex took it."""
-    try:
-        return subprocess.run(["codex", "queue", "--thread", sid, "--message", text], capture_output=True,
-                              stdin=subprocess.DEVNULL, timeout=timeout).returncode == 0
-    except (OSError, subprocess.TimeoutExpired):
-        return False
-
-
-def hook(cfg, event, starts, find_pid=codex_pid, name_of=thread_name, now=None, requeue=queue):
+def hook(cfg, event, starts, find_pid=codex_pid, name_of=thread_name, now=None):
     """Record what one Codex hook event says of its session, in the record of the Codex process the hook runs under;
-    SessionEnd removes that record. Returns what blocks the call, for a PreToolUse that finds messages left for the
-    session: the model reads them at once instead of at its turn's end. Those still there when the turn ends are
-    queued for the next one (end_turn)."""
+    SessionEnd removes that record. Returns what blocks the event, when messages were left for the session: a call
+    (PreToolUse) is not run, and the model reads them at once instead of at its turn's end; a turn about to end
+    (Stop) goes on with them. Messages still there when a session is interrupted or ends wait for its next call."""
     sid, kind = str(event.get("session_id") or ""), event.get("hook_event_name") or ""
     if not sid or "/" in sid or sid.startswith(".") or (kind not in STATUS and kind != "SessionEnd"):
         return None
-    if kind == "PreToolUse" and (os.path.exists(inbox_path(cfg, sid)) or os.path.exists(handing_path(cfg, sid))):
-        box = take(cfg, sid, now)
+    if kind == "PreToolUse" and os.path.exists(inbox_path(cfg, sid)):
+        box = take(cfg, sid)
         if box:
             return letter(box)  # the call does not run, so nothing of it is recorded
-    record(cfg, sid, kind, event, starts, find_pid, name_of, now)
-    if kind in ENDS and os.path.exists(inbox_path(cfg, sid)):
-        end_turn(cfg, sid, starts, requeue, ENDS[kind])  # after the record says the turn is over, so post() agrees
-    return None
+    return record(cfg, sid, kind, event, starts, find_pid, name_of, now)
 
 
 def record(cfg, sid, kind, event, starts, find_pid, name_of, now):
     pid = find_pid()
-    if pid is None:
-        return
-    proc_start = (starts([pid]).get(pid) or (None,))[0]
+    proc_start = (starts([pid]).get(pid) or (None,))[0] if pid is not None else None
     if not proc_start:  # without it a reused pid could pass for this session, and the record could never be pruned
-        return
+        if kind == "Stop" and os.path.exists(inbox_path(cfg, sid)):
+            box = take(cfg, sid)
+            return turn_on(box) if box else None
+        return None
     path = record_path(cfg, sid, pid)
     with locked(cfg):
+        if kind == "Stop":  # taken with the turn's end recorded, so post() either sees it working or not at all
+            box = _take(cfg, sid)
+            if box:
+                return turn_on(box)  # the turn goes on: the session is still working
         if kind == "SessionEnd":
             try:
                 os.remove(path)

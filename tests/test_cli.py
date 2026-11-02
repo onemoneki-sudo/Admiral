@@ -1,5 +1,6 @@
 """The `admiral` command end to end, on a temporary state directory."""
 
+import itertools
 import json
 import os
 import shlex
@@ -279,13 +280,14 @@ class Cli(unittest.TestCase):
                            text=True, env=self.env)
         self.assertEqual(r.returncode, 2)
         self.assertIn("From lead: switch to plan B", r.stderr)
-        # what the plugin's PreToolUse hook runs passes that on, and lets every other outcome through
+        # what the plugin's PreToolUse and Stop hooks run passes that on, and lets every other outcome through
         with open(os.path.join(ROOT, "plugin", "codex", "hooks.json")) as fh:
-            command = json.load(fh)["hooks"]["PreToolUse"][0]["hooks"][0]["command"]
+            hooks = json.load(fh)["hooks"]
         home = os.path.join(self.dir, "home")
         os.makedirs(os.path.join(home, ".local", "bin"))
         fake = os.path.join(home, ".local", "bin", "admiral")
-        for code, want in ((2, 2), (1, 0), (0, 0)):
+        for (code, want), event in itertools.product(((2, 2), (1, 0), (0, 0)), ("PreToolUse", "Stop")):
+            command = hooks[event][0]["hooks"][0]["command"]
             with open(fake, "w") as fh:
                 fh.write(f"#!/bin/sh\necho said >&2\nexit {code}\n")
             os.chmod(fake, 0o755)
