@@ -1,6 +1,6 @@
 {
   "name": "admiral",
-  "version": "0.2.16",
+  "version": "0.2.17",
   "description": "Admiral's playbook skills for running many coding-agent sessions on one repository",
   "author": {
     "name": "Admiral contributors"
