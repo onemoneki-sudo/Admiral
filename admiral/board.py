@@ -386,6 +386,23 @@ def owned(cfg, views, starts):
     return regs, plans, anyone
 
 
+def attached(cfg, starts=sessions.proc_starts):
+    """(session, its registration or None) for each running process of a configured project, attached as that
+    project's board attaches it, from the registrations that are its project's: what `admiral send` and `admiral
+    wait` go by, so a name means the session the board shows under it."""
+    if cfg.projects:
+        views = [cfg.for_project(p) for p in cfg.projects]
+        regs = owned(cfg, views, starts)[0]
+    else:
+        views, regs = [cfg], {cfg.project: registry.registrations(cfg)}
+    out = []
+    for v in views:
+        live, _, _, elsewhere = sessions.load(v, starts)
+        current = {s.get("name") for s in live + elsewhere if s.get("name")}  # wherever a session runs
+        out += zip(live, attach(live, regs[v.project], current, elsewhere))
+    return out
+
+
 def combine(cfg, views, boards):
     """One board of each project's: counts summed, progress over all, every row and batch saying its project, and
     each project's notes and source problems led by its name."""

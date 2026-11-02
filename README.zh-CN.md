@@ -319,6 +319,7 @@ admiral plan add | rm | list | close            总指挥的计划
 admiral send <名字> "<消息>"                     往 Codex 对话里发消息，它正在干活时下一次调用就收到
                                                 （Claude Code 对话用 SendMessage）
 admiral wait [--who <名字>]... [--lead <总指挥>]  成员回报、等你、做完一轮或结束时返回
+             [--timeout <秒>] [--quiet <秒>]   （--quiet：或者一直在干活、这么久没回报）
 admiral board [--now | --write] [--no-github]   最新的面板，Markdown 格式（--now 现场重新生成）
 admiral statusline                              状态栏（从标准输入读 Claude Code 的 JSON）
 admiral lock acquire | release | status | port  共享资源的锁

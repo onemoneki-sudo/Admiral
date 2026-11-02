@@ -25,10 +25,9 @@ def registration(cfg, who):
 
 
 def attached(cfg, starts):
-    """(session, its registration or None) for each running session, read once for any number of names."""
-    live, _, _, elsewhere = sessions.load(cfg, starts)
-    current = {s.get("name") for s in live + elsewhere if s.get("name")}
-    return list(zip(live, board.attach(live, registry.registrations(cfg), current, elsewhere)))
+    """(session, its registration or None) for each running session of every configured project, read once for any
+    number of names, as the board has them (board.attached)."""
+    return board.attached(cfg, starts)
 
 
 def sessions_of(cfg, who, starts, pairs=None):
@@ -60,8 +59,7 @@ def codex_thread(cfg, who, starts):
         return named, ""
     wt = board.first((reg or {}).get("worktree"))
     if wt:
-        live = sessions.load(cfg, starts)[0]
-        here = {s["sessionId"] for s in live if s.get("agent") == "codex"
+        here = {s["sessionId"] for s, _ in attached(cfg, starts) if s.get("agent") == "codex"
                 and os.path.realpath(s.get("cwd") or "/nonexistent") == os.path.realpath(wt)}
         if here:
             return "", (f"{len(here)} Codex sessions run in {wt} and none is {who} for certain; register each under "
@@ -136,18 +134,32 @@ def changes(before, after):
     return out
 
 
-def wait(cfg, who=(), lead="", timeout=3600, interval=5, starts=None, sleep=time.sleep, clock=time.monotonic):
+def silent(after, waited):
+    """The members at work, one line each, once the wait has gone `waited` seconds with no report from any: a report
+    would have ended it."""
+    span = f"{int(waited // 60)} minutes" if waited >= 120 else f"{int(waited)} seconds"
+    return [f"{who}: working, with no report for {span}" for who, (_, status, _) in after.items()
+            if status in ("busy", "shell")]
+
+
+def wait(cfg, who=(), lead="", timeout=3600, interval=5, starts=None, sleep=time.sleep, clock=time.monotonic,
+         quiet=0):
     """The changes once any watched member reports, starts waiting for the person, ends a turn, ends or closes its
     registration, or a new one registers under the commander; [] when nothing did within `timeout` seconds. A member
-    watched at the start stays watched after it leaves the commander's registrations, so its last word is heard."""
+    watched at the start stays watched after it leaves the commander's registrations, so its last word is heard.
+    With `quiet` (seconds), the wait also ends once it has gone that long, on `clock`, with a member at work: one going
+    in circles, or off its brief, says nothing of it."""
     starts = starts or sessions.proc_starts
     first_names = watched(cfg, who, lead)
     before = snapshot(cfg, first_names, starts)
-    end = clock() + timeout
+    began = clock()
+    end = began + timeout
     while clock() < end:
         sleep(interval)
         names = first_names + [n for n in watched(cfg, who, lead) if n not in first_names]
-        found = changes(before, snapshot(cfg, names, starts))
+        after = snapshot(cfg, names, starts)
+        waited = clock() - began
+        found = changes(before, after) or (silent(after, waited) if quiet and waited >= quiet else [])
         if found:
             return found
     return []
