@@ -352,6 +352,7 @@ admiral plan add | rm | list | close            commanders' plans
 admiral send <name> "<message>"                 a message into a Codex session, at its next call while it works
                                                 (Claude Code's: SendMessage)
 admiral wait [--who <name>]... [--lead <c>]     return when a member reports, waits for you, ends a turn or ends
+             [--timeout <s>] [--quiet <s>]      (--quiet: or works on without a report for that long)
 admiral board [--now | --write] [--no-github]   the latest board as Markdown (--now builds it afresh)
 admiral statusline                              the status line (reads Claude Code's JSON on stdin)
 admiral lock acquire | release | status | port  shared-resource locks

@@ -77,6 +77,12 @@ Where the project's own rules differ from this playbook, the project's rules win
   again each time, so you wake to move the batch along even through a night when nobody reports. Each time it
   returns, read every member's state (`admiral list`), not only the lines it printed: it hears what changes while it
   runs, so a report made before you started it again wakes nothing.
+- While an executor works in the background with nobody watching, add `--quiet <seconds>` (half an hour, say): the
+  wait also returns once it has gone that long with no report and a member at work, which is how one going in circles
+  or off its brief shows, as it says nothing of it. Keep `--timeout` longer than that (the
+  hour it has by default): each wait counts afresh, so a shorter one would end before the quiet time is up, every
+  time. Each time it returns, read its board row and its log, then let it go on, correct it with `admiral send`, or
+  stop it by its pid.
 
 ## Sizing a batch
 

@@ -7,6 +7,12 @@ reaches people only when the version moves.
 
 ## Unreleased
 
+**Commanders**
+- `admiral wait --quiet <seconds>` also returns when a member at work has reported nothing for that long, so an
+  executor going in circles in the background, which says nothing of it, wakes its commander.
+- `admiral wait` and `admiral send` find a member working in any configured project. With several `[[projects]]`
+  they looked only in the first one's directories, so `admiral wait` never heard an executor of another.
+
 **Playbook**
 - roles: a background Codex segment runs to where a Claude Code executor would stop too, instead of being cut small;
   in auto mode, start full-access Codex through one fixed launcher script the person allows; an executor stuck after

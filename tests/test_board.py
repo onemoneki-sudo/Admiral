@@ -1984,6 +1984,53 @@ class Relay(World):
         found = self.watch([report_and_leave], lead="Commander-A")
         self.assertEqual(found, ["exec-codex: registration closed"])
 
+    def test_wait_and_send_find_a_member_of_another_project(self):
+        # with several projects the configuration's own directories are the first one's: a member of another is
+        # still the one its registration names, and a session outside every project is claimed by no worktree
+        from admiral import codex, relay
+        data = config.merge(self.cfg.data, {"projects": [
+            {"name": "Shop", "dirs": ["/w/app"], "repo_dir": "/w/app"},
+            {"name": "Tool", "dirs": ["/w/tool"], "repo_dir": "/w/tool"}]})
+        data["sessions"]["project_dirs"] = []  # only [[projects]], as a configuration written for them has it
+        self.cfg = config.Config(data)
+        self.register("exec-tool", worktree="/w/tool/wt1", lead="Commander-A")
+        self.codex("t-9", "SessionStart", "UserPromptSubmit", cwd="/w/tool/wt1")
+        found = self.watch([lambda: self.codex("t-9", "PermissionRequest", cwd="/w/tool/wt1")], lead="Commander-A")
+        self.assertEqual(found, ["exec-tool: waiting for the person (an approval or a question)"])
+        self.codex("t-9", "PostToolUse", cwd="/w/tool/wt1")
+        ok, msg = relay.send(self.cfg, "exec-tool", "use plan B", self.starts, run=None)
+        self.assertTrue(ok, msg)
+        self.assertEqual([m["message"] for m in codex.take(self.cfg, "t-9")], ["use plan B"])
+        self.register("exec-out", worktree="/outside/wt", lead="Commander-B")
+        self.codex("t-7", "SessionStart", "UserPromptSubmit", cwd="/outside/wt", pid=70)
+        self.assertEqual(relay.sessions_of(self.cfg, "exec-out", self.starts), [])
+        for dirs in ([], ["/w/app"], ["/w/stale"]):  # whatever the configuration's own, older directories say
+            data["sessions"]["project_dirs"] = dirs
+            self.cfg = config.Config(data)
+            with self.subTest(project_dirs=dirs):
+                self.assertEqual(relay.sessions_of(self.cfg, "exec-out", self.starts), [])
+                self.assertEqual([x["sessionId"] for x in relay.sessions_of(self.cfg, "exec-tool", self.starts)],
+                                 ["t-9"])
+
+    def test_wait_hears_a_member_at_work_that_has_said_nothing_for_long(self):
+        import itertools
+        from admiral import registry, relay
+        self.register("exec-codex", worktree="/w/app/wt1", lead="Commander-A")
+        self.register("exec-idle", worktree="/w/app/wt2", lead="Commander-A")
+        self.codex("t-1", "SessionStart", "UserPromptSubmit", pid=50)
+        self.codex("t-2", "SessionStart", "UserPromptSubmit", "Stop", pid=51, cwd="/w/app/wt2")
+        def wait(**kw):  # each look at the clock ten minutes on; the wall clock is never read
+            kw.setdefault("sleep", lambda s: None)
+            return relay.wait(self.cfg, lead="Commander-A", timeout=6000, starts=self.starts,
+                              clock=itertools.count(0, 600).__next__, **kw)
+        # the idle one is not at work, and the busy one is heard only once the whole quiet time has gone by
+        self.assertEqual(wait(quiet=1800), ["exec-codex: working, with no report for 40 minutes"])
+        self.assertEqual(wait(), [])  # off unless asked for
+        # a report on the way ends the wait as a report, before the quiet time is up
+        steps = [lambda: registry.set_phase(self.cfg, "exec-codex", "working", "stuck: tried a, b; next: c")]
+        self.assertEqual(wait(quiet=1800, sleep=lambda s: steps.pop(0)() if steps else None),
+                         ["exec-codex: reported working: stuck: tried a, b; next: c"])
+
     def test_wait_hears_either_process_of_one_conversation(self):
         self.register("exec-codex", worktree="/w/app/wt1", lead="Commander-A")
         self.codex("t-1", "SessionStart", pid=50)

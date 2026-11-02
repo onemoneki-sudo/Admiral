@@ -91,6 +91,8 @@ def main(argv=None):
     wt.add_argument("--who", action="append", default=[])
     wt.add_argument("--lead", default="")
     wt.add_argument("--timeout", type=float, default=3600)
+    wt.add_argument("--quiet", type=float, default=0,
+                    help="also return when a member at work has reported nothing for this many seconds")
     f = sub.add_parser("focus")
     f.add_argument("tty")
     sub.add_parser("where")
@@ -181,7 +183,7 @@ def main(argv=None):
     elif a.cmd == "wait":
         if not a.who and not a.lead:
             sys.exit("admiral wait needs --who NAME (one or more) or --lead COMMANDER")
-        found = relay.wait(cfg, a.who, a.lead, timeout=a.timeout)
+        found = relay.wait(cfg, a.who, a.lead, timeout=a.timeout, quiet=a.quiet)
         print("\n".join(found) if found else f"nothing changed in {a.timeout / 60:g} minutes")
     elif a.cmd == "statusline":
         from . import statusline
