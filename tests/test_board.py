@@ -96,14 +96,15 @@ class World(unittest.TestCase):
         with open(os.path.join(self.root, "locks", name, "owner"), "w", encoding="utf-8") as fh:
             fh.write(f"who={who}\npid=1\n")
 
-    def codex(self, sid, *events, cwd="/w/app/wt1", name="", pid=50, start=START, now=NOW):
-        """A Codex session, as the plugin's hooks record it on these events: each an event name, or (name, fields)."""
+    def codex(self, sid, *events, cwd="/w/app/wt1", name="", pid=50, start=START, now=NOW, home=""):
+        """A Codex session, as the plugin's hooks record it on these events: each an event name, or (name, fields);
+        `home` is the directory Codex's own thread list keeps for it."""
         from admiral import codex
         for e in events:
             kind, fields = e if isinstance(e, tuple) else (e, {})
             codex.hook(self.cfg, {"session_id": sid, "hook_event_name": kind, "cwd": cwd, **fields},
                        starts=lambda pids: {p: (start, f"ttys{p:03d}") for p in pids if start},
-                       find_pid=lambda: pid, name_of=lambda s: name, now=now)
+                       find_pid=lambda: pid, name_of=lambda s: name, now=now, home_of=lambda s: home)
 
     def codex_record(self, sid, pid=50):
         from admiral import codex, registry
@@ -1932,6 +1933,36 @@ class Relay(World):
         found = relay.wait(self.cfg, who=["exec-codex"], timeout=60, interval=1, starts=self.starts,
                            sleep=lambda s: steps.pop(0)() if steps else None, clock=iter(range(100)).__next__)
         self.assertEqual(found, ["exec-codex: waiting for the person (an approval or a question)"])
+
+    def test_a_call_run_in_another_directory_leaves_the_session_where_it_is(self):
+        # what Codex gives a call's hooks as cwd is the call's workdir: a session running a test from a tools folder
+        # was taken for one that had left its worktree, and its commander heard that its session ended
+        from admiral import relay
+        self.session(1, "Commander-A")
+        self.register("exec-codex", worktree="/w/app/wt1", lead="Commander-A")
+        self.codex("t-1", "SessionStart", "UserPromptSubmit")
+        elsewhere = {"cwd": "/w/app/tools/tests", "tool_use_id": "c1", "tool_input": {"command": "python3 -m unittest"}}
+        steps = [lambda: self.codex("t-1", ("PreToolUse", elsewhere)),
+                 lambda: self.codex("t-1", ("PermissionRequest", elsewhere)),
+                 lambda: self.codex("t-1", ("PostToolUse", elsewhere))]
+        found = relay.wait(self.cfg, lead="Commander-A", timeout=6, interval=1, starts=self.starts,
+                           sleep=lambda s: steps.pop(0)() if steps else None, clock=iter(range(100)).__next__)
+        self.assertEqual(found, ["exec-codex: waiting for the person (an approval or a question)"])
+        found = relay.wait(self.cfg, lead="Commander-A", timeout=6, interval=1, starts=self.starts,
+                           sleep=lambda s: steps.pop(0)() if steps else None, clock=iter(range(100)).__next__)
+        self.assertEqual(found, [])  # back at work, in its worktree all along: nothing ended
+        self.assertEqual(self.codex_record("t-1")["cwd"], "/w/app/wt1")
+        member = self.group(self.build(use_gh=False), "Commander-A")["members"][0]
+        self.assertEqual((member["name"], member["status"]), ("exec-codex", "busy"))
+        # resumed from another directory, the session is there
+        self.codex("t-1", "SessionStart", cwd="/w/app/wt2")
+        self.assertEqual(self.codex_record("t-1")["cwd"], "/w/app/wt2")
+
+    def test_a_record_a_call_begins_has_the_directory_codex_keeps_for_the_session(self):
+        self.codex("t-1", ("PreToolUse", {"cwd": "/w/app/tools", "tool_use_id": "c1"}), home="/w/app/wt1")
+        self.assertEqual(self.codex_record("t-1")["cwd"], "/w/app/wt1")
+        self.codex("t-2", ("PreToolUse", {"cwd": "/w/app/tools", "tool_use_id": "c1"}), pid=51)
+        self.assertEqual(self.codex_record("t-2", 51)["cwd"], "/w/app/tools")  # Codex keeps none: the call's it is
 
     def test_wait_gives_up_quietly(self):
         from admiral import relay
