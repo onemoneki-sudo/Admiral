@@ -5,7 +5,7 @@ Each version says what changed for someone using Admiral. The version lives in `
 Claude Code keeps an installed plugin in its cache, one copy per version, so a change to the sidebar or the playbook
 reaches people only when the version moves.
 
-## Unreleased
+## 0.2.15 (2026-11-02)
 
 **Codex**
 - `admiral send` reaches a Codex session in the middle of its turn: the message waits for its next call, which the
