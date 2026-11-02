@@ -12,6 +12,10 @@ reaches people only when the version moves.
   call's hooks that directory as the session's, so an executor registered by its worktree, running a test from a
   tools folder, was shown as no longer running, and `admiral wait` told its commander that its session had ended.
 
+**Playbook**
+- pipeline: work that picks things out (the tests a change affects, a filter) is accepted also on what it must leave
+  out; accepted only on what it must pick, a tool that picked everything passed.
+
 ## 0.2.19 (2026-11-02)
 
 **Locks**
