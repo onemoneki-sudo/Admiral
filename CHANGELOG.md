@@ -5,7 +5,7 @@ Each version says what changed for someone using Admiral. The version lives in `
 Claude Code keeps an installed plugin in its cache, one copy per version, so a change to the sidebar or the playbook
 reaches people only when the version moves.
 
-## Unreleased
+## 0.2.19 (2026-11-02)
 
 **Locks**
 - `admiral run --lock 'pg-1|pg-2'` (quoted) takes whichever of the locks comes free first, waiting in line at each and leaving
