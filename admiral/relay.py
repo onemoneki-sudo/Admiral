@@ -79,10 +79,11 @@ def send(cfg, who, message, starts, run=subprocess.run):
     thread, why = codex_thread(cfg, who, starts)
     if not thread:
         return False, why
-    if any(s.get("sessionId") == thread and s.get("status") in ("busy", "waiting")
-           for s in sessions_of(cfg, who, starts)):
-        names = registry.caller(cfg)[1]
-        codex.post(cfg, thread, names[0] if names else "", message)
+    names = registry.caller(cfg)[1]
+    left = codex.post(cfg, thread, names[0] if names else "", message, starts)
+    if left == "full":
+        return False, f"{codex.INBOX_MAX} messages wait for {who} already; it has made no call since they were sent"
+    if left:
         return True, (f"left for {who} (Codex session {thread[:8]}), working now: it reads it at its next call, "
                       "or at its next turn if this one ends first")
     r = run(["codex", "queue", "--thread", thread, "--message", message], capture_output=True, text=True,

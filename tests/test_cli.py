@@ -270,9 +270,10 @@ class Cli(unittest.TestCase):
         self.assertEqual(reg["agent"], "codex")
 
     def test_the_codex_hook_stops_a_call_to_hand_over_a_message(self):
-        from admiral import codex, config
+        from admiral import codex, config, registry
         cfg = config.load(self.env["ADMIRAL_CONFIG"])
-        codex.post(cfg, "t-9", "lead", "switch to plan B")
+        os.makedirs(os.path.dirname(codex.inbox_path(cfg, "t-9")))
+        registry.write_json(codex.inbox_path(cfg, "t-9"), [{"from": "lead", "message": "switch to plan B"}])
         event = json.dumps({"session_id": "t-9", "hook_event_name": "PreToolUse", "tool_use_id": "c1"})
         r = subprocess.run([sys.executable, "-m", "admiral", "codex-hook"], input=event, capture_output=True,
                            text=True, env=self.env)

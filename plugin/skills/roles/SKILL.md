@@ -53,8 +53,8 @@ Where the project's own rules differ from this playbook, the project's rules win
   runs with full access, guarded by the project's PreToolUse hooks, which must block a call outright, as nobody is
   there to answer one that asks. Hooks run there as in a window, once trusted; a background run cannot ask, so after
   an Admiral update trust them in a window first.
-- Its brief names the few reasons it must stop: a hook or a rule blocked it, or going on would leave the brief's
-  scope. Anything else that fails on the way (a query, a tool it may not use) it judges within the rules and says how
+- Its brief names the few reasons it must stop: a hook or a rule refused what it was doing, or going on would leave
+  the brief's scope; a message handed over at a call is no refusal. Anything else that fails on the way (a query, a tool it may not use) it judges within the rules and says how
   in its report: told to stop at any failure, a Codex executor stops at the first one, however minor.
 - A segment stopped by its pid leaves what it started running (a server, a test run) and its locks held. The next
   segment's first step is to find its own locks and processes and clean them up before going on.
