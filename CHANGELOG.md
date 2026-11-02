@@ -5,7 +5,7 @@ Each version says what changed for someone using Admiral. The version lives in `
 Claude Code keeps an installed plugin in its cache, one copy per version, so a change to the sidebar or the playbook
 reaches people only when the version moves.
 
-## Unreleased
+## 0.2.17 (2026-11-02)
 
 **Commanders**
 - `admiral wait --quiet <seconds>` also returns when a member at work has reported nothing for that long, so an
@@ -16,7 +16,8 @@ reaches people only when the version moves.
 **Playbook**
 - roles: a background Codex segment runs to where a Claude Code executor would stop too, instead of being cut small;
   in auto mode, start full-access Codex through one fixed launcher script the person allows; an executor stuck after
-  three different attempts reports `stuck:` and may go on, and the commander decides.
+  three different attempts reports `stuck:` and may go on, and the commander decides; each time `admiral wait`
+  returns, the commander reads every member's state, as a report made before it was started again wakes nothing.
 - wrapup: the batch summary has a line per executor (agent, model and effort, kind of task, rework, review findings
   that held, where it stuck), so the person can see over a few batches which work suits which.
 - principles: a changed choice upstream is checked against what depends on it downstream; a performance claim
