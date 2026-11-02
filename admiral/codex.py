@@ -270,6 +270,7 @@ def record(cfg, sid, kind, event, starts, find_pid, name_of, now):
             return turn_on(box) if box else None
         return None
     path = record_path(cfg, sid, pid)
+    name = name_of(sid) if kind != "SessionEnd" else ""  # read before the lock: other hooks wait while it is held
     with locked(cfg):
         if kind == "Stop":  # taken with the turn's end recorded, so post() either sees it working or not at all
             box = _take(cfg, sid)
@@ -315,7 +316,7 @@ def record(cfg, sid, kind, event, starts, find_pid, name_of, now):
             ms = old.get("statusUpdatedAt", ms)  # still waiting: since the wait began, which the transcript is read from
         write_json(path, {"pid": pid, "procStart": proc_start, "sessionId": sid,
                           "cwd": event.get("cwd") or old.get("cwd", ""), "status": status, "statusUpdatedAt": ms,
-                          "startedAt": old.get("startedAt", ms), "name": name_of(sid) or old.get("name", ""),
+                          "startedAt": old.get("startedAt", ms), "name": name or old.get("name", ""),
                           "pending": pending, "running": running, "asked": asked, "agent": "codex"})
         if kind == "SessionStart":
             prune(cfg, starts)

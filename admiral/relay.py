@@ -85,7 +85,7 @@ def send(cfg, who, message, starts, run=subprocess.run):
         return False, f"{codex.INBOX_MAX} messages wait for {who} already; it has made no call since they were sent"
     if left:
         return True, (f"left for {who} (Codex session {thread[:8]}), working now: it reads it at its next call, "
-                      "or at its next turn if this one ends first")
+                      "or before its turn ends")
     r = run(["codex", "queue", "--thread", thread, "--message", message], capture_output=True, text=True,
             stdin=subprocess.DEVNULL, timeout=60)
     if r.returncode != 0:
