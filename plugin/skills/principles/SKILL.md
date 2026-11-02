@@ -40,6 +40,8 @@ what you were told for this project, tell the person, who decides.
   fails for one that skips that point, and have the review look for ways around it. Two findings are one kind when
   they break the same invariant, wherever or however they failed. Where there is no such point, or making one is
   beyond the task, say so to whoever decides.
+- A changed choice upstream (a route, a data source, a provider, a model) is checked against what depends on it
+  downstream: the configuration, templates and schemas that assumed the old one.
 - Nothing grows without bound: a list, cache, rule or exemption that grows with time or with the number of problems
   gets a limit.
 - A step the rules already state that is still missed again and again becomes a tool or a check, not more words:
@@ -59,6 +61,8 @@ what you were told for this project, tell the person, who decides.
   actually checked.
 - **Every claim has evidence.** Say what was verified and what was not; keep "implemented", "tests pass", "accepted",
   "merged" and "released" apart.
+- **Compare like with like.** A performance claim measures both sides on the same real path, with the same data and
+  environment; a gain on a path the real use does not take is no gain.
 - **Verification cost matches risk.** Copy and simple configuration need little; computation, data mapping, caching,
   permissions and paths across modules need more. Prefer the smallest test that exposes the error.
 
@@ -77,7 +81,8 @@ already state that was missed anyway (see Building). At the end, these notes bec
 ## Writing for others
 
 PRs, issues and reports read on their own: what changed and why, how it was verified, its limits and state, with no
-chat context. Routine progress goes in the conversation; write a new document only when someone will read it, and
+chat context. Write them as a third party would: what the change does and the evidence for it, not how good it is.
+Routine progress goes in the conversation; write a new document only when someone will read it, and
 update an existing record rather than adding another.
 
 ## When to stop
