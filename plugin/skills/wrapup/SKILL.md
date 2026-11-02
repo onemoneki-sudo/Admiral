@@ -23,6 +23,9 @@ The session that owns the PR wraps up at once; if it has already been closed, it
 - The commander writes a short summary into the batch folder, the one thing the next batch reads: what merged, what
   was left and why, the decisions still in force, the pitfalls, and where any baseline the next batch needs is kept.
   A single task adds the same in a few lines at the end of its brief.
+- The summary has a line per executor: Claude Code or Codex, its model and effort, the kind of task, the rounds of
+  rework, the review findings that held and the notes on where it stuck. Over a few batches these lines show the
+  person which kind of work to give to which.
 - Work paused for days gets no summary: a few lines at the top of its brief say what merged, where unpushed branches
   and worktrees stand, and what is left, and it reports `paused`. On resuming, those lines, the code and the PRs are
   what count; older notes are background.
