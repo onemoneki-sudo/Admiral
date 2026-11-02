@@ -5,7 +5,7 @@ Each version says what changed for someone using Admiral. The version lives in `
 Claude Code keeps an installed plugin in its cache, one copy per version, so a change to the sidebar or the playbook
 reaches people only when the version moves.
 
-## Unreleased
+## 0.2.20 (2026-11-02)
 
 **Codex**
 - A Codex session that runs a command in another directory (a call's `workdir`) stays where it is. Codex gives a
