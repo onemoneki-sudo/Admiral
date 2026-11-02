@@ -235,15 +235,20 @@ def said(box):
 
 def turn_on(box):
     """What a turn kept going for messages tells the model."""
-    return (f"Admiral: before you end this turn, read {'a message' if len(box) == 1 else 'messages'} sent to you "
-            f"while you worked.\n\n{said(box)}\n\nAct on it, then end the turn.")
+    return (f"Admiral: before you end this turn: {heads(box)}\n\n{said(box)}\n\nAdjust to it, then carry on "
+            "until it is done.")
 
 
 def letter(box):
     """What a call stopped for messages tells the model: the messages, and that its call was not run."""
-    return (f"Admiral: this call was not run, so that you read {'a message' if len(box) == 1 else 'messages'} "
-            f"first. This is no refusal of the call.\n\n{said(box)}\n\nAct on it now; run the call again only if "
-            "it still fits.")
+    return (f"Admiral: this call was not run. {heads(box)}\n\n{said(box)}\n\nAdjust to it first, then carry on; "
+            "run the call again only if it still serves the new instruction.")
+
+
+def heads(box):
+    one = len(box) == 1
+    return (f"Your commander has sent {'a new instruction' if one else 'new instructions'}, which "
+            f"{'overrides' if one else 'override'} the plan you were following where they differ:")
 
 
 def hook(cfg, event, starts, find_pid=codex_pid, name_of=thread_name, now=None):
