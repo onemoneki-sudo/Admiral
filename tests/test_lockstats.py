@@ -73,11 +73,11 @@ class Recorded(unittest.TestCase):
         self.assertEqual([(r[1], r[2], r[4]) for r in got], [
             ("take", "db", "w1"), ("release", "db", "w1"), ("take", "db", "w2"), ("release", "db", "w2"),
             ("take", f"port-{port}", "w1")])
-        self.assertEqual(got[0][3], "0")  # it took a free lock at once
+        self.assertLess(int(got[0][3]), 10)  # it took a free lock at once: the tool's own second, at most, not a wait
         # seconds, not anything a hundred times larger: a loaded machine may take a while to start the waiter
         self.assertTrue(2 <= int(got[1][3]) <= 120, got[1])  # held while the other waited
         self.assertTrue(2 <= int(got[2][3]) <= 120, got[2])  # waited from joining the line until it was free
-        self.assertEqual(got[4][3], "0")
+        self.assertEqual(got[4][3], "0")  # a port is claimed, never waited for
 
     def test_a_run_s_wait_and_hold_are_recorded_under_its_own_name(self):
         self.assertEqual(self.admiral("run", "--lock", "heavy", "--who", "s t", "--", "sleep", "1").returncode, 0)
@@ -88,7 +88,8 @@ class Recorded(unittest.TestCase):
 
     def test_a_who_with_a_tab_or_a_newline_stays_one_record(self):
         self.assertEqual(self.admiral("lock", "acquire", "x", "--who", "a\tb\nc").returncode, 0)
-        self.assertEqual(self.records(), [[self.records()[0][0], "take", "x", "0", "a b c"]])
+        got = self.records()
+        self.assertEqual([(len(r), r[1], r[2], r[4]) for r in got], [(5, "take", "x", "a b c")])
 
     def test_only_the_three_latest_months_are_kept(self):
         for month in ("2020-01", "2020-02", "2020-03", "2020-04"):
@@ -120,7 +121,6 @@ class Recorded(unittest.TestCase):
             rows += [(start + 50 + i * 100, "take", "db-1", waited, "w"),
                      (start + 60 + i * 100, "release", "db-1", held, "w")]
         rows += [(start + 5 + i, "take", f"port-{8100 + i}", 0, "w") for i in range(3)]  # ports, one line
-        rows.append((now - 40 * 86400, "take", "heavy", 99999, "w"))  # before the 30 days
         self.write_history(time.strftime("%Y-%m"), sorted(rows))
         out = self.admiral("lock", "stats").stdout.splitlines()
         self.assertIn("over the last 30 days", out[0])
@@ -132,8 +132,66 @@ class Recorded(unittest.TestCase):
             ["port-*", "3", "0%", "-", "-", "-", "-", "-", "-"],
         ])
         self.assertTrue(any("2 more locks" in line for line in out), out)  # svc-a and svc-b, taken once each
-        wide = self.admiral("lock", "stats", "--days", "60").stdout
-        self.assertIn("27h46m", wide)  # the old wait of 99999 seconds, now within the days asked for
+
+    def test_stats_look_only_as_far_back_as_the_days_asked_for(self):
+        now = int(time.time())
+        self.write_history(time.strftime("%Y-%m"), [(now - 40 * 86400, "take", "heavy", 99999, "w")] +
+                           [(now - 100 + i, "take", "heavy", 0, "w") for i in range(3)])
+        self.assertNotIn("27h46m", self.admiral("lock", "stats").stdout)
+        self.assertIn("27h46m", self.admiral("lock", "stats", "--days", "60").stdout)  # the wait of 99999 seconds
+
+    def test_busy_counts_a_hold_still_going_and_only_the_time_recorded(self):
+        now = int(time.time())
+        # two holds of 100 seconds done, and one taken 600 seconds ago and still held: 800 of the 1000 recorded
+        self.write_history(time.strftime("%Y-%m"), [
+            (now - 1000, "take", "db", 0, "w"), (now - 900, "release", "db", 100, "w"),
+            (now - 800, "take", "db", 0, "w"), (now - 700, "release", "db", 100, "w"),
+            (now - 600, "take", "db", 0, "w")])
+        os.makedirs(os.path.join(self.locks, "db"))
+        with open(os.path.join(self.locks, "db", "owner"), "w") as fh:
+            fh.write(f"who=w\npid=\nsince={now - 600}\nttl=180\n")
+        row = [line.split() for line in self.admiral("lock", "stats").stdout.splitlines() if line.startswith("db ")]
+        self.assertEqual(row[0][-1], "80%", row)
+
+    def test_busy_counts_of_a_hold_begun_before_the_days_only_what_falls_within_them(self):
+        now = int(time.time())
+        start = now - 86400
+        rows = [(now - 2 * 86400, "take", "other", 0, "w"),  # the history goes back before the day asked for
+                (start + 3600, "release", "db", 7200, "w")]  # taken an hour before the day began
+        for i in range(3):
+            rows += [(start + 4000 + i * 1000, "take", "db", 0, "w"),
+                     (start + 4100 + i * 1000, "release", "db", 100, "w")]
+        self.write_history(time.strftime("%Y-%m"), rows)
+        out = self.admiral("lock", "stats", "--days", "1").stdout
+        row = [line.split() for line in out.splitlines() if line.startswith("db ")]
+        self.assertEqual(row[0][-1], "5%", out)  # 3600 + 300 of 86400 seconds
+
+    def test_ports_are_shown_however_few(self):
+        self.write_history(time.strftime("%Y-%m"), [(int(time.time()) - 10, "take", "port-8100", 0, "w")])
+        self.assertIn("port-*", self.admiral("lock", "stats").stdout)
+
+    def test_a_lock_name_with_a_tab_stays_one_record(self):
+        self.assertEqual(self.admiral("lock", "acquire", "heavy\t120", "--who", "w1").returncode, 0)
+        got = self.records()
+        self.assertEqual([(len(r), r[1], r[2]) for r in got], [(5, "take", "heavy 120")])
+        self.assertLess(int(got[0][3]), 10)  # not the 120 a tab in the name would have made of it
+
+    def test_a_history_that_cannot_be_written_says_nothing(self):
+        os.makedirs(os.path.join(self.locks, ".history"))
+        os.chmod(os.path.join(self.locks, ".history"), 0o500)
+        try:
+            r = self.admiral("lock", "acquire", "x", "--who", "w1", "--pid", str(os.getpid()))
+            self.assertEqual((r.returncode, r.stderr), (0, ""))
+            r = self.admiral("lock", "release", "x", "--who", "w1")
+            self.assertEqual((r.returncode, r.stderr), (0, ""))
+        finally:
+            os.chmod(os.path.join(self.locks, ".history"), 0o700)
+
+    def test_stats_refuse_days_that_are_not_a_number_of_days(self):
+        for days in ("nan", "inf", "1e309", "-1"):
+            r = self.admiral("lock", "stats", "--days", days)
+            self.assertEqual(r.returncode, 2, days)
+            self.assertNotIn("Traceback", r.stderr, days)
 
     def test_stats_without_a_history_say_so(self):
         r = self.admiral("lock", "stats")

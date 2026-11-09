@@ -24,22 +24,32 @@ FEW = 2  # locks taken this often or less, never waited for, are counted togethe
 PORT = re.compile(r"^port-\d+$")
 
 
-def read(locks_dir, since):
-    """(time, event, lock, seconds) of every record at or after `since`, in the order they were written."""
+def read(locks_dir):
+    """(time, event, lock, seconds) of every record kept, in the order they were written."""
     out = []
     for path in sorted(glob.glob(os.path.join(locks_dir, ".history", "[0-9]*-[0-9]*.log"))):
         try:
             with open(path, encoding="utf-8", errors="replace") as fh:
                 for line in fh:
                     parts = line.rstrip("\n").split("\t")
-                    if len(parts) < 4 or not parts[0].isdigit() or not parts[3].lstrip("-").isdigit():
+                    if len(parts) < 4 or not parts[0].isdigit() or not parts[3].isdigit():
                         continue  # a line cut short, or written by something else: not a record
-                    t = int(parts[0])
-                    if t >= since and parts[1] in ("take", "release"):
-                        out.append((t, parts[1], "port-*" if PORT.match(parts[2]) else parts[2], max(0, int(parts[3]))))
+                    if parts[1] in ("take", "release"):
+                        out.append((int(parts[0]), parts[1], "port-*" if PORT.match(parts[2]) else parts[2],
+                                    int(parts[3])))
         except OSError:
             continue
     return out
+
+
+def held_since(locks_dir, lock):
+    """When the lock's holder took it, if it is held now: a hold still going is part of how busy it was."""
+    try:
+        with open(os.path.join(locks_dir, lock, "owner")) as fh:
+            since = dict(line.rstrip("\n").split("=", 1) for line in fh if "=" in line).get("since", "")
+    except (OSError, ValueError):
+        return None
+    return int(since) if since.isdigit() else None
 
 
 def rank(values, share):
@@ -56,21 +66,33 @@ def span(seconds):
     return f"{seconds // 3600}h{seconds % 3600 // 60:02d}m"
 
 
-def table(records, now):
-    """(header lines, rows, the line for the few, the number of takes)."""
-    takes, holds = {}, {}
-    for _, event, lock, seconds in records:
-        (takes if event == "take" else holds).setdefault(lock, []).append(seconds)
+def table(records, start, now, locks_dir):
+    """(rows, the number of the few, the number of takes) over the records from `start` to `now`.
+
+    Waits and holds count by when they were recorded; how busy a lock was counts the part of each hold that falls
+    between `start` and `now`, the one going on now included, so a hold begun before `start` or not yet released
+    is neither counted whole nor left out."""
+    takes, holds, busy = {}, {}, {}
+    for t, event, lock, seconds in records:
+        if t < start:
+            continue
         takes.setdefault(lock, [])
-    first = min(t for t, *_ in records)
-    covered = max(1, now - first)
+        if event == "take":
+            takes[lock].append(seconds)
+        else:
+            holds.setdefault(lock, []).append(seconds)
+            busy[lock] = busy.get(lock, 0) + max(0, t - max(t - seconds, start))
+    covered = max(1, now - start)
     rows, few = [], 0
     for lock in takes:
         waits = [w for w in takes[lock] if w >= WAITED]
-        if not waits and len(takes[lock]) <= FEW:
+        if lock != "port-*" and not waits and len(takes[lock]) <= FEW:
             few += 1
             continue
         held = holds.get(lock, [])
+        since = None if lock == "port-*" else held_since(locks_dir, lock)
+        if since is not None and since < now:
+            busy[lock] = busy.get(lock, 0) + now - max(since, start)
         rows.append((-sum(waits), -len(takes[lock]), lock, [
             lock,
             str(len(takes[lock])),
@@ -80,26 +102,29 @@ def table(records, now):
             span(max(waits)) if waits else "-",
             span(rank(held, 0.5)) if held else "-",
             span(rank(held, 0.9)) if held else "-",
-            f"{round(100 * min(sum(held), covered) / covered)}%" if held and lock != "port-*" else "-",  # ports
-        ]))  # held at once are many locks: their holds added up would say nothing
+            # ports held at once are many locks: their holds added up would say nothing
+            f"{round(100 * min(busy[lock], covered) / covered)}%" if busy.get(lock) and lock != "port-*" else "-",
+        ]))
     rows.sort()
-    return first, [r[3] for r in rows], few, sum(len(v) for v in takes.values())
+    return [r[3] for r in rows], few, sum(len(v) for v in takes.values())
 
 
 def main(cfg, argv):
     ap = argparse.ArgumentParser(prog="admiral lock stats", description=__doc__.split("\n\n")[0])
     ap.add_argument("--days", type=float, default=30, help="how far back to look (default 30)")
     a = ap.parse_args(argv)
-    if a.days <= 0:
+    if not math.isfinite(a.days) or a.days <= 0:
         ap.error("--days is a number of days above 0")
     now = int(time.time())
     days = f"{a.days:g}"
-    records = read(cfg.locks_dir, now - int(a.days * 86400))
-    if not any(event == "take" for _, event, *_ in records):
+    records = read(cfg.locks_dir)
+    # from the days asked for, or from the first record where the history begins later
+    start = max(now - int(min(a.days, 36600) * 86400), min((t for t, *_ in records), default=now))
+    rows, few, n = table(records, start, now, cfg.locks_dir)
+    if not n:
         print(f"no lock taken in the last {days} days (each take and release is recorded from Admiral 0.2.22 on)")
         return 0
-    first, rows, few, n = table(records, now)
-    print(f"each lock over the last {days} days (recorded from {time.strftime('%Y-%m-%d %H:%M', time.localtime(first))}"
+    print(f"each lock over the last {days} days (recorded from {time.strftime('%Y-%m-%d %H:%M', time.localtime(start))}"
           f" on): {n} takes")
     head = ["lock", "taken", "waited", "wait p50", "p90", "max", "held p50", "p90", "busy"]
     widths = [max(len(r[i]) for r in rows + [head]) for i in range(len(head))]
