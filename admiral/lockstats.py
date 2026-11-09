@@ -1,0 +1,112 @@
+"""`admiral lock stats`: how often each lock was waited for, and how long it was waited for and held.
+
+    admiral lock stats [--days 30]
+
+It reads the history the lock tool keeps of each take and release (admiral/lock.sh: `<locks dir>/.history/
+<year>-<month>.log`, tab-separated time, take|release, lock, seconds, who), so that how many slots a resource gets,
+and how its line is ordered, follow from how often its takers waited rather than from a guess.
+
+A take counts as waited when its taker was in line WAITED seconds or more: a free lock is taken at once, and a loop
+that polls a busy one every few seconds should not count a single poll's delay. Port locks are one line (`port-*`).
+Locks taken at most twice and never waited for (a run per service, each under a name of its own) are counted
+together in one line.
+"""
+
+import argparse
+import glob
+import math
+import os
+import re
+import time
+
+WAITED = 10  # seconds in line from which a take counts as having waited
+FEW = 2  # locks taken this often or less, never waited for, are counted together
+PORT = re.compile(r"^port-\d+$")
+
+
+def read(locks_dir, since):
+    """(time, event, lock, seconds) of every record at or after `since`, in the order they were written."""
+    out = []
+    for path in sorted(glob.glob(os.path.join(locks_dir, ".history", "[0-9]*-[0-9]*.log"))):
+        try:
+            with open(path, encoding="utf-8", errors="replace") as fh:
+                for line in fh:
+                    parts = line.rstrip("\n").split("\t")
+                    if len(parts) < 4 or not parts[0].isdigit() or not parts[3].lstrip("-").isdigit():
+                        continue  # a line cut short, or written by something else: not a record
+                    t = int(parts[0])
+                    if t >= since and parts[1] in ("take", "release"):
+                        out.append((t, parts[1], "port-*" if PORT.match(parts[2]) else parts[2], max(0, int(parts[3]))))
+        except OSError:
+            continue
+    return out
+
+
+def rank(values, share):
+    """The nearest-rank percentile: the smallest value with at least `share` of them at or below it."""
+    values = sorted(values)
+    return values[max(0, math.ceil(share * len(values)) - 1)]
+
+
+def span(seconds):
+    if seconds < 60:
+        return f"{seconds}s"
+    if seconds < 3600:
+        return f"{round(seconds / 60)}m"
+    return f"{seconds // 3600}h{seconds % 3600 // 60:02d}m"
+
+
+def table(records, now):
+    """(header lines, rows, the line for the few, the number of takes)."""
+    takes, holds = {}, {}
+    for _, event, lock, seconds in records:
+        (takes if event == "take" else holds).setdefault(lock, []).append(seconds)
+        takes.setdefault(lock, [])
+    first = min(t for t, *_ in records)
+    covered = max(1, now - first)
+    rows, few = [], 0
+    for lock in takes:
+        waits = [w for w in takes[lock] if w >= WAITED]
+        if not waits and len(takes[lock]) <= FEW:
+            few += 1
+            continue
+        held = holds.get(lock, [])
+        rows.append((-sum(waits), -len(takes[lock]), lock, [
+            lock,
+            str(len(takes[lock])),
+            f"{round(100 * len(waits) / len(takes[lock]))}%" if takes[lock] else "-",
+            span(rank(waits, 0.5)) if waits else "-",
+            span(rank(waits, 0.9)) if waits else "-",
+            span(max(waits)) if waits else "-",
+            span(rank(held, 0.5)) if held else "-",
+            span(rank(held, 0.9)) if held else "-",
+            f"{round(100 * min(sum(held), covered) / covered)}%" if held and lock != "port-*" else "-",  # ports
+        ]))  # held at once are many locks: their holds added up would say nothing
+    rows.sort()
+    return first, [r[3] for r in rows], few, sum(len(v) for v in takes.values())
+
+
+def main(cfg, argv):
+    ap = argparse.ArgumentParser(prog="admiral lock stats", description=__doc__.split("\n\n")[0])
+    ap.add_argument("--days", type=float, default=30, help="how far back to look (default 30)")
+    a = ap.parse_args(argv)
+    if a.days <= 0:
+        ap.error("--days is a number of days above 0")
+    now = int(time.time())
+    days = f"{a.days:g}"
+    records = read(cfg.locks_dir, now - int(a.days * 86400))
+    if not any(event == "take" for _, event, *_ in records):
+        print(f"no lock taken in the last {days} days (each take and release is recorded from Admiral 0.2.22 on)")
+        return 0
+    first, rows, few, n = table(records, now)
+    print(f"each lock over the last {days} days (recorded from {time.strftime('%Y-%m-%d %H:%M', time.localtime(first))}"
+          f" on): {n} takes")
+    head = ["lock", "taken", "waited", "wait p50", "p90", "max", "held p50", "p90", "busy"]
+    widths = [max(len(r[i]) for r in rows + [head]) for i in range(len(head))]
+    for r in [head] + rows:
+        print("  ".join(c.ljust(w) if i == 0 else c.rjust(w) for i, (c, w) in enumerate(zip(r, widths))).rstrip())
+    if few:
+        print(f"and {few} more locks, each taken at most {FEW} times and never waited for")
+    print(f"waited: the takes that were in line {WAITED} seconds or more; wait: how long those were in line")
+    print("held: from take to release; busy: the share of the time recorded that it was held")
+    return 0

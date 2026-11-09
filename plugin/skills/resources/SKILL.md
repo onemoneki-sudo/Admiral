@@ -29,6 +29,8 @@ Where the project's own rules differ from this playbook, the project's rules win
 - If the lock is busy, queue (`admiral lock acquire --wait`); never go around it.
 - Name the locks after what the project actually shares, for example: one heavy slot for whole-suite and browser runs,
   a few slots for a test database, a few for model quota, and ports handed out by the tool rather than picked by hand.
+  How many slots a resource gets, and whether its line needs any order beyond short jobs first, follow from how often
+  and how long its takers waited (`admiral lock stats`), not from a guess.
 
 ## Queueing
 
