@@ -5,7 +5,7 @@ Each version says what changed for someone using Admiral. The version lives in `
 Claude Code keeps an installed plugin in its cache, one copy per version, so a change to the sidebar or the playbook
 reaches people only when the version moves.
 
-## Unreleased
+## 0.2.22 (2026-11-10)
 
 **Locks**
 - Each take of a lock is recorded with how long its taker waited in line, and each release with how long it was held
