@@ -5,6 +5,14 @@ Each version says what changed for someone using Admiral. The version lives in `
 Claude Code keeps an installed plugin in its cache, one copy per version, so a change to the sidebar or the playbook
 reaches people only when the version moves.
 
+## Unreleased
+
+**Locks**
+- A lock's waiting line goes with its last waiter. Every lock name ever taken left an empty line behind (`.q.<name>`
+  in the locks directory), so runs under a name of their own, one per service, left hundreds, and every acquire and
+  `admiral lock status` went through them all: with 860, a status took 20 seconds and each acquire most of a second
+  more. The next acquire or status clears the lines older versions left and those whose waiters have all gone.
+
 ## 0.2.20 (2026-11-02)
 
 **Codex**
