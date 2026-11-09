@@ -5,6 +5,18 @@ Each version says what changed for someone using Admiral. The version lives in `
 Claude Code keeps an installed plugin in its cache, one copy per version, so a change to the sidebar or the playbook
 reaches people only when the version moves.
 
+## Unreleased
+
+**Locks**
+- A lock's waiting line no longer outlives its waiters. Every lock name ever taken left an empty line behind
+  (`.q.<name>` in the locks directory), so runs under a name of their own, one per service, left hundreds, and every
+  acquire and `admiral lock status` went through them all: with 860, a status took 20 seconds and each acquire most
+  of a second more. Taking, releasing or leaving a lock, and `status`, now clear the lines that have been empty for
+  a minute, the ones older versions left among them. A waiter that has gone still leaves its line when that line is
+  next read, as before: a line whose only waiter died and whose lock is never taken again stays.
+- A waiter whose place in a line cannot be written is told so (`admiral lock queue` and `acquire` exit 2) rather
+  than told it is in line, and a priority that cannot be written says so and keeps the one the waiter had.
+
 ## 0.2.20 (2026-11-02)
 
 **Codex**
