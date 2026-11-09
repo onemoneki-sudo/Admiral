@@ -80,8 +80,9 @@ write_owner() {
     "--pid <pid>" >&2
 }
 record() { # $1 = take|release, $2 = lock, $3 = since when it waited or was held (none: not at all)
-  local h="$DIR/.history" d t s m w="${who//$'\t'/ }" l="${2//$'\t'/ }" all
-  w="${w//$'\n'/ }"; l="${l//$'\n'/ }"  # one line of five fields, whatever the names hold
+  local h="$DIR/.history" d t s m w="${who//$'\t'/ }" l="${2//"%"/%25}" all
+  w="${w//$'\n'/ }"; l="${l//$'\t'/%09}"; l="${l//$'\n'/%0A}"  # five fields whatever the names hold, the lock's
+  # name kept whole (lockstats.py reads it back), so two locks named alike stay two
   { d="$(date '+%s %Y-%m')"; t="${d% *}"; m="$h/${d#* }.log"  # one date for it all: a process each is slow
     case "${3:-}" in ''|*[!0-9]*) s=0;; *) s=$(( t - $3 )); [ $s -lt 0 ] && s=0;; esac
     if [ ! -e "$m" ]; then  # a new month: the history keeps the three latest
@@ -89,6 +90,7 @@ record() { # $1 = take|release, $2 = lock, $3 = since when it waited or was held
       all=( "$h"/[0-9][0-9][0-9][0-9]-[0-9][0-9].log )
       [ ${#all[@]} -gt 3 ] && rm -f "${all[@]:0:$(( ${#all[@]} - 3 ))}"
     fi
+    [ -f "$m" ] || return 0  # a pipe or a device there would hold the lock command up, perhaps for good
     printf '%s\t%s\t%s\t%s\t%s\n' "$t" "$1" "$l" "$s" "$w" >> "$m"
   } 2>/dev/null  # nothing of it on the lock command's output, nor in its exit
   return 0

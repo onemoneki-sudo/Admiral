@@ -173,7 +173,7 @@ class Recorded(unittest.TestCase):
     def test_a_lock_name_with_a_tab_stays_one_record(self):
         self.assertEqual(self.admiral("lock", "acquire", "heavy\t120", "--who", "w1").returncode, 0)
         got = self.records()
-        self.assertEqual([(len(r), r[1], r[2]) for r in got], [(5, "take", "heavy 120")])
+        self.assertEqual([(len(r), r[1], r[2]) for r in got], [(5, "take", "heavy%09120")])  # the name, coded
         self.assertLess(int(got[0][3]), 10)  # not the 120 a tab in the name would have made of it
 
     def test_a_history_that_cannot_be_written_says_nothing(self):
@@ -192,6 +192,62 @@ class Recorded(unittest.TestCase):
             r = self.admiral("lock", "stats", "--days", days)
             self.assertEqual(r.returncode, 2, days)
             self.assertNotIn("Traceback", r.stderr, days)
+
+    def own(self, lock, since):
+        os.makedirs(os.path.join(self.locks, lock.lstrip("/")))
+        with open(os.path.join(self.locks, lock.lstrip("/"), "owner"), "w") as fh:
+            fh.write(f"who=w\npid=\nsince={since}\nttl=180\n")
+
+    def row(self, name, *args):
+        out = self.admiral("lock", "stats", *args).stdout
+        found = [line.split() for line in out.splitlines() if line.split()[:1] == [name]]
+        self.assertEqual(len(found), 1, out)
+        return found[0]
+
+    def test_a_lock_held_since_before_the_days_asked_for_shows_it_busy_all_along(self):
+        now = int(time.time())
+        self.write_history(time.strftime("%Y-%m"), [(now - 3 * 86400, "take", "other", 0, "w"),
+                                                    (now - 2 * 86400, "take", "db", 0, "w")])
+        self.own("db", now - 2 * 86400)
+        self.assertEqual(self.row("db", "--days", "1")[1:3] + self.row("db", "--days", "1")[-1:], ["0", "-", "100%"])
+
+    def test_a_lock_released_within_the_days_after_a_long_hold_is_shown(self):
+        now = int(time.time())
+        self.write_history(time.strftime("%Y-%m"), [(now - 3 * 86400, "take", "other", 0, "w"),
+                                                    (now - 3600, "release", "db", 2 * 86400, "w")])
+        self.assertEqual(self.row("db", "--days", "1")[-1], "96%")  # 23 of the 24 hours
+
+    def test_records_written_after_now_make_no_negative_and_no_future_share(self):
+        now = int(time.time())
+        self.write_history(time.strftime("%Y-%m"), [(now + 100, "take", "db", 20, "w")])  # a clock put back
+        self.own("db", now - 1)
+        self.assertEqual(self.row("db")[-1], "0%")
+        self.write_history(time.strftime("%Y-%m"), [(now - 1000, "take", "q", 0, "w"),
+                                                    (now + 1000, "release", "q", 1500, "w")])  # ends after now
+        self.assertEqual(self.row("q")[-1], "50%")  # 500 of the 1000 seconds to now, not 1500
+
+    def test_a_lock_never_held_for_long_is_busy_zero_not_unknown(self):
+        now = int(time.time())
+        self.write_history(time.strftime("%Y-%m"), [(now - 100 + i, e, "db", 0, "w") for i in range(3)
+                                                    for e in ("take", "release")])
+        self.assertEqual(self.row("db")[-1], "0%")
+
+    def test_locks_named_alike_stay_apart_and_a_name_like_a_path_finds_its_owner(self):
+        for name in ("db\tA", "db A", "/db"):
+            self.assertEqual(self.admiral("lock", "acquire", name, "--who", "w1").returncode, 0)
+        self.assertEqual(sorted(r[2] for r in self.records()), ["/db", "db A", "db%09A"])
+        out = self.admiral("lock", "stats").stdout.splitlines()
+        self.assertEqual(len([line for line in out if line.startswith("db A ")]), 2, out)  # both held now, apart
+        self.assertTrue([line for line in out if line.startswith("/db ")], out)
+
+    def test_a_history_that_is_not_a_file_never_holds_up_a_lock(self):
+        os.makedirs(os.path.join(self.locks, ".history"))
+        os.mkfifo(os.path.join(self.locks, ".history", time.strftime("%Y-%m") + ".log"))  # nobody reads it
+        start = time.monotonic()
+        r = self.admiral("lock", "acquire", "x", "--who", "w1", "--pid", str(os.getpid()))
+        self.assertEqual((r.returncode, r.stderr), (0, ""))
+        self.assertEqual(self.admiral("lock", "release", "x", "--who", "w1").returncode, 0)
+        self.assertLess(time.monotonic() - start, 30)
 
     def test_stats_without_a_history_say_so(self):
         r = self.admiral("lock", "stats")
