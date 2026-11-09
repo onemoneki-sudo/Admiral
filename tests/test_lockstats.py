@@ -1,4 +1,4 @@
-"""What the lock tool records of each take and release, and `admiral lock stats`, against a state directory of its own."""
+"""What the lock tool records of each take and release, and `admiral lock stats`, on a state directory of its own."""
 
 import os
 import re
@@ -238,8 +238,9 @@ class Recorded(unittest.TestCase):
             self.assertEqual(self.admiral("lock", "acquire", name, "--who", "w1").returncode, 0)
         self.assertEqual(sorted(r[2] for r in self.records()), ["/db", "db A", "db%09A"])
         out = self.admiral("lock", "stats").stdout.splitlines()
-        for row in (r"db A\s+\d", r"db\\tA\s+\d", r"db\s+\d"):  # each held now, apart; /db is held as the directory
-            self.assertEqual(len([line for line in out if re.match(row, line)]), 1, (row, out))  # db, as the tool keeps it
+        # each held now, and apart; /db is held as the directory db, as the lock tool keeps it
+        for row in (r"db A\s+\d", r"db\\tA\s+\d", r"db\s+\d"):
+            self.assertEqual(len([line for line in out if re.match(row, line)]), 1, (row, out))
 
     def test_a_history_that_is_not_a_file_never_holds_up_a_lock(self):
         os.makedirs(os.path.join(self.locks, ".history"))
@@ -282,6 +283,7 @@ class Recorded(unittest.TestCase):
         self.assertNotIn("port-*", out)
 
     def test_stats_without_a_history_say_so(self):
+        self.own("held-before-the-history", int(time.time()) - 60)  # as on the day it is first installed
         r = self.admiral("lock", "stats")
         self.assertEqual(r.returncode, 0)
         self.assertIn("no lock taken in the last 30 days", r.stdout)

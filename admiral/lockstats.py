@@ -3,8 +3,8 @@
     admiral lock stats [--days 30]
 
 It reads the history the lock tool keeps of each take and release (admiral/lock.sh: `<locks dir>/.history/
-<year>-<month>.log`, tab-separated time, take|release, lock (coded %25, %09, %0A), seconds, who), so that how many slots a resource gets,
-and how its line is ordered, follow from how often its takers waited rather than from a guess.
+<year>-<month>.log`, tab-separated time, take|release, lock (coded %25, %09, %0A), seconds, who), so that how many
+slots a resource gets, and how its line is ordered, follow from how often its takers waited rather than a guess.
 
 A take counts as waited when its taker was in line WAITED seconds or more: a free lock is taken at once, and a loop
 that polls a busy one every few seconds should not count a single poll's delay. Port locks are one line (`port-*`).
@@ -145,11 +145,11 @@ def main(cfg, argv):
     # from the days asked for, or from the first record where the history begins later
     start = min(now, max(now - int(min(a.days, 36600) * 86400), min((t for t, *_ in records), default=now)))
     rows, few, n = table(records, start, now, cfg.locks_dir)
-    if not rows and not few:
+    if not records or not (rows or few):  # locks held now, with nothing recorded, say nothing yet
         print(f"no lock taken in the last {days} days (each take and release is recorded from Admiral 0.2.22 on)")
         return 0
-    print(f"each lock over the last {days} days (recorded from {time.strftime('%Y-%m-%d %H:%M', time.localtime(start))}"
-          f" on): {n} takes")
+    begun = time.strftime("%Y-%m-%d %H:%M", time.localtime(start))
+    print(f"each lock over the last {days} days (recorded from {begun} on): {n} takes")
     head = ["lock", "taken", "waited", "wait p50", "p90", "max", "held p50", "p90", "busy"]
     widths = [max(len(r[i]) for r in rows + [head]) for i in range(len(head))]
     for r in [head] + rows:
