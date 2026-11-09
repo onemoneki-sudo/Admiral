@@ -39,7 +39,8 @@ merge says why.
   take its lock first (see resources).
 - Find those tests by more than one route, as deep as the change warrants, since each misses something: its callers,
   traced by hand or with an impact tool once it has been checked on this project against changes whose affected tests
-  are known, and a search for the names and paths it touches.
+  are known, and a search for the names and paths it touches. A change whose affected test the tool left out, found
+  failing later (in CI, in review), joins those changes, so the tool is checked again with each miss, not once.
   Files read at run time rather than imported (SQL, templates, pages a browser test loads) have no callers and are
   found by their paths; a test that scans the whole tree or a registry is affected by any change to what it scans.
 - A change to behaviour people rely on (an answer, how data is read, a core interaction) is seen through its real entry
@@ -68,7 +69,9 @@ merge says why.
   it nothing ends with `</dev/null`.
 - Ask the model, besides for defects, whether the change serves the goal, stays within the brief and holds for every
   case of its kind. Where the repository has its own review prompt, use it, adding only those of these questions it
-  does not ask. Give the model the goal and the diff, not your conclusions, which would anchor it.
+  does not ask. Give the model the goal, the decisions the person has made as the brief records them (those made
+  during acceptance too), so that it does not report what they chose as a defect, and the diff; not your conclusions,
+  which would anchor it.
 - A change too large to review well at once has its first round in parts, each a complete piece of function given
   with its own commits and files; where two parts call each other or share data, the seam goes into one of them. The
   parts together make the first round.
@@ -83,8 +86,13 @@ merge says why.
 
 How and when is the person's call. A change in behaviour they will see or rely on is best shown at its real entry, on
 their data or a faithful copy, rather than described; they may accept it before the PR goes up, or merge it and accept
-it by using it, reporting what goes wrong. A commander brings its batch's PRs to the person together, not one by one.
-Docs, copy and mechanical changes need none. What changes during acceptance goes through steps 2 and 3 again.
+it by using it, reporting what goes wrong. Where you can, open it for them: a tab for each case, signed in as the
+account it needs and on the page to look at, with a line each on what to look at and what to expect. A browser shares
+a host's cookies across its ports, so environments or accounts open at once each need a host name of their own, or
+they sign each other out. A commander brings its batch's PRs to the person together, not one by one. Docs, copy and
+mechanical changes need none. What changes during acceptance has its affected tests as in development and, once
+acceptance ends, one review of all of it, narrowed to it as a fix is (see Review by a different model), not one for
+each change.
 
 ## 5. Push and PR
 

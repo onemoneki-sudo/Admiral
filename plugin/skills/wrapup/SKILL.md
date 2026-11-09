@@ -26,6 +26,12 @@ The session that owns the PR wraps up at once; if it has already been closed, it
 - The summary has a line per executor: Claude Code or Codex, its model and effort, the kind of task, the rounds of
   rework, the review findings that held and the notes on where it stuck. Over a few batches these lines show the
   person which kind of work to give to which.
+- It also counts, for each check the work went through (the tests, the review, the person's acceptance, CI, a
+  reviewer on the PR), what it caught that would have blocked the goal, with an example, since otherwise checks are
+  only ever added.
+  A check that caught nothing over three batches is proposed to the person for trimming, unless what it guards
+  against is rare and costly (security, permissions, data lost, money); what CI or a reviewer caught is traced back
+  to the local check that should have caught it.
 - Work paused for days gets no summary: a few lines at the top of its brief say what merged, where unpushed branches
   and worktrees stand, and what is left, and it reports `paused`. On resuming, those lines, the code and the PRs are
   what count; older notes are background.
