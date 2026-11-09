@@ -358,6 +358,7 @@ admiral wait [--who <name>]... [--lead <c>]     return when a member reports, wa
 admiral board [--now | --write] [--no-github]   the latest board as Markdown (--now builds it afresh)
 admiral statusline                              the status line (reads Claude Code's JSON on stdin)
 admiral lock acquire | release | status | port  shared-resource locks
+admiral lock stats [--days <n>]                 how often each lock was waited for, how long, and how long held
 admiral run --lock '<n>[|<n>]' --who <w> [--port] [--limit <min>] [--priority <p>] [--ready <check>] -- <command>
                                                 a command under locks (a|b: whichever is free), stopped whole at its
                                                 limit, locks released

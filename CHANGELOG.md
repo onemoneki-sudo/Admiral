@@ -5,6 +5,19 @@ Each version says what changed for someone using Admiral. The version lives in `
 Claude Code keeps an installed plugin in its cache, one copy per version, so a change to the sidebar or the playbook
 reaches people only when the version moves.
 
+## Unreleased
+
+**Locks**
+- Each take of a lock is recorded with how long its taker waited in line, and each release with how long it was held
+  (`<locks dir>/.history/<year>-<month>.log`, the three latest months kept). `admiral lock stats [--days 30]` shows,
+  for each lock, how often a take waited 10 seconds or more, how long those waited (median, 90th percentile, longest),
+  how long it was held, and the share of the time it was held: until now only how long a lock was held could be
+  seen, never whether anyone waited for it, so how many slots a resource needed was a guess.
+
+**Playbook**
+- resources: how many slots a resource gets, and whether its line needs any order beyond short jobs first, follow
+  from `admiral lock stats` rather than a guess.
+
 ## 0.2.21 (2026-11-09)
 
 **Locks**

@@ -17,7 +17,8 @@
     admiral wait [--who NAME]... [--lead COMMANDER] [--timeout SECONDS] [--quiet SECONDS]   return when a member
                                  reports, waits for the person, ends a turn or ends (or, with --quiet, works on
                                  without a report that long); run it in the background to hear of it
-    admiral lock ...             shared-resource locks (`admiral lock status`; see admiral/lock.sh)
+    admiral lock ...             shared-resource locks (`admiral lock status`; see admiral/lock.sh); `admiral lock
+                                 stats [--days N]`: how often and how long each was waited for, and held
     admiral run --lock 'NAME[|NAME]' --who WHO [--port] [--limit MIN] [--priority N] [--ready CHECK] -- COMMAND
                                  run a command under locks (a|b: whichever is free): its pid recorded on them,
                                  stopped whole at its limit, the locks released when it ends (`admiral run stop
@@ -54,6 +55,9 @@ def warn_not_running(cfg, *names):
 
 def main(argv=None):
     argv = sys.argv[1:] if argv is None else argv
+    if argv[:2] == ["lock", "stats"]:  # read from the history the lock tool keeps
+        from . import lockstats
+        sys.exit(lockstats.main(config.load(), argv[2:]))
     if argv[:1] == ["lock"]:  # handed to the lock tool whole, so its own options pass through untouched
         cfg = config.load()
         env = dict(os.environ, ADMIRAL_LOCKS_DIR=cfg.locks_dir,

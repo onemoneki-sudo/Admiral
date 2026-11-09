@@ -13,6 +13,13 @@
 #   admiral lock release <name> --who "<same who>"               only the holder releases
 #   admiral lock status                                          every lock, holder, age, stale or not
 #   admiral lock port    --who "<session> <task>" [--from 8100 --to 8199]   claim a free port, prints it
+#   admiral lock stats   [--days 30]                             how often each lock was waited for, and how
+#        long it was waited for and held (admiral/lockstats.py), from the history below
+#
+# History: each take (with how long its taker waited in line) and each release (with how long it was
+# held) is a line of $DIR/.history/<year>-<month>.log, tab-separated: time, take|release, lock (its %, tab
+# and newline coded %25, %09, %0A), seconds, who. The three latest months are kept. A history that cannot be
+# written never fails the lock.
 #
 # A lock is STALE (and acquire takes it over, saying so) when its recorded pid no longer runs,
 # or when it has no pid and is older than its ttl (default 180 minutes), which acquire and port warn of.
@@ -72,6 +79,27 @@ write_owner() {
   [ -n "$pid" ] || echo "warning: $1 has no pid, so after $ttl minutes it counts as stale and may be taken over" \
     "even while in use; record the process that uses it: admiral lock attach $(printf %q "$1") --who $(printf %q "$who")" \
     "--pid <pid>" >&2
+}
+record() { # $1 = take|release, $2 = lock, $3 = since when it waited or was held (none: not at all)
+  local h="$DIR/.history" d t s m w="${who//$'\t'/ }" l="${2//"%"/%25}" all
+  w="${w//$'\n'/ }"; l="${l//$'\t'/%09}"; l="${l//$'\n'/%0A}"  # five fields whatever the names hold, the lock's
+  # name kept whole (lockstats.py reads it back), so two locks named alike stay two
+  { d="$(date '+%s %Y-%m')"; t="${d% *}"; m="$h/${d#* }.log"  # one date for it all: a process each is slow
+    case "${3:-}" in ''|*[!0-9]*) s=0;; *) s=$(( t - $3 )); [ $s -lt 0 ] && s=0;; esac
+    if [ ! -e "$m" ]; then  # a new month: the history keeps the three latest
+      mkdir -p "$h" && : >> "$m" || return 0
+      all=( "$h"/[0-9][0-9][0-9][0-9]-[0-9][0-9].log )
+      [ ${#all[@]} -gt 3 ] && rm -f "${all[@]:0:$(( ${#all[@]} - 3 ))}"
+    fi
+    [ -f "$m" ] || return 0  # a pipe or a device there would hold the lock command up, perhaps for good
+    printf '%s\t%s\t%s\t%s\t%s\n' "$t" "$1" "$l" "$s" "$w" >> "$m"
+  } 2>/dev/null  # nothing of it on the lock command's output, nor in its exit
+  return 0
+}
+took() { # $1 = lock just taken, recorded with the wait of $me's place in its line, read before it goes
+  local from=""
+  read_entry "$Q/$me" && from=$(( e_arrival / 1000000 ))
+  record take "$1" "$from"
 }
 need_who() { [ -n "$who" ] || { echo "--who is required" >&2; exit 2; }; }
 need_name() { [ -n "$name" ] || { echo "lock name required" >&2; exit 2; }; }
@@ -220,12 +248,13 @@ case "$cmd" in
       first="$(first_waiter)"
       if [ -z "$first" ] || [ "${first##*/}" = "$me" ]; then
         if mkdir "$DIR/$name" 2>/dev/null; then
-          write_owner "$name"; drop_entry "$Q/$me"; leave_other_lines; tidy_lines; echo "acquired $name"; exit 0
+          write_owner "$name"; took "$name"; drop_entry "$Q/$me"; leave_other_lines; tidy_lines
+          echo "acquired $name"; exit 0
         fi
         if is_stale "$DIR/$name"; then
           was="$(describe "$DIR/$name")"
           if takeover "$name"; then
-            drop_entry "$Q/$me"; leave_other_lines; tidy_lines
+            took "$name"; drop_entry "$Q/$me"; leave_other_lines; tidy_lines
             echo "taking over stale lock: $was"; echo "acquired $name"; exit 0
           fi
         fi
@@ -270,6 +299,7 @@ case "$cmd" in
   release)
     need_who; [ -d "$DIR/$name" ] || { echo "$name is not held"; exit 0; }
     [ "$(field "$DIR/$name" who)" = "$who" ] || { echo "not the holder of $name: $(describe "$DIR/$name")" >&2; exit 1; }
+    record release "$name" "$(field "$DIR/$name" since)"
     rm -f "$DIR/$name/owner"; rmdir "$DIR/$name"; echo "released $name"; tidy_lines;;
   status)
     tidy_lines  # nothing in them to show, and the walk below took seconds over hundreds of them
@@ -284,8 +314,8 @@ case "$cmd" in
     need_who
     for p in $(seq "$from" "$to"); do
       lsof -nP -iTCP:"$p" -sTCP:LISTEN >/dev/null 2>&1 && continue
-      if mkdir "$DIR/port-$p" 2>/dev/null; then write_owner "port-$p"; echo "$p"; exit 0; fi
-      if is_stale "$DIR/port-$p" && takeover "port-$p"; then echo "$p"; exit 0; fi
+      if mkdir "$DIR/port-$p" 2>/dev/null; then write_owner "port-$p"; record take "port-$p"; echo "$p"; exit 0; fi
+      if is_stale "$DIR/port-$p" && takeover "port-$p"; then record take "port-$p"; echo "$p"; exit 0; fi
     done
     echo "no free port in $from-$to" >&2; exit 1;;
   *) echo "unknown command: $cmd" >&2; exit 2;;
