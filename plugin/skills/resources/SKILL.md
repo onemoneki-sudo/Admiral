@@ -17,7 +17,8 @@ Where the project's own rules differ from this playbook, the project's rules win
   `--port` for a free port, given as `$PORT`, and `--ready "<check>"`: the run returns once the check passes, and
   `admiral run stop --lock <name>` ends it with its locks. Start a service in the foreground (`postgres -D`, not
   `pg_ctl start`): one that turns itself into a daemon may slip out of what the run can stop, and the run says so
-  when its port is still taken afterwards.
+  when its port is still taken afterwards. A service that holds nothing scarce still runs under a lock named for it:
+  the name is what stops it, and how the board sees it running.
 - Where a project has several slots for one resource (two database slots, say), `--lock 'db-1|db-2'` (quoted) takes whichever
   comes free first, given as the run's only lock; the command learns which from `$ADMIRAL_LOCK`. `admiral run stop` names the lock actually held.
   A job expected to finish soon queues with `--priority` (see Queueing), as `admiral lock acquire` does.
@@ -42,7 +43,9 @@ Where the project's own rules differ from this playbook, the project's rules win
 ## When it was the machine, not the code
 
 When contention crashes a worker, times out a browser or slows everything, the run says nothing about the code: rerun
-it once the resource is free before investigating.
+it once the resource is free before investigating. A look at the machine as a lock is taken (free memory, a busy
+runner) says nothing of the run that follows; rather than add one, rely on that rerun, and add a check only where
+measurements show the condition happening and the check catching it.
 
 ## Real model calls
 

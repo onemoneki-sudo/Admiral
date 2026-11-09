@@ -17,6 +17,19 @@ reaches people only when the version moves.
 - A waiter whose place in a line cannot be written is told so (`admiral lock queue` and `acquire` exit 2) rather
   than told it is in line, and a priority that cannot be written says so and keeps the one the waiter had.
 
+**Playbook**
+- pipeline: what changes during acceptance gets one review, narrowed to all of it, once acceptance ends, rather than a
+  round for each change; the reviewing model is given the decisions the person has made, so it does not report what
+  they chose as a defect.
+- pipeline: acceptance is opened for the person where possible, a tab per case, signed in and on the page to look at;
+  environments or accounts open at once need host names of their own, as cookies are shared across ports.
+- pipeline: a test an impact tool left out that then failed joins the changes the tool is checked against.
+- wrapup: a batch's summary counts what each check caught, so that one catching nothing for three batches is proposed
+  for trimming (unless it guards against what is rare and costly) and what CI or a reviewer caught is traced back.
+- resources: a service that holds nothing scarce still runs under a lock named for it; a look at the machine as a lock
+  is taken says nothing of the run that follows, so a check is added only where measurements show it catching
+  something.
+
 ## 0.2.20 (2026-11-02)
 
 **Codex**
