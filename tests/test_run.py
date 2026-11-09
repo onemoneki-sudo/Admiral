@@ -346,46 +346,44 @@ class Run(unittest.TestCase):
         self.age(".q.left-1", ".q.left-2")
         os.makedirs(os.path.join(self.locks, ".q.fresh"))  # empty just now: a waiter may be coming in
         self.assertEqual(self.admiral("lock", "queue", "gone", "--who", "w gone", "--pid", str(dead.pid)).returncode, 0)
-        os.makedirs(os.path.join(self.locks, ".q.priority"))  # a commander's priority whose waiter has left
+        self.age(".q.gone")
+        os.makedirs(os.path.join(self.locks, ".q.priority"))  # a commander's priority, its waiter just leaving
         with open(os.path.join(self.locks, ".q.priority", ".prio.0123"), "w") as fh:
             fh.write("prio=5\nby=Commander-A\n")
         self.age(".q.priority/.prio.0123", ".q.priority")
-        os.makedirs(os.path.join(self.locks, ".q.writing"))  # a waiter writing its place just now
-        open(os.path.join(self.locks, ".q.writing", ".tmp.4321"), "w").close()
-        self.age(".q.writing")
+        for name, seconds in (("writing", 0), ("cut", 120)):  # a place being written, and one whose writer died
+            os.makedirs(os.path.join(self.locks, f".q.{name}"))
+            open(os.path.join(self.locks, f".q.{name}", ".tmp.4321"), "w").close()
+            self.age(f".q.{name}/.tmp.4321", seconds=seconds)
+            self.age(f".q.{name}")
         self.assertEqual(self.admiral("lock", "queue", "live", "--who", "w live", "--pid", str(os.getpid())).returncode,
                          0)
         self.age(".q.live")
         status = self.admiral("lock", "status").stdout
-        self.assertIn("w gone", status)  # shown once as it stood, then out of line
+        self.assertIn("w gone", status)
         self.assertIn("STALE", status)
+        self.assertEqual(self.lines(), [".q.cut", ".q.fresh", ".q.gone", ".q.live", ".q.priority", ".q.writing"])
+        self.assertEqual(os.listdir(os.path.join(self.locks, ".q.cut")), [])
+        self.assertEqual(os.listdir(os.path.join(self.locks, ".q.writing")), [".tmp.4321"])
+        self.assertEqual(os.listdir(os.path.join(self.locks, ".q.priority")), [".prio.0123"])  # never taken away
+        self.assertEqual((len(self.line("live")), len(self.line("gone"))), (1, 1))  # nor a waiter, though stale
+        # the stale waiter goes when its own line is next read, as ever, and the line once it has been empty a while
+        self.assertEqual(self.admiral("lock", "acquire", "gone", "--who", "w1").returncode, 0)
+        self.assertEqual(self.admiral("lock", "release", "gone", "--who", "w1").returncode, 0)
         self.assertEqual(self.line("gone"), [])
-        self.assertEqual(os.listdir(os.path.join(self.locks, ".q.priority")), [])
-        self.assertEqual(self.lines(), [".q.fresh", ".q.gone", ".q.live", ".q.priority", ".q.writing"])
-        self.assertEqual(len(self.line("live")), 1)
-        self.assertNotIn("w gone", self.admiral("lock", "status").stdout)
-        self.age(".q.gone", ".q.priority")
-        os.makedirs(os.path.join(self.locks, ".q.left-3"))
-        self.age(".q.left-3")
-        self.assertEqual(self.admiral("lock", "acquire", "other", "--who", "w1").returncode, 0)  # any acquire tidies too
-        self.assertEqual(self.lines(), [".q.fresh", ".q.live", ".q.other", ".q.writing"])  # its own, empty just now
+        self.age(".q.gone", ".q.cut")
+        self.assertEqual(self.admiral("lock", "status").returncode, 0)
+        self.assertEqual(self.lines(), [".q.fresh", ".q.live", ".q.priority", ".q.writing"])
 
-    def test_tidying_leaves_a_waiter_at_the_edge_of_the_rule_in_line(self):
-        # a waiter not seen for a little over the rule's two minutes may be coming back just now: the line's own
-        # first waiter drops it, not a status or an acquire elsewhere, which take only those gone well past it
-        import hashlib
-        now = int(time.time())
-        q = os.path.join(self.locks, ".q.edge")
-        os.makedirs(q)
-        for who, unseen in (("w edge", 180), ("w long gone", 900)):
-            with open(os.path.join(q, hashlib.md5(who.encode()).hexdigest()), "w") as fh:
-                fh.write(f"who={who}\npid={os.getpid()}\nprio=0\narrival={(now - unseen) * 10**6}\n"
-                         f"seen={now - unseen}\nttl=180\nkind=wait\n")
-        status = self.admiral("lock", "status").stdout
-        self.assertEqual(status.count("STALE"), 2, status)
-        self.assertNotIn("w long gone", self.admiral("lock", "status").stdout)
-        self.assertEqual(len(self.line("edge")), 1)
-        self.assertIn("w edge", self.admiral("lock", "status").stdout)
+    def test_taking_releasing_or_leaving_a_lock_tidies_too(self):
+        # not only a status: a machine where nobody looks at the locks still clears them
+        self.assertEqual(self.admiral("lock", "acquire", "held", "--who", "holder").returncode, 0)
+        for step in (("acquire", "other", "--who", "w1"), ("release", "other", "--who", "w1"),
+                     ("leave", "held", "--who", "w2"), ("release", "held", "--who", "holder")):
+            os.makedirs(os.path.join(self.locks, ".q.left"))
+            self.age(".q.left")
+            self.assertEqual(self.admiral("lock", *step).returncode, 0)
+            self.assertNotIn(".q.left", self.lines(), step)
 
     def test_a_place_that_cannot_be_written_fails_rather_than_claims_one(self):
         os.makedirs(self.locks)
@@ -395,6 +393,26 @@ class Run(unittest.TestCase):
         self.assertIn("could not write a place in the line for blocked", r.stderr)
         r = self.admiral("lock", "acquire", "blocked", "--who", "w1")
         self.assertEqual(r.returncode, 2, r.stdout)
+
+    def test_a_priority_that_cannot_be_written_keeps_the_one_it_had(self):
+        commanders = os.path.join(self.root, "state", "lock-commanders.txt")
+        os.makedirs(self.locks)
+        with open(commanders, "w") as fh:
+            fh.write("Commander-A\n")
+        self.assertEqual(self.admiral("lock", "queue", "heavy", "--who", "w1", "--pid", str(os.getpid())).returncode, 0)
+        set_to = lambda n, env=None: subprocess.run(
+            [sys.executable, "-m", "admiral", "lock", "prio", "heavy", "--who", "w1", "--priority", str(n), "--by",
+             "Commander-A"], capture_output=True, text=True, env=env or self.env, timeout=60)
+        self.assertEqual(set_to(8).returncode, 0)
+        broken = os.path.join(self.root, "broken")  # an mv that fails, as on a full disk
+        os.makedirs(broken)
+        with open(os.path.join(broken, "mv"), "w") as fh:
+            fh.write("#!/bin/sh\nexit 1\n")
+        os.chmod(os.path.join(broken, "mv"), 0o755)
+        r = set_to(9, dict(self.env, PATH=broken + os.pathsep + self.env["PATH"]))
+        self.assertEqual(r.returncode, 1)
+        self.assertIn("could not write the priority of w1", r.stderr)
+        self.assertIn("priority 8", self.admiral("lock", "status").stdout)
 
 
 if __name__ == "__main__":
