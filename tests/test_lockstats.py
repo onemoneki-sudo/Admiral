@@ -1,6 +1,7 @@
 """What the lock tool records of each take and release, and `admiral lock stats`, against a state directory of its own."""
 
 import os
+import re
 import shutil
 import subprocess
 import sys
@@ -237,8 +238,8 @@ class Recorded(unittest.TestCase):
             self.assertEqual(self.admiral("lock", "acquire", name, "--who", "w1").returncode, 0)
         self.assertEqual(sorted(r[2] for r in self.records()), ["/db", "db A", "db%09A"])
         out = self.admiral("lock", "stats").stdout.splitlines()
-        self.assertEqual(len([line for line in out if line.startswith("db A ")]), 2, out)  # both held now, apart
-        self.assertTrue([line for line in out if line.startswith("/db ")], out)
+        for row in (r"db A\s+\d", r"db\\tA\s+\d", r"db\s+\d"):  # each held now, apart; /db is held as the directory
+            self.assertEqual(len([line for line in out if re.match(row, line)]), 1, (row, out))  # db, as the tool keeps it
 
     def test_a_history_that_is_not_a_file_never_holds_up_a_lock(self):
         os.makedirs(os.path.join(self.locks, ".history"))
@@ -248,6 +249,37 @@ class Recorded(unittest.TestCase):
         self.assertEqual((r.returncode, r.stderr), (0, ""))
         self.assertEqual(self.admiral("lock", "release", "x", "--who", "w1").returncode, 0)
         self.assertLess(time.monotonic() - start, 30)
+
+    def test_stats_read_past_a_history_file_that_is_not_a_file(self):
+        now = int(time.time())
+        self.write_history("2020-01", [(now - 100 + i, "take", "db", 30, "w") for i in range(3)])
+        os.mkfifo(os.path.join(self.locks, ".history", time.strftime("%Y-%m") + ".log"))  # nobody writes it
+        r = subprocess.run([sys.executable, "-m", "admiral", "lock", "stats"], capture_output=True, text=True,
+                           env=self.env, timeout=30)
+        self.assertIn("db ", r.stdout)
+
+    def test_a_lock_held_now_is_shown_from_its_owner_even_without_a_take_on_record(self):
+        now = int(time.time())
+        self.write_history(time.strftime("%Y-%m"), [(now - 1000, "take", "other", 0, "w")]  # where it all begins
+                           + [(now - 900 + i, "take", "./db", 0, "w") for i in range(3)])  # the same lock, by a path
+        self.own("db", now - 500)  # its take older than the history kept, or never written
+        self.assertEqual(self.row("db")[-1], "50%")
+        self.assertEqual(self.row("./db")[-1], "-")  # held now once, under the name it is held by
+
+    def test_names_are_shown_apart_and_never_taken_for_a_port(self):
+        now = int(time.time())
+        rows = []
+        for coded in ("db A", "db%09A", "port-8100%0A"):
+            rows += [(now - 100 + i, "take", coded, 30, "w") for i in range(3)]
+        self.write_history(time.strftime("%Y-%m"), rows)
+        with open(os.path.join(self.locks, ".history", time.strftime("%Y-%m") + ".log"), "a", newline="") as fh:
+            fh.writelines(f"{now - 50 + i}\ttake\tdb\rA\t30\tw\n" for i in range(3))  # a carriage return, raw
+        out = self.admiral("lock", "stats").stdout
+        for start in ("db A ", "db\\tA ", "db\\rA ", "port-8100\\n "):
+            found = [line for line in out.splitlines() if line.startswith(start)]
+            self.assertEqual(len(found), 1, (start, out))
+            self.assertEqual(found[0][len(start):].split()[0], "3", out)  # its three takes, none lost or merged
+        self.assertNotIn("port-*", out)
 
     def test_stats_without_a_history_say_so(self):
         r = self.admiral("lock", "stats")

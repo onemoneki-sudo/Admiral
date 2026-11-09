@@ -17,8 +17,9 @@
 #        long it was waited for and held (admiral/lockstats.py), from the history below
 #
 # History: each take (with how long its taker waited in line) and each release (with how long it was
-# held) is a line of $DIR/.history/<year>-<month>.log, tab-separated: time, take|release, lock, seconds,
-# who. The three latest months are kept. A history that cannot be written never fails the lock.
+# held) is a line of $DIR/.history/<year>-<month>.log, tab-separated: time, take|release, lock (its %, tab
+# and newline coded %25, %09, %0A), seconds, who. The three latest months are kept. A history that cannot be
+# written never fails the lock.
 #
 # A lock is STALE (and acquire takes it over, saying so) when its recorded pid no longer runs,
 # or when it has no pid and is older than its ttl (default 180 minutes), which acquire and port warn of.

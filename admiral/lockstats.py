@@ -3,7 +3,7 @@
     admiral lock stats [--days 30]
 
 It reads the history the lock tool keeps of each take and release (admiral/lock.sh: `<locks dir>/.history/
-<year>-<month>.log`, tab-separated time, take|release, lock, seconds, who), so that how many slots a resource gets,
+<year>-<month>.log`, tab-separated time, take|release, lock (coded %25, %09, %0A), seconds, who), so that how many slots a resource gets,
 and how its line is ordered, follow from how often its takers waited rather than from a guess.
 
 A take counts as waited when its taker was in line WAITED seconds or more: a free lock is taken at once, and a loop
@@ -34,28 +34,42 @@ def read(locks_dir):
     """(time, event, lock, seconds) of every record kept, in the order they were written."""
     out = []
     for path in sorted(glob.glob(os.path.join(locks_dir, ".history", "[0-9]*-[0-9]*.log"))):
-        try:
-            with open(path, encoding="utf-8", errors="replace") as fh:
+        if not os.path.isfile(path):
+            continue  # a pipe there would hold the reading up, perhaps for good
+        try:  # lines end at a newline only: a carriage return in a who or a name is part of it
+            with open(path, encoding="utf-8", errors="replace", newline="\n") as fh:
                 for line in fh:
                     parts = line.rstrip("\n").split("\t")
                     if len(parts) < 4 or not parts[0].isdigit() or not parts[3].isdigit():
                         continue  # a line cut short, or written by something else: not a record
                     if parts[1] in ("take", "release"):
                         name = decoded(parts[2])
-                        out.append((int(parts[0]), parts[1], "port-*" if PORT.match(name) else name, int(parts[3])))
+                        out.append((int(parts[0]), parts[1], "port-*" if PORT.fullmatch(name) else name,
+                                    int(parts[3])))
         except OSError:
             continue
     return out
 
 
-def held_since(locks_dir, lock):
-    """When the lock's holder took it, if it is held now: a hold still going is part of how busy it was."""
-    try:
-        with open(f"{locks_dir}/{lock}/owner") as fh:  # as the lock tool joins them: a name may begin with /
-            since = dict(line.rstrip("\n").split("=", 1) for line in fh if "=" in line).get("since", "")
-    except (OSError, ValueError):
-        return None
-    return int(since) if since.isdigit() else None
+def held_now(locks_dir):
+    """{lock: when its holder took it} for every lock held now, by the name its directory has: a hold still going is
+    part of how busy a lock was, though its take be older than the history kept, or never written."""
+    out = {}
+    for owner in glob.glob(os.path.join(glob.escape(locks_dir), "*", "owner")):
+        lock = os.path.basename(os.path.dirname(owner))
+        try:
+            with open(owner) as fh:
+                since = dict(line.rstrip("\n").split("=", 1) for line in fh if "=" in line).get("since", "")
+        except (OSError, ValueError):
+            continue
+        if since.isdigit() and not PORT.fullmatch(lock):
+            out[lock] = int(since)
+    return out
+
+
+def shown(name):
+    """A name as one cell, told apart from every other: one with a control character or a backslash, escaped."""
+    return name if name.isprintable() and "\\" not in name else repr(name)[1:-1]
 
 
 def rank(values, share):
@@ -78,10 +92,9 @@ def table(records, start, now, locks_dir):
     Waits and holds count by when they were recorded; how busy a lock was counts the part of each hold that falls
     between `start` and `now`, the one going on now included, so a hold begun before `start` or not yet released
     is neither counted whole nor left out."""
-    takes, holds, busy, names = {}, {}, {}, set()
+    takes, holds, busy = {}, {}, {}
     within = lambda a, b: max(0, min(b, now) - max(a, start))  # of [a, b], the seconds between start and now
     for t, event, lock, seconds in records:
-        names.add(lock)
         if t < start:
             continue
         takes.setdefault(lock, [])
@@ -90,25 +103,22 @@ def table(records, start, now, locks_dir):
         else:
             holds.setdefault(lock, []).append(seconds)
             busy[lock] = busy.get(lock, 0) + within(t - seconds, t)
-    held_now = set()
-    for lock in names - {"port-*"}:  # taken before start, perhaps, and held all along
-        since = held_since(locks_dir, lock)
-        if since is not None:
-            held_now.add(lock)
-            takes.setdefault(lock, [])
-            busy[lock] = busy.get(lock, 0) + within(since, now)
+    holding = held_now(locks_dir)
+    for lock, since in holding.items():  # taken before start, perhaps, and held all along
+        takes.setdefault(lock, [])
+        busy[lock] = busy.get(lock, 0) + within(since, now)
     covered = max(1, now - start)
     rows, few = [], 0
     for lock in takes:
         waits = [w for w in takes[lock] if w >= WAITED]
         share = 100 * min(busy.get(lock, 0), covered) / covered
-        if (lock != "port-*" and lock not in held_now and not waits and len(takes[lock]) <= FEW
+        if (lock != "port-*" and lock not in holding and not waits and len(takes[lock]) <= FEW
                 and share < BUSY):
             few += 1
             continue
         held = holds.get(lock, [])
         rows.append((-sum(waits), -len(takes[lock]), lock, [
-            lock.replace("\t", " ").replace("\n", " "),  # one cell, on one line
+            shown(lock),
             str(len(takes[lock])),
             f"{round(100 * len(waits) / len(takes[lock]))}%" if takes[lock] else "-",
             span(rank(waits, 0.5)) if waits else "-",
