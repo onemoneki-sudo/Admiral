@@ -304,7 +304,11 @@ class Run(unittest.TestCase):
     def lines(self):
         return sorted(n for n in self.held() if n.startswith(".q."))
 
-    def test_a_line_goes_once_nobody_is_in_it(self):
+    def age(self, *paths, seconds=120):
+        for path in paths:
+            os.utime(os.path.join(self.locks, path), (time.time() - seconds,) * 2)
+
+    def test_a_line_is_left_empty_by_every_way_out_and_goes_a_minute_later(self):
         # every way into a line and out of it: a plain acquire, a run, a queue left, a wait that got its turn, a
         # wait stopped, a choice that took one lock and left the other line. A run under a name of its own (one
         # per service, say) left a line behind each time, and every acquire and status went through them all
@@ -324,33 +328,73 @@ class Run(unittest.TestCase):
         self.assertEqual(waiting.returncode, 0, waiting.stderr.read())
         self.assertEqual(self.admiral("lock", "acquire", "pg-1", "--who", "holder").returncode, 0)
         self.assertEqual(self.admiral("run", "--lock", "pg-1|pg-2", "--who", "s t", "--", "true").returncode, 0)
+        left = self.lines()
+        self.assertTrue(left)
+        self.assertEqual({n: os.listdir(os.path.join(self.locks, n)) for n in left}, {n: [] for n in left})
+        self.assertEqual(self.admiral("lock", "status").returncode, 0)
+        self.assertEqual(self.lines(), left)  # a line empty only just now stays: one coming in may be making it
+        self.age(*left)
+        self.assertEqual(self.admiral("lock", "status").returncode, 0)
         self.assertEqual(self.lines(), [])
         self.assertEqual(self.visible(), ["pg-1"])
 
     def test_lines_nobody_is_in_are_tidied_and_a_waiter_s_line_is_kept(self):
         dead = subprocess.Popen(["true"])
         dead.wait()
-        old = time.time() - 120
         for name in ("left-1", "left-2"):  # left behind by an older version: one per name ever used
             os.makedirs(os.path.join(self.locks, f".q.{name}"))
+        self.age(".q.left-1", ".q.left-2")
+        os.makedirs(os.path.join(self.locks, ".q.fresh"))  # empty just now: a waiter may be coming in
         self.assertEqual(self.admiral("lock", "queue", "gone", "--who", "w gone", "--pid", str(dead.pid)).returncode, 0)
         os.makedirs(os.path.join(self.locks, ".q.priority"))  # a commander's priority whose waiter has left
         with open(os.path.join(self.locks, ".q.priority", ".prio.0123"), "w") as fh:
             fh.write("prio=5\nby=Commander-A\n")
-        os.utime(os.path.join(self.locks, ".q.priority", ".prio.0123"), (old, old))
+        self.age(".q.priority/.prio.0123", ".q.priority")
         os.makedirs(os.path.join(self.locks, ".q.writing"))  # a waiter writing its place just now
         open(os.path.join(self.locks, ".q.writing", ".tmp.4321"), "w").close()
+        self.age(".q.writing")
         self.assertEqual(self.admiral("lock", "queue", "live", "--who", "w live", "--pid", str(os.getpid())).returncode,
                          0)
+        self.age(".q.live")
         status = self.admiral("lock", "status").stdout
-        self.assertIn("w gone", status)  # shown once as it stood, then tidied
+        self.assertIn("w gone", status)  # shown once as it stood, then out of line
         self.assertIn("STALE", status)
-        self.assertEqual(self.lines(), [".q.live", ".q.writing"])
+        self.assertEqual(self.line("gone"), [])
+        self.assertEqual(os.listdir(os.path.join(self.locks, ".q.priority")), [])
+        self.assertEqual(self.lines(), [".q.fresh", ".q.gone", ".q.live", ".q.priority", ".q.writing"])
         self.assertEqual(len(self.line("live")), 1)
         self.assertNotIn("w gone", self.admiral("lock", "status").stdout)
+        self.age(".q.gone", ".q.priority")
         os.makedirs(os.path.join(self.locks, ".q.left-3"))
+        self.age(".q.left-3")
         self.assertEqual(self.admiral("lock", "acquire", "other", "--who", "w1").returncode, 0)  # any acquire tidies too
-        self.assertEqual(self.lines(), [".q.live", ".q.writing"])
+        self.assertEqual(self.lines(), [".q.fresh", ".q.live", ".q.other", ".q.writing"])  # its own, empty just now
+
+    def test_tidying_leaves_a_waiter_at_the_edge_of_the_rule_in_line(self):
+        # a waiter not seen for a little over the rule's two minutes may be coming back just now: the line's own
+        # first waiter drops it, not a status or an acquire elsewhere, which take only those gone well past it
+        import hashlib
+        now = int(time.time())
+        q = os.path.join(self.locks, ".q.edge")
+        os.makedirs(q)
+        for who, unseen in (("w edge", 180), ("w long gone", 900)):
+            with open(os.path.join(q, hashlib.md5(who.encode()).hexdigest()), "w") as fh:
+                fh.write(f"who={who}\npid={os.getpid()}\nprio=0\narrival={(now - unseen) * 10**6}\n"
+                         f"seen={now - unseen}\nttl=180\nkind=wait\n")
+        status = self.admiral("lock", "status").stdout
+        self.assertEqual(status.count("STALE"), 2, status)
+        self.assertNotIn("w long gone", self.admiral("lock", "status").stdout)
+        self.assertEqual(len(self.line("edge")), 1)
+        self.assertIn("w edge", self.admiral("lock", "status").stdout)
+
+    def test_a_place_that_cannot_be_written_fails_rather_than_claims_one(self):
+        os.makedirs(self.locks)
+        open(os.path.join(self.locks, ".q.blocked"), "w").close()  # where its line would go: never a directory
+        r = self.admiral("lock", "queue", "blocked", "--who", "w1")
+        self.assertEqual(r.returncode, 2, r.stdout)
+        self.assertIn("could not write a place in the line for blocked", r.stderr)
+        r = self.admiral("lock", "acquire", "blocked", "--who", "w1")
+        self.assertEqual(r.returncode, 2, r.stdout)
 
 
 if __name__ == "__main__":

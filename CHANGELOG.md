@@ -8,10 +8,13 @@ reaches people only when the version moves.
 ## Unreleased
 
 **Locks**
-- A lock's waiting line goes with its last waiter. Every lock name ever taken left an empty line behind (`.q.<name>`
-  in the locks directory), so runs under a name of their own, one per service, left hundreds, and every acquire and
-  `admiral lock status` went through them all: with 860, a status took 20 seconds and each acquire most of a second
-  more. The next acquire or status clears the lines older versions left and those whose waiters have all gone.
+- A lock's waiting line no longer outlives its waiters. Every lock name ever taken left an empty line behind
+  (`.q.<name>` in the locks directory), so runs under a name of their own, one per service, left hundreds, and every
+  acquire and `admiral lock status` went through them all: with 860, a status took 20 seconds and each acquire most
+  of a second more. Each acquire and status now clears the lines that have been empty for a minute, with the ones
+  older versions left and those whose waiters are long gone.
+- A waiter whose place in a line cannot be written is told so (`admiral lock queue` and `acquire` exit 2) rather
+  than told it is in line.
 
 ## 0.2.20 (2026-11-02)
 

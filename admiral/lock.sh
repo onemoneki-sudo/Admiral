@@ -91,9 +91,10 @@ takeover() { # $1 = lock name; succeeds for one caller only, and only while the 
 
 # --- The waiting line: $DIR/.q.<name>/<md5 of who>, one file per waiter, replaced whole (mv), so
 # --- readers never see half an entry. A commander's priority lives beside it in .prio.<key>, which
-# --- waiters never write, so their own refreshes cannot undo it. The directory goes with its last waiter,
-# --- and status and every acquire clear the lines whose waiters have all gone: kept, one per name ever
-# --- used (a run per service, say), they made every acquire and status walk them all.
+# --- waiters never write, so their own refreshes cannot undo it. Status and every acquire clear a line
+# --- that has been empty for a minute (tidy_lines); kept, one per name ever used (a run per service, say),
+# --- they made every acquire and status walk them all. Only a line unchanged for that long goes, so one
+# --- made again by a waiter coming in as it went is not taken from under it a second time.
 AWAKE=120                      # seconds: a waiter not seen for this long is not waiting now
 Q="$DIR/.q.$name"
 key() { if [ -x /sbin/md5 ]; then /sbin/md5 -qs "$1"; else printf '%s' "$1" | md5sum | cut -d' ' -f1; fi; }
@@ -115,7 +116,7 @@ read_entry() { # $1 = entry file; sets e_*; returns 1 when it is gone
     done; } 2>/dev/null < "$o"
   return 0
 }
-write_entry() { # $1 = entry file, from e_*. Its line may go with its last waiter just as it comes: made again
+write_entry() { # $1 = entry file, from e_*. Its line, empty for a minute, may go just as it comes: made again
   local d="${1%/*}" t="${1%/*}/.tmp.$$" n
   for n in 1 2 3; do
     mkdir -p "$d" && { printf 'who=%s\npid=%s\nprio=%s\narrival=%s\nseen=%s\nttl=%s\nkind=%s\n' \
@@ -124,7 +125,7 @@ write_entry() { # $1 = entry file, from e_*. Its line may go with its last waite
   done
   return 1
 }
-drop_entry() { rm -f "$1" "${1%/*}/.prio.${1##*/}"; rmdir "${1%/*}" 2>/dev/null; return 0; } # $1 = entry file
+drop_entry() { rm -f "$1" "${1%/*}/.prio.${1##*/}"; } # $1 = entry file
 entry_stale() { # the entry just read, at $NOW
   if [ -n "$e_pid" ] && ! kill -0 "$e_pid" 2>/dev/null; then return 0; fi
   [ "$e_kind" != queue ] && [ $(( NOW - e_seen )) -gt $AWAKE ] && return 0
@@ -148,7 +149,9 @@ join_line() { # $1 = poll|wait|queue; keeps an existing place and priority, mark
     e_who="$who"; e_base="${prio:-0}"; e_arrival="$(usec)"; e_kind="$1"; e_ttl="$ttl"
     if [ "$1" = wait ]; then e_pid=$$; else e_pid="$pid"; fi
   fi
-  e_seen=$NOW; write_entry "$f"; joined=1
+  e_seen=$NOW
+  write_entry "$f" || { echo "could not write a place in the line for $name ($f)" >&2; return 1; }
+  joined=1
 }
 in_order() { # $1 = line dir; "prio|arrival|file" of every entry, first waiter first
   local f
@@ -189,24 +192,20 @@ leave_other_lines() { # a loop polling several locks under one --who leaves the 
   done
   return 0
 }
-tidy_lines() { # the lines nobody is in go: their waiters gone by the STALE rule, then what those left behind.
-  local q f empty=(); NOW=$(now)  # $1 = "empty": only those with no waiter at all, gone or not
-  for q in "$DIR"/.q.*/; do
-    [ -d "$q" ] || continue
+tidy_lines() { # the lines nobody is in go once a minute has passed: first the waiters long gone, then what
+  local q f AWAKE=$(( AWAKE * 5 )); NOW=$(now)  # they left. $1 = "empty": every waiter stays, gone or not
+  for q in "$DIR"/.q.*/; do  # gone well past the rule (AWAKE here only), so one at its edge, coming back
+    [ -d "$q" ] || continue  # just now, is not taken out of line between being read and being dropped
     [ "${1:-}" = empty ] || for f in "$q"*; do read_entry "$f" && entry_stale && drop_entry "$f"; done
-    [ -d "$q" ] || continue
     for f in "$q"*; do [ -e "$f" ] && continue 2; done  # someone is in line
-    empty+=("${q%/}")
+    for f in "$q".prio.* "$q".tmp.*; do  # a commander's priority whose waiter has gone, a write cut short
+      [ -e "$f" ] || continue
+      find "$q" -maxdepth 1 -type f \( -name '.prio.*' -o -name '.tmp.*' \) -mmin +1 -delete 2>/dev/null
+      break
+    done
   done
-  [ ${#empty[@]} -gt 0 ] || return 0
-  # all in a few calls: one rmdir each took seconds over a backlog of hundreds
-  printf '%s\0' "${empty[@]}" | xargs -0 rmdir 2>/dev/null
-  for q in "${empty[@]}"; do
-    [ -d "$q" ] || continue
-    # a commander's priority whose waiter has gone, a write cut short; not one being made just now
-    find "$q" -maxdepth 1 -type f \( -name '.prio.*' -o -name '.tmp.*' \) -mmin +1 -delete 2>/dev/null
-    rmdir "$q" 2>/dev/null
-  done
+  # in one call: a process each took seconds over a backlog of hundreds
+  find "$DIR" -mindepth 1 -maxdepth 1 -type d -name '.q.*' -empty -mmin +1 -exec rmdir {} + 2>/dev/null
   return 0
 }
 
@@ -215,9 +214,9 @@ case "$cmd" in
     need_who; need_name; me="$(key "$who")"
     if [ $wait -eq 1 ]; then
       trap 'rm -f "$Q/.tmp.$$"; drop_entry "$Q/$me"' EXIT; trap 'exit 130' INT TERM HUP
-      join_line wait
+      join_line wait || exit 2
     else
-      join_line poll
+      join_line poll || exit 2
     fi
     shown=""; seen_at=$(now)
     while :; do
@@ -242,10 +241,10 @@ case "$cmd" in
       now_line="$(position) | holder: $(field "$DIR/$name" who)"
       [ "$now_line" != "$shown" ] && { echo "waiting for $name: $now_line"; shown="$now_line"; }
       sleep 3
-      [ $(( $(now) - seen_at )) -ge 30 ] && { join_line wait; seen_at=$(now); }
+      [ $(( $(now) - seen_at )) -ge 30 ] && { join_line wait; seen_at=$(now); }  # failing, it tries again
     done;;
   queue)
-    need_who; need_name; me="$(key "$who")"; join_line queue; echo "in line for $name: $(position)";;
+    need_who; need_name; me="$(key "$who")"; join_line queue || exit 2; echo "in line for $name: $(position)";;
   leave)
     need_who; need_name; me="$(key "$who")"
     if [ -f "$Q/$me" ]; then drop_entry "$Q/$me"; echo "left the line for $name"; else echo "not in line for $name"; fi;;
@@ -257,8 +256,8 @@ case "$cmd" in
     me="$(key "$who")"; read_entry "$Q/$me" || { echo "$who is not in line for $name" >&2; exit 1; }
     t="$Q/.tmp.prio.$$"
     if ! { printf 'prio=%s\nby=%s\n' "$prio" "$by" > "$t" && mv -f "$t" "$Q/.prio.$me"; } 2>/dev/null \
-       || ! read_entry "$Q/$me"; then  # it left the line meanwhile, perhaps the last to, and the line with it
-      rm -f "$t" "$Q/.prio.$me"; rmdir "$Q" 2>/dev/null; echo "$who is not in line for $name" >&2; exit 1
+       || ! read_entry "$Q/$me"; then  # it left the line meanwhile
+      rm -f "$t" "$Q/.prio.$me"; echo "$who is not in line for $name" >&2; exit 1
     fi
     echo "priority of $who for $name is now $prio (set by $by)"; show_line "$Q";;
   attach)
@@ -270,7 +269,7 @@ case "$cmd" in
     [ "$(field "$DIR/$name" who)" = "$who" ] || { echo "not the holder of $name: $(describe "$DIR/$name")" >&2; exit 1; }
     rm -f "$DIR/$name/owner"; rmdir "$DIR/$name"; echo "released $name";;
   status)
-    tidy_lines empty  # nothing in them to show, and the walk below took seconds over hundreds
+    tidy_lines empty  # nothing in them to show, and the walk below took seconds over hundreds of them
     found=0; for d in "$DIR"/*/; do [ -d "$d" ] || continue; found=1; describe "${d%/}"; show_line "$DIR/.q.$(basename "$d")"; done
     [ $found -eq 1 ] || echo "no locks held"
     for q in "$DIR"/.q.*/; do
