@@ -2,11 +2,13 @@
 on takeovers told to the holder they were taken from, and on what a wait says while it waits."""
 
 import os
+import queue
 import re
 import shutil
 import subprocess
 import sys
 import tempfile
+import threading
 import time
 import unittest
 
@@ -30,8 +32,8 @@ class Lock(unittest.TestCase):
             p.communicate()
         shutil.rmtree(self.root, ignore_errors=True)
 
-    def admiral(self, *args, session=None):
-        env = dict(self.env, **({"ADMIRAL_LOCK_SESSION": str(session)} if session is not None else {}))
+    def admiral(self, *args, session=None, **extra):
+        env = dict(self.env, **({"ADMIRAL_LOCK_SESSION": str(session)} if session is not None else {}), **extra)
         return subprocess.run([sys.executable, "-m", "admiral", *args], capture_output=True, text=True, env=env,
                               timeout=60)
 
@@ -59,13 +61,18 @@ class Lock(unittest.TestCase):
         return p.pid
 
     def first_line(self, stream, starting, seconds=20):
+        """The first line of the stream that says `starting`, read on a thread so that a silent stream fails the test
+        once the time is up rather than hang it."""
+        lines = queue.Queue()
+        threading.Thread(target=lambda: [lines.put(line) for line in stream], daemon=True).start()
         end = time.monotonic() + seconds
         while time.monotonic() < end:
-            line = stream.readline()
+            try:
+                line = lines.get(timeout=max(0.01, end - time.monotonic()))
+            except queue.Empty:
+                break
             if line.startswith(starting) or f": {starting}" in line:
                 return line
-            if not line:
-                time.sleep(0.1)
         self.fail(f"no line {starting!r}")
 
     # ---- names alike but for case ---------------------------------------------------------------------------------
@@ -87,6 +94,24 @@ class Lock(unittest.TestCase):
         r = self.admiral("lock", "acquire", "line-a", "--who", "w2")
         self.assertEqual(r.returncode, 2)
         self.assertIn("Line-A has a line of waiters", r.stderr)
+
+    def test_a_line_whose_only_waiter_has_gone_does_not_refuse(self):
+        self.assertEqual(self.admiral("lock", "queue", "Line-B", "--who", "w1", "--pid", str(self.dead_pid()))
+                         .returncode, 0)
+        r = self.admiral("lock", "acquire", "line-b", "--who", "w2")
+        self.assertEqual(r.returncode, 0, r.stderr)
+
+    def test_two_spellings_taken_at_once_never_both_hold(self):
+        procs = [subprocess.Popen([sys.executable, "-m", "admiral", "lock", "acquire", name, "--who", f"w-{name}",
+                                   "--pid", str(os.getpid())], stdout=subprocess.PIPE, stderr=subprocess.PIPE,
+                                  text=True, env=self.env) for name in ("Race-X", "race-x") * 3]
+        codes = [p.wait(timeout=60) for p in procs]
+        for p in procs:
+            p.communicate()
+        held = [n for n in os.listdir(self.locks) if n.lower() == "race-x"]
+        self.assertEqual(len(held), 1)  # one directory, one spelling, on any disk
+        self.assertEqual(codes.count(0), 1)
+        self.assertTrue(all(c in (0, 1, 2) for c in codes))
 
     def test_an_empty_line_left_by_an_old_spelling_does_not_refuse(self):
         os.makedirs(os.path.join(self.locks, ".q.Old-Name"))
@@ -160,6 +185,24 @@ class Lock(unittest.TestCase):
         self.assertEqual(again.returncode, 0)
         self.assertFalse(os.path.exists(os.path.join(self.locks, ".taken", "port-8150")))  # its own again
         self.assertNotIn("taken over", self.admiral("lock", "status").stdout)
+
+    def test_each_holder_displaced_in_turn_is_told(self):
+        self.admiral("lock", "acquire", "svc", "--who", "w1", "--ttl", "1")
+        self.age("svc", 5)
+        self.admiral("lock", "acquire", "svc", "--who", "w2", "--ttl", "1")
+        self.age("svc", 5)
+        self.admiral("lock", "acquire", "svc", "--who", "w3")
+        self.assertIn("by w2", self.admiral("lock", "release", "svc", "--who", "w1").stderr)
+        self.assertIn("by w3", self.admiral("lock", "release", "svc", "--who", "w2").stderr)
+        status = self.admiral("lock", "status").stdout
+        self.assertIn("from w1 by w2", status)
+        self.assertIn("from w2 by w3", status)
+
+    def test_the_session_is_told_apart_whatever_zone_the_reader_is_in(self):
+        self.admiral("lock", "acquire", "svc", "--who", "w1", "--ttl", "1", session=os.getpid(), TZ="UTC")
+        self.age("svc", 5)
+        busy = self.admiral("lock", "acquire", "svc", "--who", "w2", TZ="Asia/Tokyo", LC_ALL="C")
+        self.assertEqual(busy.returncode, 1, busy.stdout)
 
     def test_a_takeover_of_a_dead_pid_says_so(self):
         self.admiral("lock", "acquire", "db", "--who", "w1", "--pid", str(self.dead_pid()))
