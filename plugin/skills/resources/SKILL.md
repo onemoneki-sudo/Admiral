@@ -29,7 +29,7 @@ Where the project's own rules differ from this playbook, the project's rules win
   it: stop what still uses the resource, or take another. Stop by its pid whatever you started, and release the
   lock, when you are done.
 - Spell a lock's name one way: names that differ only in case are one lock on a disk that ignores case, and the tool
-  refuses the other spelling while the lock is held or waited for, naming its holder.
+  refuses another spelling of a lock while it is held, naming its holder.
 - If the lock is busy, queue (`admiral lock acquire --wait`); never go around it.
 - Name the locks after what the project actually shares, for example: one heavy slot for whole-suite and browser runs,
   a few slots for a test database, a few for model quota, and ports handed out by the tool rather than picked by hand.

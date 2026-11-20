@@ -23,8 +23,9 @@ reaches people only when the version moves.
   it to another session's while still pointed at it, so every run after failed on the spot.
 - A takeover is kept in `<locks dir>/.taken/<name>`: the holder it was taken from is told so (who took it, when and
   why) the next time it acquires, attaches or releases that lock, and `admiral lock status` lists the last day's.
-- `acquire` and `queue` refuse a name that differs only in case from a lock held or waited for, naming its holder and
-  how long it has held it: on macOS the two are one lock, and a session waited two hours behind another's, unaware.
+- A lock's owner records the spelling it was taken under, and `acquire` and `queue` refuse another spelling of its
+  name, naming the holder and how long it has held it: on macOS's disk the two are one lock, and a session waited two
+  hours behind another's, unaware. (On a disk that tells case apart they stay two locks.)
 - `admiral run` says whom it waits for while it waits (the holder and since when; for `a|b`, each lock's holder),
   where before the lock tool's waiting lines were shown only once the lock was taken; `admiral lock acquire --wait`
   adds since when the holder has held it.

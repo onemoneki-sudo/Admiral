@@ -77,71 +77,57 @@ class Lock(unittest.TestCase):
 
     # ---- names alike but for case ---------------------------------------------------------------------------------
 
-    def test_a_name_differing_only_in_case_from_a_held_lock_is_refused_naming_its_holder(self):
+    def case_blind(self):
+        """Whether the locks' disk ignores case, as macOS's does."""
+        os.makedirs(self.locks, exist_ok=True)
+        probe = os.path.join(self.locks, ".Case-Probe")
+        os.mkdir(probe)
+        try:
+            return os.path.exists(os.path.join(self.locks, ".case-probe"))
+        finally:
+            os.rmdir(probe)
+
+    def test_another_spelling_of_a_held_lock_is_refused_naming_its_holder(self):
+        if not self.case_blind():
+            self.skipTest("this disk tells case apart: the two spellings are two locks")
         self.assertEqual(self.admiral("lock", "acquire", "proxy-A1", "--who", "w1", "--pid", str(os.getpid()))
                          .returncode, 0)
+        self.assertEqual(self.owner("proxy-A1")["name"], "proxy-A1")
         for command in ("acquire", "queue"):
             r = self.admiral("lock", command, "proxy-a1", "--who", "w2")
             self.assertEqual(r.returncode, 2, r.stdout + r.stderr)
-            self.assertIn("proxy-A1 is held by w1", r.stderr)
+            self.assertIn("held as proxy-A1 by w1", r.stderr)
             self.assertIn("differ only in case", r.stderr)
         self.assertEqual(self.admiral("lock", "acquire", "proxy-A1", "--who", "w2").returncode, 1)  # same: busy
         self.assertEqual(self.admiral("lock", "acquire", "proxy-a2", "--who", "w2").returncode, 0)  # another
 
-    def test_a_name_differing_only_in_case_from_a_line_with_waiters_is_refused(self):
-        self.assertEqual(self.admiral("lock", "queue", "Line-A", "--who", "w1", "--pid", str(os.getpid())).returncode,
-                         0)
-        r = self.admiral("lock", "acquire", "line-a", "--who", "w2")
-        self.assertEqual(r.returncode, 2)
-        self.assertIn("Line-A has a line of waiters", r.stderr)
-
-    def test_a_line_whose_only_waiter_has_gone_does_not_refuse(self):
-        self.assertEqual(self.admiral("lock", "queue", "Line-B", "--who", "w1", "--pid", str(self.dead_pid()))
-                         .returncode, 0)
-        r = self.admiral("lock", "acquire", "line-b", "--who", "w2")
-        self.assertEqual(r.returncode, 0, r.stderr)
-
-    def test_two_spellings_taken_at_once_never_both_hold(self):
-        procs = [subprocess.Popen([sys.executable, "-m", "admiral", "lock", "acquire", name, "--who", f"w-{name}",
-                                   "--pid", str(os.getpid())], stdout=subprocess.PIPE, stderr=subprocess.PIPE,
-                                  text=True, env=self.env) for name in ("Race-X", "race-x") * 3]
-        codes = [p.wait(timeout=60) for p in procs]
-        for p in procs:
-            p.communicate()
-        held = [n for n in os.listdir(self.locks) if n.lower() == "race-x"]
-        self.assertEqual(len(held), 1)  # one directory, one spelling, on any disk
-        self.assertEqual(codes.count(0), 1)
-        self.assertTrue(all(c in (0, 1, 2) for c in codes))
-
-    def test_a_spelling_mark_left_by_a_dead_caller_is_passed_after_a_minute(self):
-        mark = os.path.join(self.locks, ".spelling.svc")
-        os.makedirs(mark)
-        os.utime(mark, (time.time() - 120, time.time() - 120))
-        r = self.admiral("lock", "acquire", "SVC", "--who", "w1")
-        self.assertEqual(r.returncode, 0, r.stderr)
-        self.assertFalse(os.path.exists(mark))  # and its own goes once it is done
-
-    def test_another_spelling_held_while_one_waits_ends_the_wait_saying_so(self):
+    def test_a_wait_ends_saying_so_when_another_spelling_comes_to_hold_the_lock(self):
+        if not self.case_blind():
+            self.skipTest("this disk tells case apart: the two spellings are two locks")
         self.admiral("lock", "acquire", "Wait-A", "--who", "w1", "--pid", str(os.getpid()))
         p = self.background("lock", "acquire", "Wait-A", "--who", "w2", "--wait")
         self.first_line(p.stdout, "waiting for Wait-A")
-        self.admiral("lock", "release", "Wait-A", "--who", "w1")
-        try:  # another spelling, taken past the line (a stale place, say)
-            os.makedirs(os.path.join(self.locks, "wait-a"))
-        except FileExistsError:
-            self.skipTest("the waiter took Wait-A first, and on this disk wait-a is the same directory")
-        with open(os.path.join(self.locks, "wait-a", "owner"), "w") as fh:
-            fh.write(f"who=w3\npid={os.getpid()}\nsince={int(time.time())}\nttl=180\n")
+        path = os.path.join(self.locks, "Wait-A", "owner")
+        with open(path) as fh:
+            text = fh.read()
+        with open(path, "w") as fh:  # held now under the other spelling (taken over, say)
+            fh.write(text.replace("name=Wait-A", "name=wait-a").replace("who=w1", "who=w3"))
         _, err = p.communicate(timeout=60)
-        if os.path.exists(os.path.join(self.locks, "Wait-A")) and not os.path.exists(os.path.join(self.locks, "wait-a")):
-            self.skipTest("one directory on this disk: the waiter simply waits for w3, named in its line")
         self.assertEqual(p.returncode, 2, err)
-        self.assertIn("held by w3", err)
+        self.assertIn("held as wait-a by w3", err)
 
-    def test_an_empty_line_left_by_an_old_spelling_does_not_refuse(self):
-        os.makedirs(os.path.join(self.locks, ".q.Old-Name"))
-        r = self.admiral("lock", "acquire", "old-name", "--who", "w1")
-        self.assertEqual(r.returncode, 0, r.stderr)
+    def test_on_a_disk_that_tells_case_apart_two_spellings_are_two_locks(self):
+        if self.case_blind():
+            self.skipTest("this disk ignores case: the two spellings are one lock")
+        self.assertEqual(self.admiral("lock", "acquire", "proxy-A1", "--who", "w1").returncode, 0)
+        self.assertEqual(self.admiral("lock", "acquire", "proxy-a1", "--who", "w2").returncode, 0)
+
+    def test_a_lock_held_by_the_released_tool_has_no_spelling_and_waits_as_before(self):
+        os.makedirs(os.path.join(self.locks, "Old-Lock"))
+        with open(os.path.join(self.locks, "Old-Lock", "owner"), "w") as fh:
+            fh.write(f"who=w1\npid={os.getpid()}\nsince={int(time.time())}\nttl=180\n")
+        r = self.admiral("lock", "acquire", "Old-Lock", "--who", "w2")
+        self.assertEqual(r.returncode, 1, r.stderr)
 
     # ---- a lock without a pid, and the session it was taken in --------------------------------------------------
 

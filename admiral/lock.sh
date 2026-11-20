@@ -33,8 +33,9 @@
 # from is told so when it next acquires, attaches or releases that lock, rather than finding out from a clash, and
 # `status` lists the takeovers of the last day.
 #
-# Names that differ only in case are one lock on a disk that ignores case, as macOS's does: acquire and queue refuse a
-# name that differs only in case from a lock held or waited for, and name its holder, rather than wait for it unseen.
+# Names that differ only in case are one lock on a disk that ignores case, as macOS's does: the owner records the
+# spelling the lock was taken under, and acquire and queue refuse another spelling, naming the holder, rather than wait
+# for it unseen. (On a disk that tells case apart the two are two locks.)
 #
 # Waiting line. Each lock has a line of waiters, ordered by priority (higher first,
 # default 0), then by arrival. A free lock goes only to the first waiter in its line; with nobody
@@ -103,7 +104,7 @@ describe() { # $1 = lock dir
 }
 write_owner() {
   local s=""; [ -n "$pid" ] || s="$(session_of)"
-  { printf 'who=%s\npid=%s\nsince=%s\nttl=%s\n' "$who" "$pid" "$(now)" "$ttl"
+  { printf 'who=%s\npid=%s\nsince=%s\nttl=%s\nname=%s\n' "$who" "$pid" "$(now)" "$ttl" "$1"
     [ -z "$s" ] || printf 'session=%s\nsession_start=%s\n' "$s" "$(started "$s")"; } > "$DIR/$1/owner"
   [ -z "$pid" ] || return 0
   local again="admiral lock attach $(printf %q "$1") --who $(printf %q "$who") --pid <pid>"
@@ -150,52 +151,14 @@ forget_taken() { # $1 = lock name, its own again: the records of its takeovers f
   rmdir "$DIR/.taken/$1" 2>/dev/null
   return 0
 }
-case_twin() { # a lock held, or a waiter still in line, whose name differs from $name only in case: that name. A line's
-  local e b f l same  # directory has the spelling of whoever made it, so each place says the spelling it asked for
-  NOW=$(now)
-  for e in "$DIR"/*/ "$DIR"/.q.*/; do
-    [ -d "$e" ] || continue
-    b="${e%/}"; b="${b##*/}"; b="${b#.q.}"
-    same=0; shopt -s nocasematch; case "$b" in "$name") same=1;; esac; shopt -u nocasematch
-    [ $same -eq 1 ] || continue
-    case "$e" in
-      */.q.*/)
-        for f in "$e"*; do
-          [ "${f##*/}" = "${me:-}" ] && continue  # its own place
-          read_entry "$f" && ! entry_stale || continue
-          l="${e_lock:-$b}"; [ "$l" != "$name" ] && { echo "$l"; return 0; }
-        done;;
-      *) [ "$b" != "$name" ] && { echo "$b"; return 0; };;
-    esac
-  done
-  return 1
-}
-spelled=""  # the spelling mark this command holds, if any
-spelling_lock() { # held while a name is checked against the others' and joins its line, so two spellings of one name
-  # taken at once still see each other. One mark per name whatever its case, so only callers of that name wait on it,
-  # each for a moment; a dead holder's mark goes after a minute, so the wait ends by then
-  local m i
-  m="$DIR/.spelling.$(printf '%s' "$name" | tr '[:upper:]' '[:lower:]' | tr -c 'a-z0-9._-' '_')"
-  for i in $(seq 1 700); do
-    if mkdir "$m" 2>/dev/null; then spelled="$m"; return 0; fi
-    [ -n "$(find "$m" -maxdepth 0 -mmin +1 2>/dev/null)" ] && rmdir "$m" 2>/dev/null
-    sleep 0.1
-  done
-  echo "warning: could not take $m in 70 seconds; $name is checked against the other spellings without it" >&2
-  return 0
-}
-spelling_unlock() { [ -n "$spelled" ] && rmdir "$spelled" 2>/dev/null; spelled=""; return 0; }  # its own mark only
-refuse_twin() { # acquire and queue, under spelling_lock: never wait unseen for a lock spelled otherwise
-  local t; t="$(case_twin)" || return 0
-  spelling_unlock
-  if [ -d "$DIR/$t" ] && [ -n "$(field "$DIR/$t" who)" ]; then
-    local since; since="$(field "$DIR/$t" since)"
-    echo "$name: the lock $t is held by $(field "$DIR/$t" who) (for $(( ($(now) - ${since:-$(now)}) / 60 )) min)." >&2
-  else
-    echo "$name: $t has a line of waiters." >&2
-  fi
-  echo "Names that differ only in case are one lock on a disk that ignores case, as macOS's does, so $name would" \
-    "wait for it. To share that resource, name it $t; for another one, use a name that differs in more than case." >&2
+refuse_other_spelling() { # acquire and queue: the lock asked for, held under another spelling of its name
+  local held since
+  held="$(field "$DIR/$name" name)"
+  [ -n "$held" ] && [ "$held" != "$name" ] || return 0
+  since="$(field "$DIR/$name" since)"
+  echo "$name: the lock is held as $held by $(field "$DIR/$name" who) (for $(( ($(now) - ${since:-$(now)}) / 60 ))" \
+    "min). Names that differ only in case are one lock on a disk that ignores case, as macOS's does, so $name would" \
+    "wait for it. To share that resource, name it $held; for another one, use a name that differs in more than case." >&2
   exit 2
 }
 record() { # $1 = take|release, $2 = lock, $3 = since when it waited or was held (none: not at all)
@@ -231,12 +194,8 @@ takeover() { # $1 = lock name; succeeds for one caller only, and only while the 
   fi
   if [ -d "$DIR/$1" ] && is_stale "$DIR/$1"; then
     local was why; was="$(cat "$DIR/$1/owner" 2>/dev/null)"; why="$(taken_why "$1")"
-    # the owner and the record of what it replaced, together: a stop in between waits until both are written (a
-    local held=0; trap 'held=1' INT TERM HUP  # KILL can still part them: the record is lost, never a false one)
-    write_owner "$1"; note_takeover "$1" "$was" "$why"; rmdir "$m"
-    trap - INT TERM HUP; [ $wait -eq 1 ] && trap 'exit 130' INT TERM HUP
-    [ $held -eq 0 ] || exit 130
-    return 0
+    write_owner "$1"; note_takeover "$1" "$was" "$why"  # the record after the owner: a stop in between loses it,
+    rmdir "$m"; return 0  # never writes a false one
   fi
   if mkdir "$DIR/$1" 2>/dev/null; then write_owner "$1"; rmdir "$m"; return 0; fi
   rmdir "$m"; return 1
@@ -253,14 +212,14 @@ Q="$DIR/.q.$name"
 key() { if [ -x /sbin/md5 ]; then /sbin/md5 -qs "$1"; else printf '%s' "$1" | md5sum | cut -d' ' -f1; fi; }
 usec() { /usr/bin/perl -MTime::HiRes=time -e 'printf "%d\n", time*1e6'; }
 read_entry() { # $1 = entry file; sets e_*; returns 1 when it is gone
-  e_who=; e_pid=; e_base=0; e_arrival=0; e_seen=0; e_ttl=180; e_kind=poll; e_by=; e_lock=
+  e_who=; e_pid=; e_base=0; e_arrival=0; e_seen=0; e_ttl=180; e_kind=poll; e_by=
   local l o="${1%/*}/.prio.${1##*/}"
   [ -f "$1" ] || return 1
   { while IFS= read -r l; do
       case "$l" in
         who=*) e_who="${l#who=}";; pid=*) e_pid="${l#pid=}";; prio=*) e_base="${l#prio=}";;
         arrival=*) e_arrival="${l#arrival=}";; seen=*) e_seen="${l#seen=}";; ttl=*) e_ttl="${l#ttl=}";;
-        kind=*) e_kind="${l#kind=}";; lock=*) e_lock="${l#lock=}";;
+        kind=*) e_kind="${l#kind=}";;
       esac
     done; } 2>/dev/null < "$1" || return 1
   e_prio=$e_base
@@ -272,8 +231,8 @@ read_entry() { # $1 = entry file; sets e_*; returns 1 when it is gone
 write_entry() { # $1 = entry file, from e_*. Its line, empty for a minute, may go just as it comes: made again
   local d="${1%/*}" t="${1%/*}/.tmp.$$" n
   for n in 1 2 3 4 5 6 7 8 9 10; do  # each miss takes another sweep that saw the line old, just then
-    mkdir -p "$d" && { printf 'who=%s\npid=%s\nprio=%s\narrival=%s\nseen=%s\nttl=%s\nkind=%s\nlock=%s\n' \
-      "$e_who" "$e_pid" "$e_base" "$e_arrival" "$e_seen" "$e_ttl" "$e_kind" "$e_lock" > "$t"; } 2>/dev/null \
+    mkdir -p "$d" && { printf 'who=%s\npid=%s\nprio=%s\narrival=%s\nseen=%s\nttl=%s\nkind=%s\n' \
+      "$e_who" "$e_pid" "$e_base" "$e_arrival" "$e_seen" "$e_ttl" "$e_kind" > "$t"; } 2>/dev/null \
       && mv -f "$t" "$1" && return 0
   done
   return 1
@@ -302,7 +261,7 @@ join_line() { # $1 = poll|wait|queue; keeps an existing place and priority, mark
     e_who="$who"; e_base="${prio:-0}"; e_arrival="$(usec)"; e_kind="$1"; e_ttl="$ttl"
     if [ "$1" = wait ]; then e_pid=$$; else e_pid="$pid"; fi
   fi
-  e_seen=$NOW; e_lock="$name"  # the spelling it asked for (case_twin)
+  e_seen=$NOW
   write_entry "$f" || { echo "could not write a place in the line for $name ($f)" >&2; return 1; }
   joined=1
 }
@@ -356,8 +315,8 @@ tidy_lines() { # the lines nobody is in, unchanged for a minute, go. It takes no
   done
   # in one call: a process each took seconds over a backlog of hundreds
   find "$DIR" -mindepth 1 -maxdepth 1 -type d -name '.q.*' -empty -mmin +1 -exec rmdir {} + 2>/dev/null
-  [ -d "$DIR/.taken" ] && { find "$DIR/.taken" -type f -mmin +10080 -delete  # takeovers, kept a week
-    find "$DIR/.taken" -mindepth 1 -type d -empty -mmin +1 -delete; } 2>/dev/null  # never one being written into
+  # takeovers, kept a week; their directories stay (one per lock ever taken over), so none goes as a record is written
+  [ -d "$DIR/.taken" ] && find "$DIR/.taken" -type f -mmin +10080 -delete 2>/dev/null
   return 0
 }
 
@@ -365,19 +324,18 @@ case "$cmd" in
   acquire)
     need_who; need_name; me="$(key "$who")"
     taken_from_me "$name"
-    spelling_lock; refuse_twin
+    refuse_other_spelling
     if [ $wait -eq 1 ]; then
       trap 'rm -f "$Q/.tmp.$$"; drop_entry "$Q/$me"' EXIT; trap 'exit 130' INT TERM HUP
-      join_line wait || { spelling_unlock; exit 2; }
+      join_line wait || exit 2
     else
-      join_line poll || { spelling_unlock; exit 2; }
+      join_line poll || exit 2
     fi
-    spelling_unlock
     shown=""; seen_at=$(now)
     while :; do
       first="$(first_waiter)"
       if [ -z "$first" ] || [ "${first##*/}" = "$me" ]; then
-        refuse_twin  # again: a wait of minutes, or a place gone stale, may have let another spelling in meanwhile
+        refuse_other_spelling  # again: in a wait of hours another spelling may have come to hold it
         if mkdir "$DIR/$name" 2>/dev/null; then
           write_owner "$name"; took "$name"; drop_entry "$Q/$me"; leave_other_lines; tidy_lines
           forget_taken "$name"  # its own again: what was taken from it has been told
@@ -403,8 +361,8 @@ case "$cmd" in
       [ $(( $(now) - seen_at )) -ge 30 ] && { join_line wait; seen_at=$(now); }  # failing, it tries again
     done;;
   queue)
-    need_who; need_name; me="$(key "$who")"; spelling_lock; refuse_twin
-    join_line queue || { spelling_unlock; exit 2; }; spelling_unlock; echo "in line for $name: $(position)";;
+    need_who; need_name; me="$(key "$who")"; refuse_other_spelling
+    join_line queue || exit 2; echo "in line for $name: $(position)";;
   leave)
     need_who; need_name; me="$(key "$who")"
     if [ -f "$Q/$me" ]; then drop_entry "$Q/$me"; echo "left the line for $name"; else echo "not in line for $name"; fi
