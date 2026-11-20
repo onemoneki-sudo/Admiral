@@ -13,6 +13,21 @@ reaches people only when the version moves.
 - workspace: a branch another session builds on is not rewritten either, pushed or not; one still to be tidied has
   its owner say when its head is final, and is only added to after that.
 - roles: a dispatch says which branch builds on which, where they stack, as it hands out the numbers not to repeat.
+- resources: a lock taken by hand without a pid is kept past its ttl while its session runs; a takeover is told to the
+  holder it was taken from; a lock's name is spelled one way.
+
+**Locks**
+- A lock taken without a pid is no longer taken over past its ttl while the session that took it still runs (the
+  nearest claude or codex process above the command, recorded with its start time; `ADMIRAL_LOCK_SESSION` names
+  another pid, or `none`). A service started by hand kept its port only for the ttl, and a session's own recorder lost
+  it to another session's while still pointed at it, so every run after failed on the spot.
+- A takeover is kept in `<locks dir>/.taken/<name>`: the holder it was taken from is told so (who took it, when and
+  why) the next time it acquires, attaches or releases that lock, and `admiral lock status` lists the last day's.
+- `acquire` and `queue` refuse a name that differs only in case from a lock held or waited for, naming its holder and
+  how long it has held it: on macOS the two are one lock, and a session waited two hours behind another's, unaware.
+- `admiral run` says whom it waits for while it waits (the holder and since when; for `a|b`, each lock's holder),
+  where before the lock tool's waiting lines were shown only once the lock was taken; `admiral lock acquire --wait`
+  adds since when the holder has held it.
 
 ## 0.2.22 (2026-11-10)
 
