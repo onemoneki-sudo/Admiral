@@ -60,7 +60,9 @@ what you were told for this project, tell the person, who decides.
 - **Look for a counterexample before delivering**: the neighbouring case most likely to overturn your conclusion,
   actually checked.
 - **Every claim has evidence.** Say what was verified and what was not; keep "implemented", "tests pass", "accepted",
-  "merged" and "released" apart.
+  "merged" and "released" apart. A fact that can change (a setting, a price, a limit, what production runs) is read
+  from its source before it is stated, or said to be unchecked: memory and older notes tell where to look, not what is
+  so.
 - **Compare like with like.** A performance claim measures both sides on the same real path, with the same data and
   environment; a gain on a path the real use does not take is no gain.
 - **Verification cost matches risk.** Copy and simple configuration need little; computation, data mapping, caching,

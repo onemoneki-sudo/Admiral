@@ -40,7 +40,9 @@ Where the project's own rules differ from this playbook, the project's rules win
   literal, in a file or a quoted heredoc (`<<'EOF'`): an unquoted heredoc runs the backticks in it as commands.
 - Never run git commands that change state other sessions share, such as `git gc`, `git worktree prune` or
   `git stash`.
-- A pushed branch is updated by merge, never rebase, so it is never force-pushed.
+- A branch others build on is not rewritten: once it is pushed, or another session builds on it, it is updated by
+  merge, never rebase, so it is never force-pushed. One still to be tidied before its first push has its owner say
+  when its head is final; from then on it is only added to, and those built on it take that head in.
 - Push only your own branches, never the default branch; act only on your own PRs and issues. Others' work is
   read-only to you, except for review.
 - Before retrying a write that is not safe to repeat (a comment, a PR, a release, a message), check whether the last
