@@ -113,6 +113,31 @@ class Lock(unittest.TestCase):
         self.assertEqual(codes.count(0), 1)
         self.assertTrue(all(c in (0, 1, 2) for c in codes))
 
+    def test_a_spelling_mark_left_by_a_dead_caller_is_passed_after_a_minute(self):
+        mark = os.path.join(self.locks, ".spelling.svc")
+        os.makedirs(mark)
+        os.utime(mark, (time.time() - 120, time.time() - 120))
+        r = self.admiral("lock", "acquire", "SVC", "--who", "w1")
+        self.assertEqual(r.returncode, 0, r.stderr)
+        self.assertFalse(os.path.exists(mark))  # and its own goes once it is done
+
+    def test_another_spelling_held_while_one_waits_ends_the_wait_saying_so(self):
+        self.admiral("lock", "acquire", "Wait-A", "--who", "w1", "--pid", str(os.getpid()))
+        p = self.background("lock", "acquire", "Wait-A", "--who", "w2", "--wait")
+        self.first_line(p.stdout, "waiting for Wait-A")
+        self.admiral("lock", "release", "Wait-A", "--who", "w1")
+        try:  # another spelling, taken past the line (a stale place, say)
+            os.makedirs(os.path.join(self.locks, "wait-a"))
+        except FileExistsError:
+            self.skipTest("the waiter took Wait-A first, and on this disk wait-a is the same directory")
+        with open(os.path.join(self.locks, "wait-a", "owner"), "w") as fh:
+            fh.write(f"who=w3\npid={os.getpid()}\nsince={int(time.time())}\nttl=180\n")
+        _, err = p.communicate(timeout=60)
+        if os.path.exists(os.path.join(self.locks, "Wait-A")) and not os.path.exists(os.path.join(self.locks, "wait-a")):
+            self.skipTest("one directory on this disk: the waiter simply waits for w3, named in its line")
+        self.assertEqual(p.returncode, 2, err)
+        self.assertIn("held by w3", err)
+
     def test_an_empty_line_left_by_an_old_spelling_does_not_refuse(self):
         os.makedirs(os.path.join(self.locks, ".q.Old-Name"))
         r = self.admiral("lock", "acquire", "old-name", "--who", "w1")
