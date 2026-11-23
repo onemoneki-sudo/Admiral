@@ -5,6 +5,26 @@ Each version says what changed for someone using Admiral. The version lives in `
 Claude Code keeps an installed plugin in its cache, one copy per version, so a change to the sidebar or the playbook
 reaches people only when the version moves.
 
+## 0.2.24 (2026-11-23)
+
+**Playbook**
+- resources: a lock taken by hand without a pid is kept past its ttl while its session runs; a takeover is told to the
+  holder it was taken from; a lock's name is spelled one way.
+
+**Locks**
+- A lock taken without a pid is no longer taken over past its ttl while the session that took it still runs (the
+  nearest claude or codex process above the command, recorded with its start time; `ADMIRAL_LOCK_SESSION` names
+  another pid, or `none`). A service started by hand kept its port only for the ttl, and a session's own recorder lost
+  it to another session's while still pointed at it, so every run after failed on the spot.
+- A takeover is kept in `<locks dir>/.taken/<name>`: the holder it was taken from is told so (who took it, when and
+  why) the next time it acquires, attaches or releases that lock, and `admiral lock status` lists the last day's.
+- A lock's owner records the spelling it was taken under, and `acquire` and `queue` refuse another spelling of its
+  name, naming the holder and how long it has held it: on macOS's disk the two are one lock, and a session waited two
+  hours behind another's, unaware. (On a disk that tells case apart they stay two locks.)
+- `admiral run` says whom it waits for while it waits (the holder and since when; for `a|b`, each lock's holder),
+  where before the lock tool's waiting lines were shown only once the lock was taken; `admiral lock acquire --wait`
+  adds since when the holder has held it.
+
 ## 0.2.23 (2026-11-20)
 
 **Playbook**

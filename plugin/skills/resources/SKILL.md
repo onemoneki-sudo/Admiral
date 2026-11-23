@@ -23,9 +23,13 @@ Where the project's own rules differ from this playbook, the project's rules win
   comes free first, given as the run's only lock; the command learns which from `$ADMIRAL_LOCK`. `admiral run stop` names the lock actually held.
   A job expected to finish soon queues with `--priority` (see Queueing), as `admiral lock acquire` does.
 - Taking a lock by hand instead, give it the pid of what uses the resource for as long as it is needed, at once or
-  with `admiral lock attach` once it starts: without one the lock times out even while in use, and with the pid of a
-  step that ends sooner it is taken over when that step ends. Stop by its pid whatever you started, and release the
+  with `admiral lock attach` once it starts: without one, past its ttl the lock is kept only while your session runs
+  and is taken over once it ends, even while something still uses it; with the pid of a step that ends sooner it is
+  taken over when that step ends. A lock taken over from you is said so the next time you acquire, attach or release
+  it: stop what still uses the resource, or take another. Stop by its pid whatever you started, and release the
   lock, when you are done.
+- Spell a lock's name one way: names that differ only in case are one lock on a disk that ignores case, and the tool
+  refuses another spelling of a lock while it is held, naming its holder.
 - If the lock is busy, queue (`admiral lock acquire --wait`); never go around it.
 - Name the locks after what the project actually shares, for example: one heavy slot for whole-suite and browser runs,
   a few slots for a test database, a few for model quota, and ports handed out by the tool rather than picked by hand.

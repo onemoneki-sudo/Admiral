@@ -21,9 +21,21 @@
 # and newline coded %25, %09, %0A), seconds, who. The three latest months are kept. A history that cannot be
 # written never fails the lock.
 #
-# A lock is STALE (and acquire takes it over, saying so) when its recorded pid no longer runs,
-# or when it has no pid and is older than its ttl (default 180 minutes), which acquire and port warn of.
-# The pid is of what uses the resource for as long as it is needed, not of a step that ends sooner.
+# A lock is STALE (and acquire takes it over, saying so) when its recorded pid no longer runs, or when it has no
+# pid, is older than its ttl (default 180 minutes) and the session it was taken in no longer runs: the nearest
+# claude or codex process above the command that took it (or $ADMIRAL_LOCK_SESSION, a pid, or `none`), recorded
+# with its start time, so a service whose session still runs keeps its port however long it runs. Acquire and port
+# warn of a lock taken without a pid. The pid is of what uses the resource for as long as it is needed, not of a
+# step that ends sooner.
+#
+# A takeover is kept in $DIR/.taken/<name>/, one record per holder displaced (the owner it replaced, who took it, when
+# and why), written once the lock is the taker's: the holder it was taken
+# from is told so when it next acquires, attaches or releases that lock, rather than finding out from a clash, and
+# `status` lists the takeovers of the last day.
+#
+# Names that differ only in case are one lock on a disk that ignores case, as macOS's does: the owner records the
+# spelling the lock was taken under, and acquire and queue refuse another spelling, naming the holder, rather than wait
+# for it unseen. (On a disk that tells case apart the two are two locks.)
 #
 # Waiting line. Each lock has a line of waiters, ordered by priority (higher first,
 # default 0), then by arrival. A free lock goes only to the first waiter in its line; with nobody
@@ -63,22 +75,91 @@ done
 if [ -n "$prio" ] && ! [[ "$prio" =~ ^-?[0-9]{1,2}$ ]]; then echo "--priority is an integer from -99 to 99" >&2; exit 2; fi
 now() { date +%s; }
 field() { sed -n "s/^$2=//p" "$1/owner" 2>/dev/null | head -1; }
+hhmm() { date -r "$1" +%H:%M 2>/dev/null || date -d "@$1" +%H:%M 2>/dev/null; }  # an epoch as a time of day
+started() { LC_ALL=C TZ=UTC ps -o lstart= -p "$1" 2>/dev/null | sed 's/^ *//; s/ *$//'; }  # with its pid, tells a
+# process apart: in one zone and language whoever asks, so a holder and a taker read the same time alike
+session_of() { # the session this command runs under (see the top): its pid, or nothing
+  case "${ADMIRAL_LOCK_SESSION:-}" in none) return 0;; *[!0-9]*) ;; ?*) echo "$ADMIRAL_LOCK_SESSION"; return 0;; esac
+  ps -A -o pid=,ppid=,comm= 2>/dev/null | awk -v p=$$ '
+    { c = $3; for (i = 4; i <= NF; i++) c = c " " $i; n = split(c, part, "/"); up[$1] = $2; name[$1] = part[n] }
+    END { for (i = 0; i < 64 && p > 1; i++) { p = up[p]; if (name[p] == "claude" || name[p] == "codex") { print p; exit } } }'
+}
+session_runs() { # $1 = lock dir: the session it was taken in still runs (the same process, by its start time)
+  local s; s="$(field "$1" session)"
+  [ -n "$s" ] && kill -0 "$s" 2>/dev/null && [ "$(started "$s")" = "$(field "$1" session_start)" ]
+}
+past_ttl() { local t l; t="$(field "$1" since)"; l="$(field "$1" ttl)"; [ -n "$t" ] && [ $(( $(now) - t )) -gt $(( ${l:-180} * 60 )) ]; }
 is_stale() { # $1 = lock dir
-  local p t l; p="$(field "$1" pid)"; t="$(field "$1" since)"; l="$(field "$1" ttl)"
+  local p; p="$(field "$1" pid)"
   if [ -n "$p" ]; then kill -0 "$p" 2>/dev/null && return 1 || return 0; fi
-  [ -n "$t" ] && [ $(( $(now) - t )) -gt $(( ${l:-180} * 60 )) ] && return 0
-  return 1
+  past_ttl "$1" && ! session_runs "$1"
 }
 describe() { # $1 = lock dir
-  local t; t="$(field "$1" since)"
+  local t note=""; t="$(field "$1" since)"
+  if is_stale "$1"; then note=' | STALE'
+  elif [ -z "$(field "$1" pid)" ] && past_ttl "$1"; then note=" | past its ttl, kept: its session (pid $(field "$1" session)) still runs"
+  fi
   printf '%-22s held by: %s | pid: %s | %s min ago%s\n' "$(basename "$1")" "$(field "$1" who)" \
-    "$(field "$1" pid)" "$(( ($(now) - ${t:-$(now)}) / 60 ))" "$(is_stale "$1" && echo ' | STALE')"
+    "$(field "$1" pid)" "$(( ($(now) - ${t:-$(now)}) / 60 ))" "$note"
 }
 write_owner() {
-  printf 'who=%s\npid=%s\nsince=%s\nttl=%s\n' "$who" "$pid" "$(now)" "$ttl" > "$DIR/$1/owner"
-  [ -n "$pid" ] || echo "warning: $1 has no pid, so after $ttl minutes it counts as stale and may be taken over" \
-    "even while in use; record the process that uses it: admiral lock attach $(printf %q "$1") --who $(printf %q "$who")" \
-    "--pid <pid>" >&2
+  local s=""; [ -n "$pid" ] || s="$(session_of)"
+  { printf 'who=%s\npid=%s\nsince=%s\nttl=%s\nname=%s\n' "$who" "$pid" "$(now)" "$ttl" "$1"
+    [ -z "$s" ] || printf 'session=%s\nsession_start=%s\n' "$s" "$(started "$s")"; } > "$DIR/$1/owner"
+  [ -z "$pid" ] || return 0
+  local again="admiral lock attach $(printf %q "$1") --who $(printf %q "$who") --pid <pid>"
+  if [ -n "$s" ]; then
+    echo "warning: $1 has no pid, so after $ttl minutes it is kept only while this session (pid $s) runs, and may" \
+      "be taken over once it ends even while in use; record the process that uses it: $again" >&2
+  else
+    echo "warning: $1 has no pid, so after $ttl minutes it counts as stale and may be taken over even while in use;" \
+      "record the process that uses it: $again" >&2
+  fi
+}
+taken_why() { # $1 = a stale lock: why it is stale, in words
+  local p; p="$(field "$DIR/$1" pid)"
+  if [ -n "$p" ]; then echo "its pid $p no longer ran"
+  else echo "it had no pid and was past its $(field "$DIR/$1" ttl)-minute ttl$([ -n "$(field "$DIR/$1" session)" ] && echo ", its session ended")"
+  fi
+}
+note_takeover() { # $1 = a lock just taken over, $2 = the owner it had, $3 = why: one record per holder displaced, in
+  local d="$DIR/.taken/$1" f  # $DIR/.taken/<name>/<time>.<pid>, written only once the lock is the taker's
+  f="$(now).$$"
+  { mkdir -p "$d" && { printf '%s\n' "$2"; printf 'taken_by=%s\ntaken_at=%s\nwhy=%s\n' "$who" "$(now)" "$3"; } \
+      > "$d/.tmp.$$" && mv -f "$d/.tmp.$$" "$d/$f"; } 2>/dev/null
+  rm -f "$d/.tmp.$$" 2>/dev/null
+  return 0
+}
+taken_records() { # $1 = lock name: the records of its takeovers from $who, oldest first
+  local f
+  for f in "$DIR/.taken/$1"/*; do
+    [ -f "$f" ] && [ "$(sed -n 's/^who=//p' "$f" | head -1)" = "$who" ] && echo "$f"
+  done
+  return 0
+}
+taken_from_me() { # $1 = lock name: when it was taken over from $who, says so (stderr) and succeeds
+  local f by at why
+  f="$(taken_records "$1" | tail -1)"; [ -n "$f" ] || return 1
+  by="$(sed -n 's/^taken_by=//p' "$f" | head -1)"; at="$(sed -n 's/^taken_at=//p' "$f" | head -1)"
+  why="$(sed -n 's/^why=//p' "$f" | head -1)"
+  echo "note: $1 was taken over from you at $(hhmm "$at") by $by ($why). Whatever of yours still uses it (a" \
+    "service on that port, say) now shares it with them: stop it, or take another" >&2
+}
+forget_taken() { # $1 = lock name, its own again: the records of its takeovers from $who have been told
+  local f
+  while IFS= read -r f; do rm -f "$f"; done < <(taken_records "$1")
+  rmdir "$DIR/.taken/$1" 2>/dev/null
+  return 0
+}
+refuse_other_spelling() { # acquire and queue: the lock asked for, held under another spelling of its name
+  local held since
+  held="$(field "$DIR/$name" name)"
+  [ -n "$held" ] && [ "$held" != "$name" ] || return 0
+  since="$(field "$DIR/$name" since)"
+  echo "$name: the lock is held as $held by $(field "$DIR/$name" who) (for $(( ($(now) - ${since:-$(now)}) / 60 ))" \
+    "min). Names that differ only in case are one lock on a disk that ignores case, as macOS's does, so $name would" \
+    "wait for it. To share that resource, name it $held; for another one, use a name that differs in more than case." >&2
+  exit 2
 }
 record() { # $1 = take|release, $2 = lock, $3 = since when it waited or was held (none: not at all)
   local h="$DIR/.history" d t s m w="${who//$'\t'/ }" l="${2//"%"/%25}" all
@@ -111,9 +192,12 @@ takeover() { # $1 = lock name; succeeds for one caller only, and only while the 
     [ -n "$(find "$m" -maxdepth 0 -mmin +1 2>/dev/null)" ] && rmdir "$m" 2>/dev/null  # a dead taker's mark
     return 1
   fi
-  if { [ -d "$DIR/$1" ] && is_stale "$DIR/$1"; } || mkdir "$DIR/$1" 2>/dev/null; then
-    write_owner "$1"; rmdir "$m"; return 0
+  if [ -d "$DIR/$1" ] && is_stale "$DIR/$1"; then
+    local was why; was="$(cat "$DIR/$1/owner" 2>/dev/null)"; why="$(taken_why "$1")"
+    write_owner "$1"; note_takeover "$1" "$was" "$why"  # the record after the owner: a stop in between loses it,
+    rmdir "$m"; return 0  # never writes a false one
   fi
+  if mkdir "$DIR/$1" 2>/dev/null; then write_owner "$1"; rmdir "$m"; return 0; fi
   rmdir "$m"; return 1
 }
 
@@ -231,12 +315,16 @@ tidy_lines() { # the lines nobody is in, unchanged for a minute, go. It takes no
   done
   # in one call: a process each took seconds over a backlog of hundreds
   find "$DIR" -mindepth 1 -maxdepth 1 -type d -name '.q.*' -empty -mmin +1 -exec rmdir {} + 2>/dev/null
+  # takeovers, kept a week; their directories stay (one per lock ever taken over), so none goes as a record is written
+  [ -d "$DIR/.taken" ] && find "$DIR/.taken" -type f -mmin +10080 -delete 2>/dev/null
   return 0
 }
 
 case "$cmd" in
   acquire)
     need_who; need_name; me="$(key "$who")"
+    taken_from_me "$name"
+    refuse_other_spelling
     if [ $wait -eq 1 ]; then
       trap 'rm -f "$Q/.tmp.$$"; drop_entry "$Q/$me"' EXIT; trap 'exit 130' INT TERM HUP
       join_line wait || exit 2
@@ -247,8 +335,10 @@ case "$cmd" in
     while :; do
       first="$(first_waiter)"
       if [ -z "$first" ] || [ "${first##*/}" = "$me" ]; then
+        refuse_other_spelling  # again: in a wait of hours another spelling may have come to hold it
         if mkdir "$DIR/$name" 2>/dev/null; then
           write_owner "$name"; took "$name"; drop_entry "$Q/$me"; leave_other_lines; tidy_lines
+          forget_taken "$name"  # its own again: what was taken from it has been told
           echo "acquired $name"; exit 0
         fi
         if is_stale "$DIR/$name"; then
@@ -264,13 +354,15 @@ case "$cmd" in
         else echo "busy: $name is free; first in line: $e_who"; fi
         exit 1
       fi
-      now_line="$(position) | holder: $(field "$DIR/$name" who)"
+      since="$(field "$DIR/$name" since)"
+      now_line="$(position) | holder: $(field "$DIR/$name" who)${since:+, since $(hhmm "$since")}"
       [ "$now_line" != "$shown" ] && { echo "waiting for $name: $now_line"; shown="$now_line"; }
       sleep 3
       [ $(( $(now) - seen_at )) -ge 30 ] && { join_line wait; seen_at=$(now); }  # failing, it tries again
     done;;
   queue)
-    need_who; need_name; me="$(key "$who")"; join_line queue || exit 2; echo "in line for $name: $(position)";;
+    need_who; need_name; me="$(key "$who")"; refuse_other_spelling
+    join_line queue || exit 2; echo "in line for $name: $(position)";;
   leave)
     need_who; need_name; me="$(key "$who")"
     if [ -f "$Q/$me" ]; then drop_entry "$Q/$me"; echo "left the line for $name"; else echo "not in line for $name"; fi
@@ -293,12 +385,13 @@ case "$cmd" in
     fi
     echo "priority of $who for $name is now $prio (set by $by)"; show_line "$Q";;
   attach)
-    need_who; [ "$(field "$DIR/$name" who)" = "$who" ] || { echo "not the holder of $name" >&2; exit 1; }
+    need_who; [ "$(field "$DIR/$name" who)" = "$who" ] || { taken_from_me "$name"; echo "not the holder of $name" >&2; exit 1; }
     t="$DIR/$name/owner.tmp.$$"; sed "s/^pid=.*/pid=$pid/" "$DIR/$name/owner" > "$t" && mv -f "$t" "$DIR/$name/owner"
     echo "attached pid $pid to $name";;
   release)
-    need_who; [ -d "$DIR/$name" ] || { echo "$name is not held"; exit 0; }
-    [ "$(field "$DIR/$name" who)" = "$who" ] || { echo "not the holder of $name: $(describe "$DIR/$name")" >&2; exit 1; }
+    need_who; [ -d "$DIR/$name" ] || { taken_from_me "$name"; echo "$name is not held"; exit 0; }
+    [ "$(field "$DIR/$name" who)" = "$who" ] || {
+      taken_from_me "$name"; echo "not the holder of $name: $(describe "$DIR/$name")" >&2; exit 1; }
     record release "$name" "$(field "$DIR/$name" since)"
     rm -f "$DIR/$name/owner"; rmdir "$DIR/$name"; echo "released $name"; tidy_lines;;
   status)
@@ -309,7 +402,15 @@ case "$cmd" in
       [ -d "$q" ] || continue; n="${q%/}"; n="${n##*/.q.}"
       [ -d "$DIR/$n" ] && continue; [ -n "$(in_order "${q%/}")" ] || continue
       printf '%-22s free | waiters:\n' "$n"; show_line "${q%/}"
-    done;;
+    done
+    first=1
+    while IFS= read -r f; do
+      [ -n "$f" ] || continue
+      [ $first -eq 1 ] && { echo "taken over in the last day:"; first=0; }
+      t="$(sed -n 's/^taken_at=//p' "$f" | head -1)"; n="${f%/*}"; n="${n##*/}"
+      printf '  %s at %s from %s by %s: %s\n' "$n" "$(hhmm "$t")" "$(sed -n 's/^who=//p' "$f" | head -1)" \
+        "$(sed -n 's/^taken_by=//p' "$f" | head -1)" "$(sed -n 's/^why=//p' "$f" | head -1)"
+    done < <(find "$DIR/.taken" -type f -mmin -1440 ! -name '.tmp.*' 2>/dev/null | sort);;
   port)
     need_who
     for p in $(seq "$from" "$to"); do

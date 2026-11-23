@@ -54,23 +54,34 @@ PORT_TRIES = 20
 
 # ---- the lock tool -------------------------------------------------------------------------------------------------
 
-def lock_tool(cfg, *args, stopped=lambda: False):
+def lock_tool(cfg, *args, stopped=lambda: False, shown=None):
     """`admiral lock <args>`, its output captured; ended (and failed) once `stopped()` says so, as a wait in a lock's
-    line may be long."""
+    line may be long. Each line of its output is also handed to `shown` as it comes, when given: a wait of hours
+    says whom it waits for while it waits, not once it is over (11-20, a run waited two hours unaware)."""
     env = dict(os.environ, ADMIRAL_LOCKS_DIR=cfg.locks_dir, ADMIRAL_LOCK_COMMANDERS=cfg.lock_commanders)
     script = os.path.join(os.path.dirname(os.path.abspath(__file__)), "lock.sh")
     p = subprocess.Popen(["/bin/bash", script, *args], stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True,
                          env=env, stdin=subprocess.DEVNULL)
+    out, err = [], []
+
+    def pump(stream, into, each=None):  # read all the while: a full pipe would stop it
+        for line in stream:
+            into.append(line)
+            if each:
+                each(line.rstrip("\n"))
+    readers = [threading.Thread(target=pump, args=(p.stdout, out, shown), daemon=True),
+               threading.Thread(target=pump, args=(p.stderr, err), daemon=True)]
+    for r in readers:
+        r.start()
     cut = False
-    while True:
-        try:
-            out, err = p.communicate(timeout=0.05)  # read all the while: a long wait says a lot, and a full pipe
-            break                                   # would stop it
-        except subprocess.TimeoutExpired:
-            if stopped() and not cut:
-                p.terminate()  # its own trap leaves the line
-                cut = True
-    return subprocess.CompletedProcess(p.args, 1 if cut else p.returncode, out, err)
+    while p.poll() is None:
+        if stopped() and not cut:
+            p.terminate()  # its own trap leaves the line
+            cut = True
+        time.sleep(0.05)
+    for r in readers:
+        r.join()
+    return subprocess.CompletedProcess(p.args, 1 if cut else p.returncode, "".join(out), "".join(err))
 
 
 def owner(cfg, name):
@@ -90,6 +101,17 @@ def groups(locks):
         if names and names not in out:
             out.append(names)
     return sorted(out, key=sorted)
+
+
+def holders(cfg, names):
+    """Who holds each of these locks and since when, as a waiting line shows it."""
+    out = []
+    for name in names:
+        o = owner(cfg, name)
+        since = o.get("since", "")
+        at = time.strftime("%H:%M", time.localtime(int(since))) if since.isdigit() else "?"
+        out.append(f"{name} held by {o['who']} since {at}" if o.get("who") else f"{name} free, others first in line")
+    return "; ".join(out)
 
 
 def take_any(cfg, names, who, ttl, prio, stopped):
@@ -113,7 +135,7 @@ def take_any(cfg, names, who, ttl, prio, stopped):
                 return name, ""
             if r.returncode != 1:  # cut short or failed: out of every line, keeping only what it holds
                 return leave(), f"could not take {name}: {(r.stderr or r.stdout).strip()[-300:]}"
-        line = "waiting for any of " + ", ".join(names)
+        line = f"waiting for any of {', '.join(names)}: {holders(cfg, names)}"
         if line != shown:
             say(line)
             shown = line
@@ -137,9 +159,9 @@ def take_locks(cfg, locks, who, port, ttl, stopped, priority=None):
             continue
         name = names[0]
         r = lock_tool(cfg, "acquire", name, "--who", who, "--wait", "--pid", me, "--ttl", str(ttl), *prio,
-                      stopped=stopped)
+                      stopped=stopped, shown=lambda line: line.startswith("waiting for") and say(line))
         for line in r.stdout.splitlines():
-            if not line.startswith("acquired"):
+            if not line.startswith(("acquired", "waiting for")):  # the waiting, said as it came
                 say(line)
         mine = owner(cfg, name)
         if r.returncode != 0:
