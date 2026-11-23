@@ -5,6 +5,15 @@ Each version says what changed for someone using Admiral. The version lives in `
 Claude Code keeps an installed plugin in its cache, one copy per version, so a change to the sidebar or the playbook
 reaches people only when the version moves.
 
+## 0.2.23 (2026-11-20)
+
+**Playbook**
+- principles: a fact that can change (a setting, a price, a limit, what production runs) is read from its source
+  before it is stated, or said to be unchecked; memory and older notes tell where to look, not what is so.
+- workspace: a branch another session builds on is not rewritten either, pushed or not; one still to be tidied has
+  its owner say when its head is final, and is only added to after that.
+- roles: a dispatch says which branch builds on which, where they stack, as it hands out the numbers not to repeat.
+
 ## 0.2.22 (2026-11-10)
 
 **Locks**
