@@ -5,14 +5,9 @@ Each version says what changed for someone using Admiral. The version lives in `
 Claude Code keeps an installed plugin in its cache, one copy per version, so a change to the sidebar or the playbook
 reaches people only when the version moves.
 
-## 0.2.23 (2026-11-20)
+## 0.2.24 (2026-11-23)
 
 **Playbook**
-- principles: a fact that can change (a setting, a price, a limit, what production runs) is read from its source
-  before it is stated, or said to be unchecked; memory and older notes tell where to look, not what is so.
-- workspace: a branch another session builds on is not rewritten either, pushed or not; one still to be tidied has
-  its owner say when its head is final, and is only added to after that.
-- roles: a dispatch says which branch builds on which, where they stack, as it hands out the numbers not to repeat.
 - resources: a lock taken by hand without a pid is kept past its ttl while its session runs; a takeover is told to the
   holder it was taken from; a lock's name is spelled one way.
 
@@ -29,6 +24,15 @@ reaches people only when the version moves.
 - `admiral run` says whom it waits for while it waits (the holder and since when; for `a|b`, each lock's holder),
   where before the lock tool's waiting lines were shown only once the lock was taken; `admiral lock acquire --wait`
   adds since when the holder has held it.
+
+## 0.2.23 (2026-11-20)
+
+**Playbook**
+- principles: a fact that can change (a setting, a price, a limit, what production runs) is read from its source
+  before it is stated, or said to be unchecked; memory and older notes tell where to look, not what is so.
+- workspace: a branch another session builds on is not rewritten either, pushed or not; one still to be tidied has
+  its owner say when its head is final, and is only added to after that.
+- roles: a dispatch says which branch builds on which, where they stack, as it hands out the numbers not to repeat.
 
 ## 0.2.22 (2026-11-10)
 
