@@ -606,6 +606,19 @@ class SeveralProjects(World):
         self.assertEqual([(g["lead"], g["project"]) for g in b["groups"]], [("Commander-T [Tool]", "Tool")])
         self.assertIn(("/w/tool", {"feat/t"}), [(r, bs) for r, bs in self.asked if "feat/t" in bs])
 
+    def test_a_batch_whose_member_works_in_another_project_is_not_taken_for_an_old_one(self):
+        self.written_at(NOW - 10 * 86400)
+        self.session(3, "shop-worker")
+        self.register("shop-owner", branch="feat/s", worktree="/w/app/wt")  # its session has exited
+        self.plan("Commander-Old", ("feat/s", "a shop deliverable", "shop-owner"))  # Shop's, by its owner
+        self.session(5, "mover", cwd="/w/tool")
+        self.register("mover", lead="Commander-Old")  # its registration is Tool's, where it runs
+        b = self.build(use_gh=False)
+        self.assertIn("Commander-Old [Shop]", [g["lead"] for g in b["groups"]])
+        self.assertFalse([h for h in b["hints"] if "has moved" in h], b["hints"])
+        os.remove(os.path.join(self.root, "sessions", "5.json"))  # once it exits, the batch is an old one
+        self.assertEqual(len([h for h in self.build(use_gh=False)["hints"] if "has moved" in h]), 1)
+
     def test_a_project_with_no_session_running_is_still_asked_while_the_board_is_read(self):
         self.session(3, "shop-worker")
         self.register("tool-worker", branch="feat/tool", worktree="/w/tool/wt")  # its session has exited
@@ -1742,6 +1755,14 @@ class PlanPrStates(World):
         self.assertNotIn("closed", line)  # cut as it always was cut, not in the middle of the new counts
         self.assertIn("PRs merged 1/4", line)
 
+    def test_with_only_the_persons_own_prs_unread_the_counts_stand(self):
+        self.mine = None  # the PRs were read; the person's own were not
+        b = self.build()
+        s = self.group(b, "Commander-Checkout")["summary"]
+        self.assertIn("gh failed", " ".join(b["health"]))
+        self.assertEqual((s["prsClosed"], s["prsOpen"]), (1, 1))
+        self.assertIn("plan, merged 1/4 · closed 1 · open 1)", board.markdown(b))
+
     def test_with_github_down_closed_and_open_are_unknown_not_none(self):
         import re
         from admiral import statusline
@@ -1797,6 +1818,9 @@ class PlanPrStatesInChinese(PlanPrStates):
         pass  # the English one says it
 
     def test_too_narrow_the_counts_go_before_what_the_line_always_said(self):
+        pass
+
+    def test_with_only_the_persons_own_prs_unread_the_counts_stand(self):
         pass
 
     def test_with_github_down_closed_and_open_are_unknown_not_none(self):

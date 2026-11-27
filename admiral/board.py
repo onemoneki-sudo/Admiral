@@ -218,12 +218,12 @@ def pr_count(group):
     return sum(s == "MERGED" for s in seen.values()), len(seen)
 
 
-def pr_states(group, known=True):
-    """(PRs closed unmerged, PRs open) of a plan's deliverables, as GitHub has them; (0, 0) without a plan; (None,
-    None) when GitHub was not read this time (`known` False), as no PR found then says nothing."""
-    if not known and group.get("batch"):
-        return None, None
+def pr_states(group, read=True):
+    """(PRs closed unmerged, PRs open) of a plan's deliverables, as GitHub has them; (0, 0) without a plan. (None,
+    None) when a deliverable with no PR found may have one: GitHub's PRs were not read this time (`read` False)."""
     states = [(i["pr"] or {}).get("state") for i in (group.get("batch") or {}).get("items", [])]
+    if not read and None in states:
+        return None, None
     return states.count("CLOSED"), states.count("OPEN")
 
 
@@ -368,8 +368,9 @@ def build(cfg, use_gh=True, now=None, starts=sessions.proc_starts, fetch=github.
     views = [cfg.for_project(p) for p in cfg.projects]
     regs, plans, anyone = owned(cfg, views, starts)
     # while any project has a session running, the board is read: every project's GitHub is asked as always
-    return combine(cfg, views, [build_one(v, regs=regs[v.project], plans=plans[v.project], read=anyone, **kw)
-                                for v in views])
+    every = [r for v in views for r in regs[v.project]]  # whether anyone of a batch runs is asked of all of them
+    return combine(cfg, views, [build_one(v, regs=regs[v.project], plans=plans[v.project], read=anyone,
+                                          every_reg=every, **kw) for v in views])
 
 
 def owned(cfg, views, starts):
@@ -504,12 +505,13 @@ def attach(live, regs, current, elsewhere=()):
 
 def build_one(cfg, use_gh=True, now=None, starts=sessions.proc_starts, fetch=github.prs_by_branch,
               commits=sessions.last_commit, fetch_mine=github.my_prs, checked_out=sessions.worktree_branch,
-              worktrees=sessions.worktrees, regs=None, plans=None, read=None):
+              worktrees=sessions.worktrees, regs=None, plans=None, read=None, every_reg=None):
     now = time.time() if now is None else now
     T, W = TEXT[cfg.language], words(cfg.language)
     live, broken, shapeless, elsewhere = sessions.load(cfg, starts)
     regs = registry.registrations(cfg) if regs is None else regs
     plans = registry.plans(cfg) if plans is None else plans
+    every_reg = regs if every_reg is None else every_reg  # with several projects, every project's registrations
     # Sessions outside the configured projects are not shown, but they run: a name running anywhere is never taken
     # for a session that ended, nor its batch for one with nobody of it running.
     running_elsewhere = {n for s in elsewhere for n in [s.get("name")] + [f.get("name") for f in s.get("formerNames") or []]
@@ -581,6 +583,7 @@ def build_one(cfg, use_gh=True, now=None, starts=sessions.proc_starts, fetch=git
             guessed.setdefault(sid, []).append(b)
     branches = claimed | {b for bs in guessed.values() for b in bs}
     prs, gh_ok, reused, mine = {}, None, False, None
+    prs_read = False  # whether GitHub's PRs were read this time: then a branch with no PR found has none
     quiet = all(c["status"] not in ("busy", "shell", "waiting") and now - c["statusSince"] > cfg.quiet_s for c in convs)
     # with no session running nothing reads the board, so GitHub is left alone; `read` says so for several projects
     if use_gh and (live if read is None else read) and cfg.repo_dir:
@@ -591,6 +594,7 @@ def build_one(cfg, use_gh=True, now=None, starts=sessions.proc_starts, fetch=git
         except (FileNotFoundError, NotADirectoryError):  # a repository that is not there: as GitHub not answering,
             prs, mine, reused = None, None, False  # rather than stopping the whole board
         gh_ok = prs is not None and mine is not None
+        prs_read = prs is not None
         prs = prs or {}
     unknown = gh_ok is False  # GitHub failed: a branch with no PR found may still have one
     for c in convs:
@@ -712,15 +716,17 @@ def build_one(cfg, use_gh=True, now=None, starts=sessions.proc_starts, fetch=git
                           "pr": github.pr_label(pr, cfg.language), "ci": ci_text, "ciLevel": ci_level})
         # of the batch: its owners, its commander, and the sessions registered under it, wherever they run
         ours = {i["owner"] for i in items} | {p["lead"], lead} | {r["who"] for r in regs if r.get("lead") in (p["lead"], lead)}
-        alive = ours & running or any(r.get("sessionId") in live_ids for r in regs
-                                      if set(registry.names_of(r)) & ours or r.get("lead") in (p["lead"], lead))
+        # its sessions' registrations in any project: a member may work in another project, under the same --lead
+        theirs = [r for r in every_reg if set(registry.names_of(r)) & ours or r.get("lead") in (p["lead"], lead)]
+        alive = ours & running or any(r.get("sessionId") in live_ids or set(registry.names_of(r)) & running
+                                      for r in theirs)
         gone = g is None and not alive and p["lead"] not in heard and lead not in heard
         if gone and items and all((i["pr"] or {}).get("state") == "MERGED" for i in items):
             # the batch is over: every deliverable merged, and nobody of it runs. It leaves the board rather than show
             # its commander not running; its plan is the commander's or the person's to close, never the board's
             finished.append(p["lead"])
             continue
-        last = moved(p, [r for r in regs if set(registry.names_of(r)) & ours or r.get("lead") in (p["lead"], lead)])
+        last = moved(p, theirs)
         if gone and last is not None and now - last > cfg.idle_flag_s:
             # nobody of it runs and nothing of it moved for days: an old batch, shown once under To tidy rather than
             # as a commander not running on every refresh; its plan stays, for `plan close`, or for its commander
@@ -735,7 +741,7 @@ def build_one(cfg, use_gh=True, now=None, starts=sessions.proc_starts, fetch=git
         m, bt, counts = g["members"], g.get("batch"), counted(g)
         d = dist([x["stage"] for x in counts])
         merged_prs, all_prs = pr_count(g)
-        closed_prs, open_prs = pr_states(g, gh_ok is True)
+        closed_prs, open_prs = pr_states(g, prs_read)
         g["summary"] = {"total": len(m), "done": sum(x["done"] for x in m), "dist": d, "pct": pct(d, cfg.weights),
                         "reported": sum(x["reportedDone"] for x in counts),
                         "items": len(bt["items"]) if bt else 0, "prsMerged": merged_prs, "prs": all_prs,
