@@ -218,8 +218,11 @@ def pr_count(group):
     return sum(s == "MERGED" for s in seen.values()), len(seen)
 
 
-def pr_states(group):
-    """(PRs closed unmerged, PRs open) of a plan's deliverables, as GitHub has them; (0, 0) without a plan."""
+def pr_states(group, known=True):
+    """(PRs closed unmerged, PRs open) of a plan's deliverables, as GitHub has them; (0, 0) without a plan; (None,
+    None) when GitHub was not read this time (`known` False), as no PR found then says nothing."""
+    if not known and group.get("batch"):
+        return None, None
     states = [(i["pr"] or {}).get("state") for i in (group.get("batch") or {}).get("items", [])]
     return states.count("CLOSED"), states.count("OPEN")
 
@@ -676,7 +679,12 @@ def build_one(cfg, use_gh=True, now=None, starts=sessions.proc_starts, fetch=git
     finished = []  # plans of batches over, with nobody of them running: not shown, left to `admiral plan close`
     # a planned PR's owner may run ungrouped, or outside the projects
     running = {n for c in convs for n in [c["name"]] + c["former"]} | running_elsewhere
-    heard = set(read["heard"].values())  # commanders a running session last heard from, gone or not
+    # commanders a running session last heard from, gone or not, unless it is registered under another: grouping goes
+    # by a registered --lead first, and so does whose batch it is
+    row_lead = {x["sessionId"]: x["lead"] for x in rows if x["leadFrom"] == "registered"}
+    heard = {n for sid, n in read["heard"].items() if row_lead.get(sid, n) == n}
+    # a session runs by the session its registration records, wherever it runs, as well as by any name it has or had
+    live_ids = {s.get("sessionId") for s in live + elsewhere} - {None, ""}
     mem_by_who = {}  # owners that deregistered since, by the name each registered under and its session's name now
     for c in convs:
         m = memory.get(c["sessionId"])
@@ -704,7 +712,9 @@ def build_one(cfg, use_gh=True, now=None, starts=sessions.proc_starts, fetch=git
                           "pr": github.pr_label(pr, cfg.language), "ci": ci_text, "ciLevel": ci_level})
         # of the batch: its owners, its commander, and the sessions registered under it, wherever they run
         ours = {i["owner"] for i in items} | {p["lead"], lead} | {r["who"] for r in regs if r.get("lead") in (p["lead"], lead)}
-        gone = g is None and not ours & running and p["lead"] not in heard and lead not in heard
+        alive = ours & running or any(r.get("sessionId") in live_ids for r in regs
+                                      if set(registry.names_of(r)) & ours or r.get("lead") in (p["lead"], lead))
+        gone = g is None and not alive and p["lead"] not in heard and lead not in heard
         if gone and items and all((i["pr"] or {}).get("state") == "MERGED" for i in items):
             # the batch is over: every deliverable merged, and nobody of it runs. It leaves the board rather than show
             # its commander not running; its plan is the commander's or the person's to close, never the board's
@@ -725,7 +735,7 @@ def build_one(cfg, use_gh=True, now=None, starts=sessions.proc_starts, fetch=git
         m, bt, counts = g["members"], g.get("batch"), counted(g)
         d = dist([x["stage"] for x in counts])
         merged_prs, all_prs = pr_count(g)
-        closed_prs, open_prs = pr_states(g)
+        closed_prs, open_prs = pr_states(g, gh_ok is True)
         g["summary"] = {"total": len(m), "done": sum(x["done"] for x in m), "dist": d, "pct": pct(d, cfg.weights),
                         "reported": sum(x["reportedDone"] for x in counts),
                         "items": len(bt["items"]) if bt else 0, "prsMerged": merged_prs, "prs": all_prs,
@@ -768,7 +778,6 @@ def build_one(cfg, use_gh=True, now=None, starts=sessions.proc_starts, fetch=git
     hints += [T["h_plan_finished"].format(lead=lead) for lead in finished]
     hints += [T["h_plan_dormant"].format(lead=lead, days=cfg.idle_flag_s // 86400, done=done, n=n)
               for lead, done, n in dormant]
-    live_ids = {s.get("sessionId") for s in live + elsewhere}
     running_here = {n for c in convs for n in [c["name"]] + c["former"]}  # every name a session here has or had
     nameless = any(not s.get("name") for s in live + elsewhere)  # by name, whether one ended cannot then be told
     for r in regs:
@@ -852,6 +861,11 @@ def stage_word(x, W):
     return W["reported_done"] if x.get("reportedDone") else W["stages"][x["stage"]]
 
 
+def known(n):
+    """A count, or "?" when GitHub was not read for it."""
+    return "?" if n is None else n
+
+
 def markdown(b, live=False):
     """The board as Markdown; `live` when it was built for this one command rather than read from the snapshot."""
     lang = b["language"]
@@ -897,8 +911,8 @@ def markdown(b, live=False):
         out.append(T["none"])
     for g in b["groups"]:
         s = g["summary"]
-        how = T["how_plan"].format(done=s["prsMerged"], n=s["items"], closed=s["prsClosed"], open=s["prsOpen"]) \
-            if g.get("batch") else T["how_live"]
+        how = T["how_plan"].format(done=s["prsMerged"], n=s["items"], closed=known(s["prsClosed"]),
+                                   open=known(s["prsOpen"])) if g.get("batch") else T["how_live"]
         out += ["", T["team_head"].format(lead=g["lead"], pct=f"{s['pct']}%" if s["pct"] is not None else "-", how=how)]
         if g.get("batch"):
             out += [T["item_cols"], "|---|---|---|---|---|---|"]

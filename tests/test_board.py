@@ -1623,6 +1623,28 @@ class OldBatches(World):
         registry.plan_add(self.cfg, "Commander-Old", "feat/b", "b", "old-worker")
         self.assertIsNone(self.lead_of(self.build()))
 
+    def test_a_session_of_it_running_outside_the_projects_under_another_name_keeps_the_batch(self):
+        from admiral import registry
+        self.session(7, "terminal-worker", cwd="/elsewhere")  # shown nowhere, and named apart from its registration
+        registry.write_json(registry.session_path(self.cfg, "s7"), {"who": "registered-worker", "sessionId": "s7",
+                                                                    "lead": "Commander-Old", "since": NOW - 10 * 86400})
+        b = self.build()
+        self.assertIsNotNone(self.lead_of(b))
+        self.assertFalse([h for h in b["hints"] if "Commander-Old" in h])
+
+    def test_a_session_that_heard_from_it_but_registered_under_another_commander_keeps_nothing(self):
+        self.session(5, "Commander-Current")
+        self.session(3, "mover")
+        self.transcript(3, (1, "Commander-Old"))  # once told by Commander-Old, since gone
+        self.register("mover", lead="Commander-Current")  # and moved to another batch
+        b = self.build()
+        self.assertEqual([m["name"] for m in self.group(b, "Commander-Current")["members"]], ["mover"])
+        self.assertIsNone(self.lead_of(b))
+        self.assertEqual(len([h for h in b["hints"] if "Commander-Old" in h]), 1)
+        from admiral import registry
+        registry.done(self.cfg, "mover")  # registered under nobody: what it last heard says whose it is
+        self.assertIsNotNone(self.lead_of(self.build()))
+
     def test_anyone_of_it_running_keeps_the_batch(self):
         for pid, name in ((1, "Commander-Old"), (3, "old-worker")):
             with self.subTest(name=name):
@@ -1688,6 +1710,54 @@ class PlanPrStates(World):
                  for ln in statusline.admiral_lines(self.cfg.sub("board.json"), "s1", now=NOW)]
         self.assertTrue(any("merged 1/4 · closed 1 · open 1" in ln for ln in lines), lines)
 
+    def status_command(self, columns):
+        """The status line as `admiral statusline` prints it, `columns` wide, without its colors."""
+        import contextlib
+        import io
+        import re
+        from unittest import mock
+        from admiral import statusline
+        out = io.StringIO()
+        env = {k: v for k, v in os.environ.items() if k not in ("ADMIRAL_IN_BASE", "ADMIRAL_PROBE")}
+        with mock.patch.dict(os.environ, dict(env, COLUMNS=str(columns)), clear=True), \
+                mock.patch("sys.stdin", io.StringIO('{"session_id": "s9"}')), contextlib.redirect_stdout(out):
+            statusline.main(self.cfg)
+        return [re.sub(r"\x1b\[[0-9;]*m", "", ln) for ln in out.getvalue().splitlines()]
+
+    def test_too_narrow_the_counts_go_before_what_the_line_always_said(self):
+        from admiral import statusline
+        os.remove(os.path.join(self.root, "sessions", "1.json"))  # its commander gone, its plan changed just now
+        self.session(9, "elsewhere")
+        self.written_at(NOW - 60)
+        self.plan("Commander-Checkout", ("feat/tax", "tax, retitled", ""))
+        board.write(self.cfg, self.build())
+        wide = next(ln for ln in self.status_command(300) if ln.lstrip().startswith("Checkout"))
+        self.assertIn("merged 1/4 · closed 1 · open 1", wide)
+        self.assertTrue(wide.endswith("commander not running"), wide)
+        before = wide.replace("merged 1/4 · closed 1 · open 1", "PRs merged 1/4")  # the line as it was
+        for columns in (statusline.width(before) + 4, statusline.width(wide) + 3):
+            line = next(ln for ln in self.status_command(columns) if ln.lstrip().startswith("Checkout"))
+            self.assertEqual(line, before)
+        line = next(ln for ln in self.status_command(60) if ln.lstrip().startswith("Checkout"))
+        self.assertNotIn("closed", line)  # cut as it always was cut, not in the middle of the new counts
+        self.assertIn("PRs merged 1/4", line)
+
+    def test_with_github_down_closed_and_open_are_unknown_not_none(self):
+        import re
+        from admiral import statusline
+        self.gh_down = True
+        b = self.build()
+        s = self.group(b, "Commander-Checkout")["summary"]
+        self.assertEqual((s["prsClosed"], s["prsOpen"]), (None, None))
+        self.assertIn("closed ? · open ?)", board.markdown(b))
+        board.write(self.cfg, b)
+        with open(self.cfg.sub("board.json"), encoding="utf-8") as fh:
+            shown = json.load(fh)["groups"][0]["summary"]
+        self.assertEqual((shown["prsClosed"], shown["prsOpen"]), (None, None))
+        lines = [re.sub(r"\x1b\[[0-9;]*m", "", ln)
+                 for ln in statusline.admiral_lines(self.cfg.sub("board.json"), "s1", now=NOW)]
+        self.assertTrue(any("closed ? · open ?" in ln for ln in lines), lines)
+
     def test_a_plan_a_train_merged_shows_its_prs_closed_not_merged(self):
         self.prs = {b: pr(20 + i, "CLOSED") for i, b in enumerate(("feat/cart", "feat/pay", "feat/ship", "feat/tax"))}
         s = self.group(self.build(), "Commander-Checkout")["summary"]
@@ -1725,6 +1795,13 @@ class PlanPrStatesInChinese(PlanPrStates):
 
     def test_without_a_plan_the_count_is_as_before(self):
         pass  # the English one says it
+
+    def test_too_narrow_the_counts_go_before_what_the_line_always_said(self):
+        pass
+
+    def test_with_github_down_closed_and_open_are_unknown_not_none(self):
+        b = (setattr(self, "gh_down", True), self.build())[1]
+        self.assertIn("已关闭 ? · 进行中 ?", board.markdown(b))
 
 
 class OneConversation(World):
