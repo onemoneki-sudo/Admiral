@@ -8,23 +8,28 @@ reaches people only when the version moves.
 ## Unreleased
 
 **Playbook**
-- All six skills rewritten to their essentials, about 41 KB down to about 24 KB: each opens with what it governs, each
+- All six skills rewritten to their essentials, about 41 KB down to about 28 KB: each opens with what it governs, each
   rule is a sentence on what it prevents, and what a tool does is a pointer to its `admiral` command. The floors are
   unchanged: one worktree per task, stopping by pid only, no shared git state changed, pushing and merging left to the
   person, no data exposed, production announced first, locks.
 - pipeline: a new default order, light checks while developing, then the person's acceptance, then one delivery check
   on the final version, the review by a different model beside the pre-push run of the affected tests, so changes made
-  during acceptance are reviewed once. A behaviour change has its invariants and the point every path passes through
+  during acceptance are reviewed once. Both checks are tied to one recorded candidate (a commit and its base); a fix
+  reruns only the checks it invalidates. A behaviour change has its invariants and the point every path passes through
   reviewed before the code; findings are grouped by invariant before the first fix. A project can set another order.
-- principles: the floors in one place; what makes a finding block (reachable now, breaks the brief or a decision, a
-  regression) and that a security finding on changed lines is never deferred; a step missed again becomes a tool whose
-  strength follows what a miss costs.
+- principles: the floors in one place; a finding is fixed when the goal is not reached without it, and shown to hold
+  by evidence (a failure the code can reach now, a breach of the brief or a decision); a regression this work brought
+  and a security finding on changed lines are fixed whatever the goal, the latter never deferred; a step missed again
+  becomes a tool whose strength follows what a miss costs.
 - pipeline: an existing test is adapted before one is added, and each test sits on the lowest layer that exposes the
   error.
-- workspace: after acceptance a session stays `accepting` through the delivery check, as the board's phases only move
-  forward.
-- wrapup: the clean-up is taken from the machine and GitHub, not memory, and only steps that lose nothing run without
-  the person.
+- workspace: after acceptance a session stays `accepting` through the delivery check rather than report `review`,
+  which the board counts lower; `waiting`, `needs_you` and `paused` may show less for a while, and on resuming the
+  session reports its real phase.
+- wrapup: the clean-up is taken from the machine and GitHub, not memory, each item with whose it is, and only steps
+  that lose nothing run without the person. A commander checks on the board that its members have wrapped up and its
+  plan has merged before `admiral plan close --lead`, which checks neither.
+- resources: `admiral run stop` stops whatever run holds the lock now, so its holder is checked first.
 - pipeline: how to word completion moves to principles.
 - pipeline: a review brief on security code is worded as checking that each protection holds, not as attacking it,
   which a reviewer's provider may refuse; a part still refused is recorded as unreviewed, never as passed.

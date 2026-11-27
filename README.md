@@ -413,7 +413,7 @@ What does take tokens is your sessions' own work with Admiral, and it is small:
 
 - **The playbook.** It is instructions for your sessions, so it sits in their context like any rules: the reminder of
   when to read which skill, about 1 KB, and the six skill descriptions, about 2 KB, in every session; a skill's full
-  text, 3 to 6 KB, once a session opens it. `[playbook] remind = false` drops the reminder.
+  text, 3 to 7 KB, once a session opens it. `[playbook] remind = false` drops the reminder.
 - **A few commands.** Registering (`admiral register`), taking a lock or a commander reading `board.md` is an ordinary
   command, and the session reads its few lines of output.
 - **`/admiral`** leaves one line in the conversation, saying the sidebar opened or closed.

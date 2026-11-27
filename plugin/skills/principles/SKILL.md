@@ -6,7 +6,8 @@ description: How to judge and verify work when AI sessions develop one repositor
 # Principles
 
 Judge work by its goal, verify it as its real user would, and leave the person's decisions to the person. These are
-defaults: the project's own rules win, and where they contradict what you were told, tell the person.
+defaults: the project's own rules win, read as they stand on the branch you build on, so you do not follow a stale
+copy; where they contradict what you were told, tell the person.
 
 ## Floors
 
@@ -22,10 +23,12 @@ Never crossed for the goal or for speed; when one is in the way, hand it to the 
 
 - Where no rule fits, or its letter would plainly hurt the goal, act for the goal and say what you did and why; never
   across a floor.
-- A finding blocks only when the code as it stands can reach the failure, it breaks the brief's acceptance or a
-  recorded decision, or this work brought it as a regression: fix those, defer the rest to the deferred list without
-  widening the task, and decide this yourself.
-- A security finding on lines you changed is fixed or disproved with evidence, never deferred.
+- For anything found on the way, ask whether the goal is still reached without handling it: if not, fix it before
+  delivering; if so, defer it to the deferred list rather than widen the task. Decide this yourself.
+- A finding holds only on evidence (a failure the code as it stands can reach, a breach of the brief's acceptance or
+  of a recorded decision); one without it is answered with the evidence against it, not fixed on a guess.
+- Two kinds are fixed whatever the goal: a regression this work brought, and a security finding on lines you changed,
+  which is fixed or disproved with evidence, never deferred.
 - Handing work over, say unasked, with evidence, whether it serves the goal, stays in scope and holds for every case of
   its kind.
 
@@ -64,8 +67,9 @@ Never crossed for the goal or for speed; when one is in the way, hand it to the 
 Contexts get compacted and new sessions start empty, so what others will need goes in a file: the project's rules for
 every task, the brief for one task's goal, scope and decisions, and, in the batch's folder outside the repository, the
 decision log (who decided what and why) and the summary the next batch reads.
-Note where work sticks when it happens, with the time lost, what was done and something checkable (a PR, a run, a
-commit), an inference marked as one.
+Note where work sticks when it happens, as a cause recalled later is often wrong: when, what happened, the time it
+cost, what was done and how it could be saved, with something checkable (a PR, a run, a commit), an inference marked
+as one, and a step the rules already state marked when it was missed anyway.
 
 ## Writing and stopping
 

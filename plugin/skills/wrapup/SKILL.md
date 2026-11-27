@@ -5,19 +5,23 @@ description: What to do after a PR merges or closes and when a batch ends, and w
 
 # Wrap-up
 
-Free what you hold, delete only what loses nothing, list the rest for the person, and leave the next batch one page.
+Free what the task holds, delete only what loses nothing, list the rest for the person, and leave the next batch one
+page.
 
 ## After a PR merges or closes
 
-The session that owns the PR does it at once; if that session has been closed, its commander does.
+The session that owns the PR does it at once; if that session has been closed, its commander does it for that task
+only.
 
-1. Stop your processes by pid and release your locks, keeping what others still use.
-2. Take stock from the machine and GitHub, not memory: worktrees, branches, locks, processes, registrations, plans,
-   temporary data.
+1. Take stock from the machine and GitHub, not memory: worktrees, branches, locks, processes, registrations, plans,
+   temporary data, each with whose it is (`admiral list`, `admiral lock status`, `git worktree list`).
+2. Stop the task's processes by pid and release its locks once nothing else uses them; what may be another session's
+   or the commander's own stays.
 3. Delete a worktree and its local branch **only when all hold**: GitHub has the PR merged, the branch head is its
    final commit, the tree is clean, no session works there. Keep evidence in the batch folder first. Only steps this
    safe run without the person.
-4. List everything else with its evidence for the person.
+4. List everything else (a PR closed unmerged, a condition not met, unclear ownership, other data) with its evidence
+   for the person.
 5. `admiral done --who "<name>"`.
 
 ## When a batch ends
@@ -29,15 +33,22 @@ The session that owns the PR does it at once; if that session has been closed, i
 - Count what each check (tests, review, acceptance, CI, a PR reviewer) caught that would have blocked the goal, with an
   example. Propose trimming one that caught nothing for three batches unless it guards something rare and costly
   (security, permissions, data loss, money), and trace what CI or a reviewer caught to the local check that missed it.
-- With the person's agreement, open issues from the deferred list for what is risky or hurts real use; the rest gets a
-  line in the summary.
-- Check each note on where work stuck against its evidence; propose what holds for any task as a rule or a tool.
+- With the person's agreement, open issues from the deferred list for what is risky (security, permissions, data lost
+  or leaked, wrong numbers) or hurts real use; the rest gets a line in the summary.
+- Check each note on where work stuck against its evidence. A step written down yet missed again is proposed as a tool
+  first; what else would hold for any task is proposed as a rule change; the rest stays with the batch.
 - Work paused for days gets a few lines atop its brief instead (what merged, where branches and worktrees stand, what is
-  left) and phase `paused`; on resuming, the code and the PRs outrank older notes.
+  left) and phase `paused`. On resuming, those lines, the code and the PRs are what count: process notes are kept but
+  not read by default, and where they disagree, the code and the PRs win.
 
 ## Which sessions can be closed
 
-Closing discards a session's context, so it is the person's act. The board (`admiral board`, the sidebar) gives each a
-verdict and its reason: can close (its PR merged and it has wrapped up: no worktree, no lock), wrap up first, for the
-person to confirm, or keep. A commander closes once no member runs and its plan has merged: `admiral plan close`,
-then `admiral state --who "<name>" --phase done`.
+Closing discards a session's context, so it is the person's act. The board (`admiral board`, the sidebar) lists those
+that can close (PR merged and wrapped up: no worktree, no lock), those to wrap up first and those for the person to
+confirm, each with its reason; any other session is kept. A commander closes once every member has wrapped up and every
+deliverable of its plan has merged, as the board shows, since `admiral plan close` checks neither:
+
+```
+admiral plan close --lead "<its name>"
+admiral state --who "<its name>" --phase done
+```

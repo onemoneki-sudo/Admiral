@@ -11,12 +11,18 @@ contention is not blamed on the code.
 ## Locks
 
 - Use a scarce resource only under its lock, queueing when it is busy, never around it.
-- Run what uses it with `admiral run --lock <name> --who "<session> <task>" --limit <minutes> -- <command>`, which
-  holds the lock exactly while it runs and stops all it started (`admiral run --help`: `--port` gives `$PORT`,
-  `--ready` returns once a service is up, `--lock 'a|b'` takes whichever slot frees first and names it in
-  `$ADMIRAL_LOCK`, `admiral run stop --lock <the one held>` ends a service).
-- Start a service in the foreground (`postgres -D`, not `pg_ctl start`), since a daemon escapes what the run can stop,
-  and under a lock named for it even when it holds nothing scarce, so it can be stopped and seen.
+- Run what uses it with `admiral run --lock <name> --who "<session> <task>" --limit <minutes> -- <command>` (`admiral
+  run --help`): it waits its turn, holds the lock exactly while the command runs, and at the end or the limit stops the
+  command and all it started, then releases the lock.
+- A service adds `--ready "<check>"`: the run returns once the check succeeds and leaves the service holding its locks
+  until `admiral run stop --lock <name>` or the limit. `--port` gives it a free port as `$PORT`. Start it in the
+  foreground (`postgres -D`, not `pg_ctl start`), since a daemon escapes what the run can stop, and under a lock named
+  for it even when it holds nothing scarce, so it can be stopped and seen.
+- `--lock 'db-1|db-2'` takes whichever slot frees first and must then be the run's only `--lock`, since waiting on a
+  choice while holding another lock can deadlock two runs; the command reads the slot it got from `$ADMIRAL_LOCK`.
+- `admiral run stop` stops whatever run holds that lock now: first check in `admiral lock status` that the holder is
+  still your run (your `--who`, and the pid its ready line printed), as after a limit the slot may be another
+  session's.
 - A lock taken by hand (`admiral lock acquire|attach|release`) carries the pid of what uses the resource, or it can be
   taken over while still in use; told it was taken from you, stop using the resource.
 - Spell a lock's name one way: names that differ only in case are one lock on a disk that ignores case.

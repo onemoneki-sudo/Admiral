@@ -24,14 +24,19 @@ tracks; executors build.
 ## Dispatching
 
 - Tell each executor to register with `--lead "<commander>"`, so the board files it under you for good.
-- Record the deliverables with `admiral plan add --lead "<commander>" --branch <branch> --title "<title>" --owner
-  <session>`, `plan rm` and, at the end, `plan close`: the board counts progress from the plan.
+- Record each deliverable with `admiral plan add --lead "<commander>" --branch <branch> --title "<title>" --owner
+  <session>` and drop one with `admiral plan rm --lead "<commander>" --branch <branch>`: the board counts the batch's
+  progress from the plan, and closing it is in wrapup.
 - Hand out the numbers that must not repeat (a migration's, a version's) and which branch builds on which.
-- Follow progress on `admiral board`, with `admiral wait --lead "<commander>"` in the background, adding `--quiet
-  <seconds>` below its `--timeout` while executors work unwatched; each time it returns read `admiral list` and start it
-  again, as it hears only what changes while it runs.
-- An executor three attempts no closer on one problem reports `stuck: <what it tried>; next: <what it will try>` as its
-  state note and may go on until its commander decides.
+- Follow progress on `admiral board`, with `admiral wait --lead "<commander>"` in the background: it returns when a
+  member reports, waits for the person, ends a turn or ends, or at `--timeout` (3600 seconds by default). Each time,
+  read `admiral list` and start it again, as it hears only what changes while it runs.
+- While executors work unwatched, add `--quiet <seconds>`, below `--timeout`: it wakes you when one at work has said
+  nothing that long. Silence can be a long job or one going in circles, so read its board row and its log before you
+  let it go on, correct it with `admiral send` or stop it by its pid.
+- An executor that three different attempts have brought no closer on one problem reports `stuck: <what it tried>;
+  next: <what it will try>` as its state note, keeps it until it is past the problem or answered, and may go on; its
+  commander decides whether it continues, is corrected or is stopped.
 
 ## Codex executors
 
@@ -47,8 +52,10 @@ tracks; executors build.
   `.git`: the commander commits for it, or, with the person's agreement, it runs with full access behind hooks that
   block outright. Trust the plugin's hooks in a window after each update.
 - Claude Code's auto mode refuses a full-access `codex exec` written by hand: start it through one launcher script
-  that fixes all but the worktree and a bounded time limit, which the person allows in `/permissions`, unquoted, or it
-  never matches.
+  that sets the access, the time limit and the empty input itself, takes a time limit only within bounds, and refuses
+  any path that does not resolve to a worktree under the project's worktree folder; give it only the executor's own
+  (never the main checkout or another session's), so the allowed script cannot hand full access to the wrong place.
+  The person allows that script in `/permissions`, unquoted, or the rule never matches.
 - After a segment stopped by pid, the next first cleans up the servers, runs and locks it left.
 
 ## Sizing a batch
