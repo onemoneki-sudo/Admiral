@@ -30,8 +30,12 @@ all Admiral shows every Claude Code session on the machine and reads no GitHub.
     develop = 25
     review = 50
     accept = 70
+    check = 75                              # the delivery check; left out, halfway between accept and ci
     ci = 80
     merged = 100
+
+A [progress] written before the delivery check had a milestone of its own has no `check`: it is put halfway between
+that config's accept and ci, so its bar still rises at every step.
 """
 
 import copy
@@ -88,7 +92,7 @@ class Config:
         self.statusline_base = data["statusline"]["base"]
         self.playbook_remind = data["playbook"]["remind"] is not False
         p = data["progress"]
-        self.weights = [0, p["develop"], p["review"], p["accept"], p["ci"], p["merged"]]
+        self.weights = [0, p["develop"], p["review"], p["accept"], check_of(p), p["ci"], p["merged"]]
         self.quiet_s = data["pacing"]["quiet_minutes"] * 60
         self.quiet_github_s = data["pacing"]["quiet_github_minutes"] * 60
         c = data["closing"]
@@ -138,6 +142,15 @@ class Config:
             hits = [(len(d), name) for d, name in self.claims if str(cwd).startswith(d)]
             return bool(hits) and max(hits)[1] == self.project
         return not self.project_dirs or any(str(cwd).startswith(p) for p in self.project_dirs)
+
+
+def check_of(p):
+    """The delivery check's worth: as given, else halfway between accept and ci (75 by default), which keeps a
+    [progress] from before it rising at every step."""
+    if "check" in p:
+        return p["check"]
+    half = (p["accept"] + p["ci"]) / 2
+    return int(half) if half == int(half) else half
 
 
 def config_path():

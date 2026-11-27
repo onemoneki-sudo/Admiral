@@ -7,14 +7,8 @@
 # Commanders allowed to reorder a line: one session name per line in $ADMIRAL_LOCK_COMMANDERS
 # (default <locks dir>/../lock-commanders.txt).
 #
-#   admiral lock acquire <name> --who "<session> <task>" [--pid <pid>] [--ttl <minutes>]
-#        exit 0 = acquired; exit 1 = busy (prints the holder)
-#   admiral lock attach  <name> --who "<same who>" --pid <pid>   record the job's pid after starting it
-#   admiral lock release <name> --who "<same who>"               only the holder releases
-#   admiral lock status                                          every lock, holder, age, stale or not
-#   admiral lock port    --who "<session> <task>" [--from 8100 --to 8199]   claim a free port, prints it
-#   admiral lock stats   [--days 30]                             how often each lock was waited for, and how
-#        long it was waited for and held (admiral/lockstats.py), from the history below
+# What each command does and takes is told to its users by usage() below (`admiral lock --help`); what follows here
+# is how it is done. `admiral lock stats` is admiral/lockstats.py, reading the history below.
 #
 # History: each take (with how long its taker waited in line) and each release (with how long it was
 # held) is a line of $DIR/.history/<year>-<month>.log, tab-separated: time, take|release, lock (its %, tab
@@ -40,17 +34,8 @@
 # Waiting line. Each lock has a line of waiters, ordered by priority (higher first,
 # default 0), then by arrival. A free lock goes only to the first waiter in its line; with nobody
 # waiting, acquire behaves as above. The line only decides who may try: holding is still the mkdir
-# above, so two holders are impossible however old and new callers mix.
-#
-#   admiral lock acquire <name> --who "..." --wait [--priority N] [--pid <pid>] [--ttl <minutes>]
-#        joins the line and blocks until acquired (exit 0); run it in the background.
-#        --pid/--ttl describe the holder once acquired, exactly as for a plain acquire
-#   admiral lock queue   <name> --who "..." [--priority N] [--pid <pid>] [--ttl <minutes>]
-#        joins the line without blocking; then poll acquire with the same --who
-#   admiral lock leave   <name> --who "..."                      leaves the line
-#   admiral lock prio    <name> --who "<a waiter's who>" --priority N --by "<commander>"
-#        reorders the line; --by must be a line of lock-commanders.txt. A waiter's own --priority
-#        counts only when it joins; changing it later is this command's job
+# above, so two holders are impossible however old and new callers mix. --pid and --ttl of a waiter describe
+# the holder once it acquires, exactly as for a plain acquire.
 #
 # A plain acquire that does not get the lock keeps its caller's place in the line (by --who), so
 # an existing `until admiral lock acquire ...; do sleep 30; done` loop waits its turn. Waiters leave the
@@ -58,6 +43,72 @@
 # Plain-acquire loops and --wait must also keep coming back: one not seen for 2 minutes has left.
 # A queue entry not seen for 2 minutes keeps its place but is passed over until it polls again.
 set -u
+usage() {  # printed straight, never through a here-document, which needs a temporary file bash may not get
+  printf '%s\n' \
+    'admiral lock: locks on what parallel sessions share (a heavy test slot, a database, a port, model quota), each with' \
+    'a waiting line. A lock is held by a "who", "<session> <task>": it starts with the session'\''s name, so the board' \
+    'knows whose it is; use the same --who for everything you do with one lock. To run a command under locks for exactly' \
+    'as long as it runs, stopped whole at a time limit and the locks released after, use `admiral run` (admiral run' \
+    '--help), which also takes whichever of several locks comes free first (--lock '\''a|b'\'').' \
+    '' \
+    '  admiral lock acquire <name> --who WHO [--pid PID] [--ttl MIN] [--wait [--priority N]]' \
+    '      Take the lock. Exit 0: acquired; 1: busy, saying who holds it (or who is first in line for it). A plain' \
+    '      acquire that does not get it keeps your place in the line, so a retry loop waits its turn; come back within' \
+    '      2 minutes or the place is lost. A loop polling several locks under one --who leaves the other lines once it' \
+    '      holds one. --wait joins the line and blocks until acquired, saying where it stands as that changes: run it' \
+    '      in the background.' \
+    '  admiral lock queue   <name> --who WHO [--priority N] [--pid PID] [--ttl MIN]' \
+    '      Join the line without blocking, then poll acquire with the same --who. A place not polled for 2 minutes is' \
+    '      kept but passed over until it polls again.' \
+    '  admiral lock leave   <name> --who WHO' \
+    '      Leave the line.' \
+    '  admiral lock attach  <name> --who WHO --pid PID' \
+    '      Record PID as what uses the lock, once it has started. Only the holder can; exit 1 otherwise, and when' \
+    '      the pid could not be written, which leaves the lock as it was.' \
+    '  admiral lock release <name> --who WHO' \
+    '      Release it. Only the holder can (exit 1 otherwise); a lock not held is no error.' \
+    '  admiral lock status' \
+    '      Every lock: holder, pid, age, STALE when it may be taken over; each waiting line; the takeovers of the last' \
+    '      day. `admiral lock` alone does the same.' \
+    '  admiral lock port    --who WHO [--from 8100] [--to 8199] [--pid PID] [--ttl MIN]' \
+    '      Claim the first port in the range that nothing listens on and no lock holds: prints the number and holds it' \
+    '      as the lock port-<number>, released like any lock. Exit 1: none free.' \
+    '  admiral lock prio    <name> --who WHO --priority N --by COMMANDER' \
+    '      Reorder a line: set the priority of the waiter WHO. Only a commander listed in the commanders file can' \
+    '      (config [locks] commanders; default <state dir>/lock-commanders.txt).' \
+    '  admiral lock stats   [--days N]' \
+    '      How often each lock was waited for, and how long it was waited for and held, over the last N days (30).' \
+    '' \
+    '  --who WHO       "<session> <task>", for example "Checkout-API db tests"' \
+    '  --pid PID       the process that uses the resource, for as long as it is needed (not a step that ends sooner):' \
+    '                  while it runs the lock is in use. Without one you are warned, as the lock is then judged by --ttl' \
+    '  --ttl MIN       for a lock without a pid: after this many minutes (default 180) it is stale once the session it' \
+    '                  was taken in has ended (the claude or codex process above the command, or $ADMIRAL_LOCK_SESSION:' \
+    '                  a pid, or none). A lock with a pid is stale once that pid no longer runs' \
+    '  --wait          block in the line until acquired' \
+    '  --priority N    a place in the line, -99 to 99, higher first (default 0). It counts when you join; after that' \
+    '                  only a commander changes it, with prio' \
+    '  --by COMMANDER  the commander reordering the line, its session name as the commanders file lists it' \
+    '' \
+    'Takeovers: acquire and port take over a stale lock, saying so. The holder it was taken from is told when it next' \
+    'acquires, attaches or releases that lock: stop using the resource then. Names that differ only in case are one lock' \
+    'on a disk that ignores case (macOS'\''s): acquire and queue refuse a second spelling (exit 2), naming the holder. Exit' \
+    '2 is also a wrong argument.' \
+    '' \
+    'examples, one per command:' \
+    '  until admiral lock acquire db-1 --who "Checkout-API db tests"; do sleep 30; done' \
+    '  make db-test & admiral lock attach db-1 --who "Checkout-API db tests" --pid $!' \
+    '  wait $!; admiral lock release db-1 --who "Checkout-API db tests"' \
+    '  admiral lock acquire heavy --who "Checkout-API suite" --wait --priority 1 --pid $$' \
+    '  admiral lock queue heavy --who "Search-Index suite"' \
+    '  admiral lock leave heavy --who "Search-Index suite"' \
+    '  admiral lock prio heavy --who "Search-Index suite" --priority 5 --by "Commander-Search"' \
+    '  port=$(admiral lock port --who "Checkout-UI dev server")' \
+    '  admiral lock status' \
+    '  admiral lock stats --days 7'
+}
+[ "${1:-}" = help ] && { usage; exit 0; }
+for arg in "$@"; do case "$arg" in -h|--help) usage; exit 0;; esac; done
 DIR="${ADMIRAL_LOCKS_DIR:-$HOME/.local/state/admiral/locks}"
 COMMANDERS="${ADMIRAL_LOCK_COMMANDERS:-$(dirname "$DIR")/lock-commanders.txt}"
 mkdir -p "$DIR"
@@ -69,7 +120,7 @@ while [ $# -gt 0 ]; do
     --who) who="$2"; shift 2;; --pid) pid="$2"; shift 2;; --ttl) ttl="$2"; shift 2;;
     --from) from="$2"; shift 2;; --to) to="$2"; shift 2;;
     --priority) prio="$2"; shift 2;; --by) by="$2"; shift 2;; --wait) wait=1; shift;;
-    *) echo "unknown argument: $1" >&2; exit 2;;
+    *) echo "unknown argument: $1 (admiral lock --help)" >&2; exit 2;;
   esac
 done
 if [ -n "$prio" ] && ! [[ "$prio" =~ ^-?[0-9]{1,2}$ ]]; then echo "--priority is an integer from -99 to 99" >&2; exit 2; fi
@@ -386,8 +437,15 @@ case "$cmd" in
     echo "priority of $who for $name is now $prio (set by $by)"; show_line "$Q";;
   attach)
     need_who; [ "$(field "$DIR/$name" who)" = "$who" ] || { taken_from_me "$name"; echo "not the holder of $name" >&2; exit 1; }
-    t="$DIR/$name/owner.tmp.$$"; sed "s/^pid=.*/pid=$pid/" "$DIR/$name/owner" > "$t" && mv -f "$t" "$DIR/$name/owner"
-    echo "attached pid $pid to $name";;
+    [[ "$pid" =~ ^[0-9]+$ ]] || { echo "--pid is required, the pid of what uses $name" >&2; exit 2; }
+    t="$DIR/$name/owner.tmp.$$"
+    # attached only once the owner file says so: a write that fails leaves the lock on whatever it had
+    if { sed "s/^pid=.*/pid=$pid/" "$DIR/$name/owner" > "$t" && mv -f "$t" "$DIR/$name/owner"; } 2>/dev/null \
+        && [ "$(field "$DIR/$name" pid)" = "$pid" ]; then
+      echo "attached pid $pid to $name"
+    else
+      rm -f "$t" 2>/dev/null; echo "could not record pid $pid on $name ($DIR/$name/owner)" >&2; exit 1
+    fi;;
   release)
     need_who; [ -d "$DIR/$name" ] || { taken_from_me "$name"; echo "$name is not held"; exit 0; }
     [ "$(field "$DIR/$name" who)" = "$who" ] || {
@@ -419,5 +477,5 @@ case "$cmd" in
       if is_stale "$DIR/port-$p" && takeover "port-$p"; then record take "port-$p"; echo "$p"; exit 0; fi
     done
     echo "no free port in $from-$to" >&2; exit 1;;
-  *) echo "unknown command: $cmd" >&2; exit 2;;
+  *) echo "unknown command: $cmd (admiral lock --help)" >&2; exit 2;;
 esac

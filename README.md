@@ -88,7 +88,7 @@ snapshot.
   - **reported**: the session said what it needs from you (`admiral state --phase needs_you --note "…"`);
   - **asked**: its last turn ended on a question, and you have not answered.
 - **Every batch**, under its commander: progress, PRs merged, and each PR in its plan, led by the session that owns
-  it (a click brings it forward), with its five-step milestone, title, failing CI and last activity. A planned PR
+  it (a click brings it forward), with its six-step milestone, title, failing CI and last activity. A planned PR
   nobody has started shows as such.
 
   <img src="docs/media/batch.png" alt="A commander's batch: its plan, each deliverable's milestone, owner and PR" width="100%">
@@ -109,8 +109,9 @@ terminal tab comes to the front (macOS: Terminal and iTerm2).
 
 <img src="docs/media/milestones.png" alt="Five milestones: develop 25%, review 50%, accept 70%, CI 80%, merged 100%" width="100%">
 
-Progress follows real delivery, never a guess: a session or deliverable is at **develop**, **review** (by a different
-model), **accept** (yours), **CI** (its PR is open and ready, not a draft) or **merged** (as GitHub has it: nothing else
+Progress follows real delivery, never a guess: a session or deliverable is at **develop**, **review** (where a
+project reviews before acceptance), **accept** (yours), **check** (the delivery check: review by a different model
+beside the pre-push run), **CI** (its PR is open and ready, not a draft) or **merged** (as GitHub has it: nothing else
 counts as a merge), each worth a set share. A batch takes the mean of its deliverables; one planned but not started
 counts as zero, and a merged one keeps counting after its session closes. A session that says it is done with no PR to
 show it reads **reported done**: its own progress is complete, but it is never counted as a merged PR, and whether to
@@ -280,6 +281,7 @@ remind = true                          # remind every session which playbook ski
 develop = 25
 review = 50
 accept = 70
+check = 75                             # left out: halfway between accept and ci
 ci = 80
 merged = 100
 ```
@@ -331,7 +333,7 @@ belongs to the commander its registration names; without one, to the commander w
 
 ```sh
 admiral register --who "<session name>" --task "<task>" --branch <branch> --worktree <path> --lead "<commander>"
-admiral state    --who "<session name>" --phase review        # working, waiting, needs_you, review, accepting, paused, done
+admiral state    --who "<session name>" --phase checking      # working, waiting, needs_you, review, accepting, checking, paused, done
 admiral done     --who "<session name>"
 ```
 

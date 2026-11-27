@@ -171,6 +171,21 @@ class Lock(unittest.TestCase):
         self.age("svc", 5)
         self.assertEqual(self.admiral("lock", "acquire", "svc", "--who", "w2").returncode, 1)  # its pid still runs
 
+    def test_attach_fails_when_the_pid_is_not_written(self):
+        self.assertEqual(self.admiral("lock", "acquire", "db", "--who", "w1", "--pid", str(os.getpid())).returncode, 0)
+        d = os.path.join(self.locks, "db")
+        os.chmod(d, 0o555)  # the owner file cannot be replaced
+        try:
+            r = self.admiral("lock", "attach", "db", "--who", "w1", "--pid", "12345")
+        finally:
+            os.chmod(d, 0o755)
+        self.assertEqual(r.returncode, 1, r.stdout)
+        self.assertNotIn("attached", r.stdout)
+        self.assertIn("could not record pid 12345 on db", r.stderr)
+        self.assertEqual(self.owner("db")["pid"], str(os.getpid()))
+        self.assertEqual(self.admiral("lock", "attach", "db", "--who", "w1").returncode, 2)  # no pid given
+        self.assertEqual(self.admiral("lock", "attach", "db", "--who", "w1", "--pid", "12345").returncode, 0)
+
     # ---- a takeover told to the holder it was taken from --------------------------------------------------------
 
     def test_the_holder_a_lock_was_taken_from_is_told_and_status_lists_it(self):

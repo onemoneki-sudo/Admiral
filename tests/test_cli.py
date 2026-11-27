@@ -3,6 +3,7 @@
 import itertools
 import json
 import os
+import re
 import shlex
 import shutil
 import subprocess
@@ -210,6 +211,13 @@ class Cli(unittest.TestCase):
         self.run_cli("register", "--who", "worker", "--branch", "feat/b")
         self.assertIn("| accepting |", self.run_cli("list").stdout)
 
+    def test_the_delivery_check_is_a_phase_of_its_own(self):
+        self.run_cli("register", "--who", "worker", "--branch", "feat/a")
+        self.assertEqual(self.run_cli("state", "--who", "worker", "--phase", "checking").stdout, "worker: checking\n")
+        self.assertIn("| delivery check |", self.run_cli("list").stdout)
+        self.assertEqual(self.run_cli("state", "--who", "worker", "--phase", "交付检查").stdout, "worker: checking\n")
+        self.assertEqual(self.run_cli("state", "--who", "worker", "--phase", "review").stdout, "worker: review\n")
+
     def test_plan_add_update_remove_close(self):
         self.run_cli("plan", "add", "--lead", "Commander-A", "--branch", "feat/a", "--title", "first")
         self.run_cli("plan", "add", "--lead", "Commander-A", "--branch", "feat/a", "--title", "renamed", "--owner", "worker")
@@ -401,6 +409,113 @@ class Cli(unittest.TestCase):
         self.assertEqual(r.returncode, 0, r.stderr)
         self.assertIn("Admiral board (0 running)", r.stdout)
         self.assertIn("Built just now", r.stdout)  # built for this command, not the background job's snapshot
+
+
+class Help(unittest.TestCase):
+    """Every command's --help says what it does and what each argument means, and does nothing else."""
+
+    setUp, tearDown, run_cli, regs, reg = Cli.setUp, Cli.tearDown, Cli.run_cli, Cli.regs, Cli.reg
+
+    def parsers(self):
+        """(the command's words, its parser) for every command the main parser has, actions of plan included."""
+        import argparse
+        from admiral import cli
+        out, todo = [], [((), cli.build_parser())]
+        while todo:
+            words, p = todo.pop()
+            out.append((words, p))
+            for act in p._actions:
+                if isinstance(act, argparse._SubParsersAction):
+                    todo += [(words + (name,), sub) for name, sub in act.choices.items()]
+        return out
+
+    def test_every_command_and_argument_is_described(self):
+        import argparse
+        found = self.parsers()
+        self.assertEqual({w[0] for w, _ in found if w}, {
+            "register", "state", "done", "list", "plan", "board", "statusline", "codex-hook", "send", "wait", "lock",
+            "run", "focus", "where", "doctor", "demo"})
+        for words, p in found:
+            self.assertTrue(p.description, words)
+            self.assertIn("example", p.epilog or "", words)
+            self.assertIn("admiral " if words else "admiral register ", p.epilog, words)
+            for act in p._actions:
+                if not isinstance(act, (argparse._HelpAction, argparse._SubParsersAction)):
+                    self.assertTrue(act.help, (words, act.dest))
+
+    def test_the_state_help_names_every_phase(self):
+        from admiral.words import PHASE_KEYS
+        out = self.run_cli("state", "--help").stdout
+        for k in PHASE_KEYS:
+            self.assertRegex(out, rf"\n  {k} +\S", k)
+
+    def test_lock_help_names_every_command_and_takes_no_lock(self):
+        with open(os.path.join(ROOT, "admiral", "lock.sh")) as fh:
+            script = fh.read()
+        cases = script[script.rindex('case "$cmd" in'):]
+        commands = set(re.findall(r"^  ([a-z]+)\)", cases, re.M))
+        self.assertEqual(commands, {"acquire", "queue", "leave", "prio", "attach", "release", "status", "port"})
+        for argv in (("lock", "--help"), ("lock", "help"), ("lock", "acquire", "db-1", "--who", "w t", "--help")):
+            r = self.run_cli(*argv)
+            self.assertEqual(r.returncode, 0, r.stderr)
+            examples = r.stdout[r.stdout.index("examples"):]
+            for c in commands | {"stats"}:
+                self.assertRegex(r.stdout, rf"\n  admiral lock {c}\b")
+                self.assertRegex(examples, rf"admiral lock {c}\b", c)
+            for opt in ("--who", "--pid", "--ttl", "--wait", "--priority", "--by"):
+                self.assertRegex(r.stdout, rf"\n  {opt} [A-Z ]+\S")
+        self.assertFalse(os.path.exists(os.path.join(self.dir, "state", "locks", "db-1")))
+
+    def test_lock_help_needs_no_temporary_file(self):
+        with open(os.path.join(ROOT, "admiral", "lock.sh")) as fh:
+            script = fh.read()
+        usage = script[script.index("usage() {"):script.index("\n}\n", script.index("usage() {"))]
+        self.assertNotIn("<<", usage)  # a here-document needs a temporary file, which bash may not be able to write
+        env = dict(self.env, TMPDIR=os.path.join(self.dir, "missing"))
+        r = subprocess.run(["/bin/bash", os.path.join(ROOT, "admiral", "lock.sh"), "--help"], capture_output=True,
+                           text=True, env=env)
+        self.assertEqual((r.returncode, r.stderr), (0, ""))
+        self.assertIn("examples, one per command:", r.stdout)
+
+    def test_run_and_lock_stats_help(self):
+        out = self.run_cli("run", "--help").stdout
+        for opt in ("--lock", "--priority", "--port", "--who", "--limit", "--ready", "--ready-timeout", "--log"):
+            self.assertRegex(out, rf"\n  {opt}( [A-Z]+)? +\S|\n  {opt}( [A-Z]+)?\n +\S", opt)
+        self.assertIn("$ADMIRAL_LOCK", out)
+        self.assertIn("examples:", out)
+        self.assertIn("not necessarily the one you started", self.run_cli("run", "stop", "--help").stdout)
+        self.assertIn("--days N", self.run_cli("lock", "stats", "--help").stdout)
+        self.assertIn("--limit counts from when the command starts, once every lock (and the port)\nis taken, and "
+                      "--ready-timeout from when the run is seen running", out)
+
+    def test_every_help_works_without_a_config_that_reads(self):
+        self.env["ADMIRAL_CONFIG"] = self.dir  # a directory: reading it fails
+        self.assertNotEqual(self.run_cli("list").returncode, 0)
+        helps = [w + ("--help",) for w, _ in self.parsers()] + [
+            ("lock", "help"), ("lock", "acquire", "db-1", "--who", "w t", "--help"), ("lock", "stats", "--help"),
+            ("run", "stop", "--help")]
+        for argv in helps:
+            r = self.run_cli(*argv)
+            self.assertEqual(r.returncode, 0, (argv, r.stderr))
+            self.assertIn("usage" if argv[:1] != ("lock",) or "stats" in argv else "admiral lock acquire", r.stdout)
+
+    def test_plan_takes_its_options_before_or_after_the_action_and_refuses_empty_ones(self):
+        self.assertEqual(self.run_cli("plan", "--lead", "Commander-A", "--branch", "feat/a", "add").returncode, 0)
+        self.assertIn("feat/a", self.run_cli("plan", "--lead", "Commander-A", "list").stdout)
+        self.assertIn("feat/a", self.run_cli("plan", "list", "--lead", "Commander-A").stdout)
+        for argv in (("plan", "rm", "--lead", "Commander-A"), ("plan", "close")):
+            r = self.run_cli(*argv)
+            self.assertEqual(r.returncode, 2, argv)
+            self.assertIn("is required", r.stderr)
+        for argv in (("plan", "add", "--lead=", "--branch=feat/b"), ("plan", "add", "--lead=Commander-A", "--branch="),
+                     ("plan", "add", "--lead=Commander-A", "--branch=   "), ("plan", "list", "--lead="),
+                     ("plan", "--lead", " ", "list"), ("register", "--who", "w", "--branch", " "),
+                     ("register", "--who", "w", "--lead="), ("wait", "--lead", "  ")):
+            r = self.run_cli(*argv)
+            self.assertEqual(r.returncode, 2, argv)
+            self.assertIn("must not be empty", r.stderr, argv)
+        self.assertIsNone(self.reg("w"))
+        self.assertEqual(self.run_cli("plan", "list").stdout.count("feat/"), 1)
 
 
 if __name__ == "__main__":

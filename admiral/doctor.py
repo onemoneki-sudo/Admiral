@@ -376,6 +376,8 @@ def check_config(m, T, ctx):
     else:
         out = [result(OK, T["config_ok"].format(path=path))]
     wrong = wrong_types(data)
+    if isinstance(data.get("progress"), dict):  # check has no default: it follows accept and ci when left out
+        wrong += wrong_types(data["progress"], {"check": 0}, "progress.")
     out += [result(FAIL, T["config_type"].format(key=k, kind=T[kind]), T["fix_config"].format(path=path))
             for k, kind in wrong]
     if "language" in data and data["language"] not in ("en", "zh") and isinstance(data["language"], str):

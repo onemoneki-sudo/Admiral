@@ -24,26 +24,22 @@ tracks; executors build.
 ## Dispatching
 
 - Tell each executor to register with `--lead "<commander>"`, so the board files it under you for good.
-- Record each deliverable with `admiral plan add --lead "<commander>" --branch <branch> --title "<title>" --owner
-  <session>` and drop one with `admiral plan rm --lead "<commander>" --branch <branch>`: the board counts the batch's
-  progress from the plan, and closing it is in wrapup.
+- Record each deliverable with `admiral plan add` and drop one with `admiral plan rm` (`admiral plan --help`): the
+  board counts the batch's progress from the plan, and closing it is in wrapup.
 - Hand out the numbers that must not repeat (a migration's, a version's) and which branch builds on which.
-- Follow progress on `admiral board`, with `admiral wait --lead "<commander>"` in the background: it returns when a
-  member reports, waits for the person, ends a turn or ends, or at `--timeout` (3600 seconds by default). Each time,
-  read `admiral list` and start it again, as it hears only what changes while it runs.
-- While executors work unwatched, add `--quiet <seconds>`, below `--timeout`: it also returns once this wait has
-  heard nothing that long while a member is at work. It measures the wait, not any one member's silence, and silence
-  can be a long job or one going in circles, so read the member's board row and log before you let it go on, correct
-  it with `admiral send` or stop it by its pid.
+- Follow progress on `admiral board`, with `admiral wait --lead "<commander>"` in the background (`admiral wait
+  --help`), started again each time it returns.
+- While executors work unwatched, add `--quiet`. Silence can be a long job or one going in circles, so read the
+  member's board row and log before you let it go on, correct it with `admiral send` or stop it by its pid.
 - An executor that three different attempts have brought no closer on one problem reports `stuck: <what it tried>;
   next: <what it will try>` as its state note, keeps it until it is past the problem or answered, and may go on; its
   commander decides whether it continues, is corrected or is stopped.
 
 ## Codex executors
 
-- Register it yourself (`admiral register --who <name> --agent codex --worktree <path> --lead "<commander>"`), give
-  the person its start command (`codex -C <worktree> "Read <brief> and start"`), and send it decisions with `admiral
-  send`, which its brief says override the brief, or it stops at them.
+- Register it yourself (`admiral register --agent codex`, with its worktree and `--lead`), give the person its start
+  command (`codex -C <worktree> "Read <brief> and start"`), and send it decisions with `admiral send`, which its brief
+  says override the brief, or it stops at them.
 - Its brief names the only reasons to stop, a refusal by a hook or rule (a message handed over at a call is none) and
   leaving the brief's scope, or it stops at the first trivial failure.
 - For long work run it in the background a segment at a time (`codex exec`, then `codex exec resume <session> "<next

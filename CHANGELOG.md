@@ -5,6 +5,45 @@ Each version says what changed for someone using Admiral. The version lives in `
 Claude Code keeps an installed plugin in its cache, one copy per version, so a change to the sidebar or the playbook
 reaches people only when the version moves.
 
+## Unreleased
+
+**Board**
+- The delivery check has a milestone of its own, **check**, between accept and CI, and a phase to report it,
+  `checking` (Chinese: 交付检查). After acceptance a session reports `checking` through review by a different model and
+  the pre-push run, instead of staying `accepting`; a change that skips acceptance reports `checking` at its delivery
+  check. `review` keeps its place before accept, for projects that review first. Each milestone is still the phase
+  reported now.
+- `[progress]` takes `check` (75 by default). Left out, as in a config written before, it is halfway between that
+  config's accept and ci, so the bar still rises at every step.
+- The status line and the sidebar draw one pip per milestone, six now. A phase `done` with a draft or a closed PR is
+  check, with an open ready PR CI, as before.
+- The snapshot keeps `stage`, `dist` and the words' `stages` on the old six-step scale (check counted as accept), so
+  a status line or sidebar not yet updated still reads it right; the seven-step ones are `milestone`, `milestones`
+  and the words' `milestones`, which the new ones read, falling back to the old fields on a snapshot written before.
+
+**Commands**
+- Every command's `--help` says what it does, what each argument means, and gives an example: `admiral --help` lists
+  them all, `admiral lock` and `admiral run` included. `admiral lock --help` is new: what acquire, queue, leave,
+  attach, release, status, port, prio and stats do, with an example each, the waiting line, priorities, stale locks
+  and takeovers, which were written only in the lock tool's comments. `admiral plan --help` shows each action with an
+  example; its options still go before or after the action, and an empty `--lead` or `--branch` is still refused.
+- Every `--help` works when the config cannot be read, `lock`, `lock stats` and `run` included.
+- `admiral run --help` says when its clocks start: `--limit` when the command starts, once the locks are taken;
+  `--ready-timeout` once the run is seen running, the recording of the command's pid on the locks done; the wait in
+  line has none. It also says that a lock whose pid could not be moved to the command keeps the run's own.
+- `admiral lock attach` fails (exit 1) when the pid was not written, and needs `--pid`.
+- `admiral run`'s ready line, its stop command and `$ADMIRAL_LOCK` name the first `--lock` given, the task's own,
+  not the first in the order the locks are taken.
+- An empty or blank `--lead` or `--branch` is refused wherever one is taken (`register`, `plan`, `wait`).
+- `admiral lock --help` prints without a here-document, so it works where bash cannot write a temporary file.
+
+**Playbook**
+- workspace: after acceptance a session reports `checking`, and a change without acceptance reports it at its
+  delivery check; the advice to stay `accepting` through the delivery check is gone.
+- pipeline: acceptance and the delivery check name their phase.
+- resources, roles, workspace: what a command's options do is left to its `--help`, which each rule now points to;
+  the rules on when and why to use them stay.
+
 ## 0.2.25 (2026-11-27)
 
 **Playbook**

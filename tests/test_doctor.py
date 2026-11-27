@@ -324,6 +324,10 @@ class Checks(Doctor):
         out = self.fails("config sessions.project_dirs must be a list of strings, like [\"~/code/app\"]")
         self.assertIn("✗ config github.repo_dir must be a string", out)
 
+    def test_a_check_worth_of_the_wrong_kind_is_reported(self):
+        self.config(f'state_dir = "{self.state}"\n[progress]\ncheck = "most"\n')
+        self.fails("config progress.check must be a number")
+
     def test_no_repository_means_no_github_and_no_gh_check(self):
         self.config(f'state_dir = "{self.state}"\n')
         code, out = self.doctor()

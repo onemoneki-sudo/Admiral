@@ -163,19 +163,20 @@ class Milestones(unittest.TestCase):
         self.assertEqual(board.stage_of("working", None), 1)
         self.assertEqual(board.stage_of("review", None), 2)
         self.assertEqual(board.stage_of("accepting", None), 3)
-        self.assertEqual(board.stage_of("working", pr(1, "OPEN")), 4)  # one push straight to ready
+        self.assertEqual(board.stage_of("checking", None), 4)  # the delivery check, after acceptance, before CI
+        self.assertEqual(board.stage_of("working", pr(1, "OPEN")), 5)  # one push straight to ready
         self.assertEqual(board.stage_of("review", dict(pr(1, "OPEN"), isDraft=True)), 2)  # a draft is not ready
-        self.assertEqual(board.stage_of("review", pr(1, "MERGED")), 5)
-        self.assertEqual(board.stage_of("done", None), 5)  # no PR to speak for it: the session's word
-        self.assertEqual(board.stage_of("done", pr(1, "OPEN")), 4)  # done is not merged while the PR is open
-        self.assertEqual(board.stage_of("done", pr(1, "CLOSED")), 3)
+        self.assertEqual(board.stage_of("review", pr(1, "MERGED")), 6)
+        self.assertEqual(board.stage_of("done", None), 6)  # no PR to speak for it: the session's word
+        self.assertEqual(board.stage_of("done", pr(1, "OPEN")), 5)  # done is not merged while the PR is open
+        self.assertEqual(board.stage_of("done", pr(1, "CLOSED")), 4)
         self.assertEqual(board.stage_of(None, pr(1, "CLOSED")), 1)
 
     def test_unregistered_and_not_started(self):
         self.assertEqual(board.stage(None, pr(1, "OPEN")), 0)
         self.assertEqual(board.item_stage(None, None), 0)
         self.assertEqual(board.item_stage({"phase": None}, None), 1)
-        self.assertEqual(board.item_stage(None, pr(1, "MERGED")), 5)
+        self.assertEqual(board.item_stage(None, pr(1, "MERGED")), 6)
 
     def test_percentage_is_the_mean_worth(self):
         w = [0, 25, 50, 70, 80, 100]
@@ -237,13 +238,13 @@ class Grouping(World):
 
 
 class PastTheLists(World):
-    def test_a_draft_found_by_its_branch_past_the_lists_keeps_a_done_session_at_accept(self):
+    def test_a_draft_found_by_its_branch_past_the_lists_keeps_a_done_session_at_check(self):
         self.session(3, "worker")
         self.register("worker", branch="old", phase="done")
         # what the query answers for a draft PR past both lists, asked for by its branch
         self.prs = {"old": {"number": 7, "headRefName": "old", "state": "OPEN", "isDraft": True, "checksUnknown": True}}
         row = next(x for x in self.build()["unassigned"] if x["name"] == "worker")
-        self.assertEqual((row["stage"], row["reportedDone"]), (3, False))
+        self.assertEqual((row["milestone"], row["reportedDone"]), (4, False))
 
 
 class KnownBySession(World):
@@ -264,7 +265,7 @@ class KnownBySession(World):
         self.session(3, "worker-renamed", former=("worker",))
         b = self.build(use_gh=False)
         row = next(x for x in b["unassigned"] if x["sessionId"] == "s3")
-        self.assertEqual((row["name"], row["registered"], row["branches"], row["stage"]), ("worker-renamed", True, ["feat/a"], 2))
+        self.assertEqual((row["name"], row["registered"], row["branches"], row["milestone"]), ("worker-renamed", True, ["feat/a"], 2))
         self.assertFalse([h for h in b["hints"] if "old name" in h or "has ended" in h], b["hints"])
 
     def test_a_session_taking_an_ended_ones_name_does_not_inherit_its_registration(self):
@@ -284,7 +285,7 @@ class KnownBySession(World):
         self.session(1, "Commander-A")
         self.plan("Commander-A", ("feat/a", "the deliverable", "old"))
         item = self.group(self.build(use_gh=False), "Commander-A")["batch"]["items"][0]
-        self.assertEqual(item["stage"], 3)
+        self.assertEqual(item["milestone"], 3)
 
     def test_a_plan_finds_each_owner_by_its_branch_when_two_answer_to_one_name(self):
         self.register_as("alpha", "s3", branch="feat/a", phase="review")
@@ -297,7 +298,7 @@ class KnownBySession(World):
         self.session(1, "Commander-A")
         self.plan("Commander-A", ("feat/a", "a", "alpha"), ("feat/b", "b", "beta"))
         items = self.group(self.build(use_gh=False), "Commander-A")["batch"]["items"]
-        self.assertEqual([(i["branch"], i["stage"]) for i in items], [("feat/a", 2), ("feat/b", 5)])
+        self.assertEqual([(i["branch"], i["milestone"]) for i in items], [("feat/a", 2), ("feat/b", 6)])
 
     def test_an_owner_that_deregistered_keeps_its_deliverable_though_another_now_has_its_name(self):
         self.register_as("beta", "s4", branch="feat/b", phase="done")
@@ -310,7 +311,7 @@ class KnownBySession(World):
         self.register_as("beta", "s3", branch="feat/a", phase="review")  # another, renamed to beta
         self.session(3, "beta", former=("alpha",))
         item = self.group(self.build(use_gh=False), "Commander-A")["batch"]["items"][0]
-        self.assertEqual(item["stage"], 5)
+        self.assertEqual(item["milestone"], 6)
 
     def test_a_registration_that_records_its_session_ends_with_that_session(self):
         self.register_as("old", "s9", branch="feat/a")  # s9 runs, outside the projects, under another name
@@ -799,7 +800,8 @@ class Progress(World):
                   ("feat/c", "not started", ""))
         self.prs = {"feat/a": pr(1, "MERGED"), "feat/b": pr(2, "OPEN")}
         s = self.group(self.build(), "Commander-A")["summary"]
-        self.assertEqual(s["dist"], [1, 0, 0, 0, 1, 1])
+        self.assertEqual(s["milestones"], [1, 0, 0, 0, 0, 1, 1])
+        self.assertEqual(s["dist"], [1, 0, 0, 0, 1, 1])  # as a sidebar from before reads it
         self.assertEqual((s["pct"], s["items"], s["itemsDone"]), (60, 3, 1))
 
     def test_without_a_plan_registered_members_are_averaged(self):
@@ -818,8 +820,79 @@ class Progress(World):
         self.cfg.playbook_remind = False
         self.assertIs(self.build(use_gh=False)["playbookReminder"], False)
 
+    def test_the_delivery_check_shows_between_accept_and_ci(self):
+        self.session(1, "Commander-A")
+        self.session(3, "worker")
+        self.register("worker", branch="feat/a", lead="Commander-A", phase="checking")
+        self.plan("Commander-A", ("feat/a", "the deliverable", "worker"))
+        b = self.build(use_gh=False)
+        g = self.group(b, "Commander-A")
+        self.assertEqual((g["members"][0]["milestone"], g["batch"]["items"][0]["milestone"], g["summary"]["pct"]), (4, 4, 75))
+        self.assertEqual(g["summary"]["milestones"], [0, 0, 0, 0, 1, 0, 0])
+        # a sidebar from before reads stage and dist on its own scale, check counted as accept: never past its five
+        self.assertEqual((g["members"][0]["stage"], g["batch"]["items"][0]["stage"], g["summary"]["dist"]),
+                         (3, 3, [0, 0, 0, 1, 0, 0]))
+
+    def test_the_summaries_count_seven_milestones_and_the_old_fields_agree_with_their_words(self):
+        for lang, want in (("en", "merged 1 · reported done 1 · CI 1 · check 1 · accept 1"),
+                           ("zh", "合并 1 · 已报告完成 1 · CI 1 · 检查 1 · 验收 1")):
+            self.cfg.language = lang
+            self.session(1, "Commander-A")
+            for pid, (name, branch, phase) in enumerate((("m", "feat/m", "done"), ("r", "", "done"),
+                                                           ("c", "feat/c", "working"), ("k", "feat/k", "checking"),
+                                                           ("a", "feat/a", "accepting")), start=3):
+                self.session(pid, name)
+                self.transcript(pid, (1, "Commander-A"))
+                self.register(name, branch=branch, lead="Commander-A", phase=phase)
+            self.prs = {"feat/m": pr(1, "MERGED"), "feat/c": pr(2, "OPEN")}
+            b = json.loads(json.dumps(self.build()))
+            md = board.markdown(b)
+            self.assertEqual(md.count(want), 2, (lang, md))  # the board's total and the commander's line
+            g = self.group(b, "Commander-A")
+            old = {x["name"]: b["words"]["stages"][x["stage"]] for x in g["members"]}  # as a status line from before
+            new = {x["name"]: b["words"]["milestones"][x["milestone"]] for x in g["members"]}
+            self.assertEqual([old[n] for n in "mckar"], [b["words"]["stages"][i] for i in (5, 4, 3, 3, 5)])
+            self.assertEqual([new[n] for n in "mcka"], [b["words"]["milestones"][i] for i in (6, 5, 4, 3)])
+            self.tearDown()
+            self.setUp()
+
+    def test_a_snapshot_stays_on_the_old_scale_for_a_sidebar_from_before(self):
+        self.session(1, "Commander-A")
+        for pid, (name, branch, phase) in enumerate((("one", "feat/a", "checking"), ("two", "feat/b", "done"),
+                                                       ("three", "feat/c", "working")), start=3):
+            self.session(pid, name)
+            self.register(name, branch=branch, lead="Commander-A", phase=phase)
+        self.prs = {"feat/b": pr(1, "MERGED"), "feat/c": pr(2, "OPEN")}
+        self.plan("Commander-A", ("feat/a", "a", "one"), ("feat/b", "b", "two"), ("feat/c", "c", "three"))
+        b = json.loads(json.dumps(self.build()))
+        g = self.group(b, "Commander-A")
+        for x in g["members"] + g["batch"]["items"]:  # what it draws: '▱'.repeat(5 - stage), stage === 4 for CI
+            self.assertGreaterEqual(5 - x["stage"], 0, x)
+        self.assertEqual(sorted(x["stage"] for x in g["batch"]["items"]), [3, 4, 5])
+        self.assertEqual((len(b["dist"]), len(g["summary"]["dist"])), (6, 6))
+        md = board.markdown(b)
+        self.assertIn("| check · delivery check |", md)
+        self.assertIn("accept 70%, check 75%, CI 80%", md)
+
+    def test_check_is_worth_what_the_config_says_or_halfway_from_accept_to_ci(self):
+        def weights(progress):
+            path = os.path.join(self.root, "config.toml")
+            with open(path, "w") as fh:
+                fh.write("[progress]\n" + "".join(f"{k} = {v}\n" for k, v in progress.items()))
+            return config.load(path).weights
+        self.assertEqual(config.load(os.path.join(self.root, "none.toml")).weights, [0, 25, 50, 70, 75, 80, 100])
+        self.assertEqual(weights({"check": 72}), [0, 25, 50, 70, 72, 80, 100])
+        # written before check had a milestone: still rising at every step
+        for given, want in (({"accept": 75}, [0, 25, 50, 75, 77.5, 80, 100]),
+                            ({"accept": 60, "ci": 90}, [0, 25, 50, 60, 75, 90, 100]),
+                            ({"develop": 10, "review": 30, "accept": 79, "ci": 80, "merged": 100},
+                             [0, 10, 30, 79, 79.5, 80, 100])):
+            got = weights(given)
+            self.assertEqual(got, want, given)
+            self.assertEqual(got, sorted(set(got)), given)
+
     def test_weights_come_from_the_config(self):
-        self.cfg.weights = [0, 10, 20, 30, 40, 100]
+        self.cfg.weights = [0, 10, 20, 30, 35, 40, 100]
         self.session(3, "worker")
         self.register("worker", phase="review")
         self.assertEqual(self.build(use_gh=False)["pct"], 20)
@@ -894,7 +967,7 @@ class Linking(World):
         self.work(4, ("Bash", "git -C /w/wt/b log"))
         b = self.build()
         x = next(x for x in b["unassigned"] if x["name"] == "worker")
-        self.assertEqual((x["pr"]["number"], x["guessedBranches"], x["stage"]), (9, ["feat/b"], 4))
+        self.assertEqual((x["pr"]["number"], x["guessedBranches"], x["milestone"]), (9, ["feat/b"], 5))
         self.assertTrue(any("PR #9 (feat/b) is counted for worker" in h for h in b["hints"]))
         self.assertFalse(any("belongs to no session" in h for h in b["hints"]))
 
@@ -910,7 +983,7 @@ class Linking(World):
         x, s = self.group(b, "Commander-A")["members"][0], self.group(b, "Commander-A")["summary"]
         self.assertEqual((s["prsMerged"], s["prs"]), (1, 1))
         # but it does not make the session look finished: it may have gone on to other work
-        self.assertEqual((x["pr"], x["stage"], x["done"]), (None, 1, False))
+        self.assertEqual((x["pr"], x["milestone"], x["done"]), (None, 1, False))
         self.assertFalse(any("PR #9" in h for h in b["hints"]))
 
     def push(self, pid, *branches, remote="git@example.com:o/app.git"):
@@ -1005,7 +1078,7 @@ class Linking(World):
         self.prs = {"feat/b": pr(9, "MERGED")}
         self.work(3, *[("Edit", "/w/wt/b/app.py")] * 5)
         x = self.build()["unassigned"][0]
-        self.assertEqual((x["pr"], x["guessedBranches"], x["stage"], x["done"]), (None, [], 1, False))
+        self.assertEqual((x["pr"], x["guessedBranches"], x["milestone"], x["done"]), (None, [], 1, False))
 
     def test_a_commanders_work_does_not_count(self):
         self.moved()
@@ -1149,7 +1222,7 @@ class Closing(World):
         self.build()
         self.deregister("worker")
         b = self.build()
-        self.assertEqual(b["unassigned"][0]["stage"], 0)
+        self.assertEqual(b["unassigned"][0]["milestone"], 0)
         self.assertIsNone(self.verdicts(b).get("worker"))
 
     def test_merged_with_its_worktree_or_a_lock_left_must_wrap_up(self):
@@ -1231,14 +1304,14 @@ class Evidence(World):
     def test_a_draft_pr_leaves_the_session_where_its_phase_says(self):
         draft = dict(pr(1, "OPEN"), isDraft=True)
         b, g, x = self.batch("working", draft)
-        self.assertEqual((x["stage"], g["batch"]["items"][0]["stage"], g["summary"]["pct"]), (1, 1, 25))
+        self.assertEqual((x["milestone"], g["batch"]["items"][0]["milestone"], g["summary"]["pct"]), (1, 1, 25))
         self.prs = {"feat/a": dict(draft, isDraft=False)}  # marked ready: now it is in CI
         g = self.group(self.build(), "Commander-A")
-        self.assertEqual((g["batch"]["items"][0]["stage"], g["summary"]["pct"]), (4, 80))
+        self.assertEqual((g["batch"]["items"][0]["milestone"], g["summary"]["pct"]), (5, 80))
 
     def test_done_with_no_pr_is_reported_done_not_merged(self):
         b, g, x = self.batch("done")
-        self.assertEqual((x["stage"], x["reportedDone"], g["summary"]["pct"]), (5, True, 100))
+        self.assertEqual((x["milestone"], x["reportedDone"], g["summary"]["pct"]), (6, True, 100))
         self.assertEqual((g["summary"]["prsMerged"], g["summary"]["prs"], b["prsMerged"], b["prs"]), (0, 1, 0, 1))
         md = board.markdown(b)
         self.assertIn("progress 100% (reported done 1)", md)
@@ -1253,20 +1326,20 @@ class Evidence(World):
 
     def test_done_with_its_pr_still_open_is_in_ci_not_merged(self):
         b, g, x = self.batch("done", pr(1, "OPEN"))
-        self.assertEqual((x["stage"], x["reportedDone"], g["summary"]["prsMerged"], g["summary"]["pct"]),
-                         (4, False, 0, 80))
+        self.assertEqual((x["milestone"], x["reportedDone"], g["summary"]["prsMerged"], g["summary"]["pct"]),
+                         (5, False, 0, 80))
         self.assertNotIn("worker", self.verdicts(b))
 
     def test_done_with_its_pr_closed_unmerged_is_not_finished(self):
         b, g, x = self.batch("done", pr(1, "CLOSED"))
-        self.assertEqual((x["stage"], x["done"], g["summary"]["prsMerged"]), (3, False, 0))
+        self.assertEqual((x["milestone"], x["done"], g["summary"]["prsMerged"]), (4, False, 0))
         self.assertEqual(self.verdicts(b)["worker"], "confirm")
         self.assertIn("PR closed without merging", self.why(b, "worker"))
 
     def test_done_and_merged_is_merged(self):
         b, g, x = self.batch("done", pr(1, "MERGED"))
-        self.assertEqual((x["stage"], x["reportedDone"], g["summary"]["prsMerged"], g["summary"]["prs"]),
-                         (5, False, 1, 1))
+        self.assertEqual((x["milestone"], x["reportedDone"], g["summary"]["prsMerged"], g["summary"]["prs"]),
+                         (6, False, 1, 1))
         self.assertEqual(self.verdicts(b)["worker"], "close")
         self.assertIn("progress 100% (merged 1)", board.markdown(b))
 
@@ -1278,8 +1351,8 @@ class Evidence(World):
         g = self.group(b, "Commander-A")
         x = next(x for x in g["members"] if x["name"] == "worker")
         self.assertIn("gh failed", " ".join(b["health"]))
-        self.assertEqual((x["stage"], x["reportedDone"], g["batch"]["items"][0]["stage"]), (3, False, 3))
-        self.assertEqual((g["summary"]["pct"], g["summary"]["prsMerged"]), (70, 0))
+        self.assertEqual((x["milestone"], x["reportedDone"], g["batch"]["items"][0]["milestone"]), (4, False, 4))
+        self.assertEqual((g["summary"]["pct"], g["summary"]["prsMerged"]), (75, 0))
         self.assertNotIn("worker", self.verdicts(b))
 
     def test_with_github_down_a_task_with_no_branch_still_ends_on_its_report(self):
@@ -1287,7 +1360,7 @@ class Evidence(World):
         self.session(3, "investigation")
         self.register("investigation", phase="done")  # no branch: no PR could speak for it
         x = self.build()["unassigned"][0]
-        self.assertEqual((x["stage"], x["reportedDone"]), (5, True))
+        self.assertEqual((x["milestone"], x["reportedDone"]), (6, True))
 
     def test_a_commander_with_its_own_pr_open_is_kept(self):
         self.session(1, "Commander-A")
@@ -1301,8 +1374,8 @@ class Evidence(World):
         registry.done(self.cfg, "worker")  # wrapped up; its session still runs
         g = self.group(self.build(), "Commander-A")
         it = g["batch"]["items"][0]
-        self.assertEqual((it["stage"], it["reportedDone"], g["summary"]["pct"], g["summary"]["prsMerged"]),
-                         (5, True, 100, 0))
+        self.assertEqual((it["milestone"], it["reportedDone"], g["summary"]["pct"], g["summary"]["prsMerged"]),
+                         (6, True, 100, 0))
 
     def test_a_plan_finished_only_by_reports_is_for_the_person_to_confirm(self):
         self.session(1, "Commander-A")
@@ -1348,7 +1421,7 @@ class Evidence(World):
         b, g, x = self.batch("done")
         raw, lines = self.status_lines(b, "s3")
         self.assertTrue(any("100%  merged 0/1 · closed 0 · open 0" in ln for ln in lines), lines)
-        self.assertTrue(lines[-1].startswith("this session  ▰▰▰▰▰ reported done"), lines[-1])
+        self.assertTrue(lines[-1].startswith("this session  ▰▰▰▰▰▰ reported done"), lines[-1])
         self.assertIn("\x1b[2m▰", raw[-1])  # the last milestone dim: the session's word, not a merge
         b, g, x = self.batch("done", pr(1, "MERGED"))
         self.assertNotIn("\x1b[2m▰", self.status_lines(b, "s3")[0][-1])
@@ -1361,7 +1434,7 @@ class Evidence(World):
         self.gh_down = True
         b = self.build()
         self.assertNotIn("Commander-A", self.verdicts(b))
-        self.assertEqual(b["groups"][0]["leadRow"]["stage"], 3)
+        self.assertEqual(b["groups"][0]["leadRow"]["milestone"], 4)
 
     def test_with_github_down_a_taken_branch_is_unknown_not_absent(self):
         from tests.test_board import Linking
@@ -1369,18 +1442,18 @@ class Evidence(World):
         self.register("worker", phase="done")  # no branch registered: the board takes the one it pushed
         Linking.push(self, 3, "feat/pushed")
         self.prs = {"feat/pushed": pr(9, "OPEN")}
-        self.assertEqual(self.build()["unassigned"][0]["stage"], 4)
+        self.assertEqual(self.build()["unassigned"][0]["milestone"], 5)
         self.gh_down = True
         x = self.build()["unassigned"][0]
-        self.assertEqual((x["stage"], x["reportedDone"]), (3, False))
+        self.assertEqual((x["milestone"], x["reportedDone"]), (4, False))
 
     def test_an_owners_last_registration_speaks_only_for_the_deliverables_it_named(self):
         from admiral import registry
         self.batch("done")  # worker reported feat/a done, with no PR
         registry.done(self.cfg, "worker")
         self.plan("Commander-A", ("feat/new", "next", "worker"))  # planned for it since, not started
-        items = {i["branch"]: i["stage"] for i in self.group(self.build(), "Commander-A")["batch"]["items"]}
-        self.assertEqual(items, {"feat/a": 5, "feat/new": 0})
+        items = {i["branch"]: i["milestone"] for i in self.group(self.build(), "Commander-A")["batch"]["items"]}
+        self.assertEqual(items, {"feat/a": 6, "feat/new": 0})
 
     def test_an_owner_renamed_after_deregistering_keeps_its_deliverable(self):
         from admiral import registry
@@ -1390,7 +1463,7 @@ class Evidence(World):
         self.session(3, "worker-2", former=("worker",))  # renamed in Claude Code
         self.plan("Commander-A", ("feat/a", "the deliverable", "worker-2"))  # the plan follows the new name
         g = self.group(self.build(), "Commander-A")
-        self.assertEqual((g["batch"]["items"][0]["stage"], g["summary"]["pct"]), (5, 100))
+        self.assertEqual((g["batch"]["items"][0]["milestone"], g["summary"]["pct"]), (6, 100))
 
     def test_with_github_down_from_the_start_a_pushed_branch_is_unknown_not_absent(self):
         from tests.test_board import Linking
@@ -1403,7 +1476,7 @@ class Evidence(World):
         Linking.push(self, 3, "feat/pushed")
         b = self.build()
         x = b["unassigned"][0]
-        self.assertEqual((x["stage"], x["reportedDone"]), (3, False))
+        self.assertEqual((x["milestone"], x["reportedDone"]), (4, False))
         self.assertEqual(self.verdicts(b), {})  # neither can close while GitHub cannot say
 
     def test_a_commanders_own_pr_closed_unmerged_is_for_the_person_to_confirm(self):
@@ -1422,7 +1495,7 @@ class Evidence(World):
         self.build()
         registry.done(self.cfg, "worker")
         self.plan("Commander-A", ("feat/b", "never registered", "worker"))
-        self.assertEqual(self.group(self.build(), "Commander-A")["batch"]["items"][0]["stage"], 0)
+        self.assertEqual(self.group(self.build(), "Commander-A")["batch"]["items"][0]["milestone"], 0)
 
     def test_two_owners_that_swapped_names_keep_each_their_deliverable(self):
         from admiral import registry
@@ -1436,8 +1509,8 @@ class Evidence(World):
         self.session(3, "beta", former=("alpha",))
         self.session(4, "alpha", former=("beta",))
         self.plan("Commander-A", ("feat/a", "a", "alpha"), ("feat/b", "b", "beta"))
-        items = {i["branch"]: i["stage"] for i in self.group(self.build(), "Commander-A")["batch"]["items"]}
-        self.assertEqual(items, {"feat/a": 5, "feat/b": 5})
+        items = {i["branch"]: i["milestone"] for i in self.group(self.build(), "Commander-A")["batch"]["items"]}
+        self.assertEqual(items, {"feat/a": 6, "feat/b": 6})
 
     def test_a_session_that_finished_and_deregistered_reads_as_finished(self):
         from admiral import registry
@@ -1447,7 +1520,7 @@ class Evidence(World):
         registry.done(self.cfg, "investigation")  # wrapped up; its session still runs
         b = self.build()
         self.assertIn("| investigation | idle 10 min | reported done |", board.markdown(b))
-        self.assertTrue(self.status_lines(b, "s3")[1][-1].startswith("this session  ▰▰▰▰▰ reported done"))
+        self.assertTrue(self.status_lines(b, "s3")[1][-1].startswith("this session  ▰▰▰▰▰▰ reported done"))
 
 
 class FinishedBatches(World):
@@ -1922,7 +1995,7 @@ class Sources(World):
         self.build(now=NOW + 120)
         self.session(3, "worker")  # back
         x = next(x for x in self.build(now=NOW + 180)["unassigned"] if x["name"] == "worker")
-        self.assertEqual((x["stage"], (x["pr"] or {}).get("state")), (5, "MERGED"))
+        self.assertEqual((x["milestone"], (x["pr"] or {}).get("state")), (6, "MERGED"))
 
     def test_open_prs_past_the_open_list_say_their_ci_is_not_shown(self):
         self.session(3, "worker")
@@ -1992,8 +2065,10 @@ class Chinese(World):
         md = board.markdown(b)
         self.assertIn("## 总指挥-甲", md)
         self.assertIn("审查 · 审查中", md)  # "Codex审查" is still accepted as input
-        self.assertIn("开发 25%、审查 50%", md)
+        self.assertIn("开发 25%、审查 50%、验收 70%、检查 75%、CI 80%", md)
         self.assertEqual(b["words"]["waiting"], "待处理")
+        self.register("执行-一", phase="交付检查")
+        self.assertIn("检查 · 交付检查", board.markdown(self.build(use_gh=False)))
 
     def test_a_waiting_line_reads_as_chinese(self):
         self.cfg.commander_prefix = "总指挥"

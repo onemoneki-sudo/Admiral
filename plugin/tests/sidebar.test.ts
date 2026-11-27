@@ -5,19 +5,19 @@ import { expect, test } from 'claude-code/testing'
 
 const now = Math.floor(Date.now() / 1000)
 const row = (name: string, status: string, tty: string) => ({
-  name, sessionId: name, tty, done: false, stage: 2, leadFrom: 'registration', lead: 'Commander-Mail', status, run: status,
+  name, sessionId: name, tty, done: false, stage: 2, milestone: 2, leadFrom: 'registration', lead: 'Commander-Mail', status, run: status,
   statusSince: now - 60, waitingFor: '', registered: true, phase: 'working', note: '', pr: null, ci: '', ciLevel: 'none' })
 const owner = row('Fix-Mail', 'busy', 'ttys042')
 const board = {
-  generated: now, dist: [0, 1, 0, 0, 0, 0], pct: 50, count: 2, waiting: [], unassigned: [], hints: [], health: [],
+  generated: now, dist: [0, 1, 0, 0, 0, 0], milestones: [0, 1, 0, 0, 0, 0, 0], pct: 50, count: 2, waiting: [], unassigned: [], hints: [], health: [],
   words: {}, closable: { close: [], wrapup: [], confirm: [] },
   groups: [{
     lead: 'Commander-Mail', leadRow: row('Commander-Mail', 'idle', 'ttys041'), members: [owner],
     batch: { items: [
-      { branch: 'fix/mail', title: 'Send mail with CRLF line endings', owner: 'Fix-Mail', stage: 2,
+      { branch: 'fix/mail', title: 'Send mail with CRLF line endings', owner: 'Fix-Mail', stage: 2, milestone: 2,
         pr: { number: 12, state: 'OPEN', label: '#12 in review' }, ci: '', ciLevel: 'none' },
-      { branch: 'fix/gone', title: 'A PR whose session closed', owner: 'Gone', stage: 1, pr: null, ci: '', ciLevel: 'none' }] },
-    summary: { total: 2, done: 0, dist: [0, 1, 0, 0, 0, 0], pct: 50, prs: 1, prsMerged: 0, progressFrom: 'plan', items: 2, itemsDone: 0, busy: 1, waiting: 0, ciFail: 0 },
+      { branch: 'fix/gone', title: 'A PR whose session closed', owner: 'Gone', stage: 1, milestone: 1, pr: null, ci: '', ciLevel: 'none' }] },
+    summary: { total: 2, done: 0, dist: [0, 1, 0, 0, 0, 0], milestones: [0, 1, 0, 0, 0, 0, 0], pct: 50, prs: 1, prsMerged: 0, progressFrom: 'plan', items: 2, itemsDone: 0, busy: 1, waiting: 0, ciFail: 0 },
   }],
 }
 
@@ -54,15 +54,28 @@ test('a planned PR is led by its owner, and a click brings the owner forward', a
   expect(JSON.stringify(runs.at(-1))).toContain('ttys042')
 })
 
+test('a milestone has as many pips as the board has milestones after not started', async ($, on) => {
+  const { shown } = await mount($, on, board)  // seven milestones: develop is one pip lit, five left
+  expect(shown).toContain('{"type":"Text","props":{"dimColor":true},"children":["▱▱▱▱▱"]}')
+  expect(shown).not.toContain('▱▱▱▱▱▱')
+})
+
+test('a board from before check had a milestone is drawn on its own scale', async ($, on) => {
+  const { milestones, ...old } = board as any
+  const { shown } = await mount($, on, old)  // only dist and stage: six milestones, develop one pip of five
+  expect(shown).toContain('{"type":"Text","props":{"dimColor":true},"children":["▱▱▱▱"]}')
+  expect(shown).not.toContain('▱▱▱▱▱')
+})
+
 test('a deliverable only reported done says so, and is not drawn as merged', async ($, on) => {
-  const reported = { ...owner, stage: 5, done: true, reportedDone: true, status: 'idle', run: 'idle' }
+  const reported = { ...owner, stage: 5, milestone: 6, done: true, reportedDone: true, status: 'idle', run: 'idle' }
   const g = board.groups[0]
   const b = {
     ...board, words: { reported_done: 'reported done', prs_merged: 'PRs merged {done}/{n}' },
     groups: [{ ...g, members: [reported], batch: { items: [
-      { branch: 'fix/mail', title: 'Send mail with CRLF line endings', owner: 'Fix-Mail', stage: 5, reportedDone: true,
+      { branch: 'fix/mail', title: 'Send mail with CRLF line endings', owner: 'Fix-Mail', stage: 5, milestone: 6, reportedDone: true,
         pr: null, ci: '', ciLevel: 'none' }] },
-      summary: { ...g.summary, dist: [0, 0, 0, 0, 0, 1], pct: 100, reported: 1, prs: 1, prsMerged: 0 } }],
+      summary: { ...g.summary, dist: [0, 0, 0, 0, 0, 1], milestones: [0, 0, 0, 0, 0, 0, 1], pct: 100, reported: 1, prs: 1, prsMerged: 0 } }],
   }
   const { shown } = await mount($, on, b)
   expect(shown).toContain('reported done')
