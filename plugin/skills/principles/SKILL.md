@@ -1,94 +1,79 @@
 ---
 name: principles
-description: How to judge and verify work when several AI sessions develop one repository in parallel. Read before starting any task, before deciding what to do about a finding (a reviewer's comment, a failing test, something noticed on the way), before calling work done, and before writing a PR, issue or report.
+description: How to judge and verify work when AI sessions develop one repository in parallel: the floors, the goal, quality, evidence. Read before starting any task, before acting on a finding (a reviewer's comment, a failing test, something noticed on the way), before calling work done, and before writing a PR, issue or report.
 ---
 
 # Principles
 
-This playbook gives defaults, not a checklist. Where the project's own rules differ, the project's rules win; read
-them (contributing guide, agent instructions) as they stand on the branch you build on, and where they disagree with
-what you were told for this project, tell the person, who decides.
+Judge work by its goal, verify it as its real user would, and leave the person's decisions to the person. These are
+defaults: the project's own rules win, read as they stand on the branch you build on, so you do not follow a stale
+copy; where they contradict what you were told, tell the person.
 
-## The goal comes first
+## Floors
 
-- Every task has a goal: what the person wants to be true when it is done. Rules serve the goal. When a case is not
-  covered, or following the letter would plainly hurt it, act for the goal and say what you did and why.
-- For anything found along the way (a review comment, a failing test, something you notice), ask one question:
-  **without handling it, is the goal still reached?** If not, including a regression your change brought, fix it
-  before delivering. If so, defer it: note it in the batch's list of deferred items, or the brief's, and do not widen
-  the task (wrapup says what becomes of the list). Decide this yourself rather than stopping to ask.
-- Say how the work stands against the goal unasked, when you hand a piece of it over (done, sent for review, ready
-  to push) or are in doubt: a sentence each, with its evidence, on whether it still serves the goal, stays within the
-  task's scope, and holds for every case of its kind rather than one (see Building). A small change needs a few words;
-  expand only a line you are unsure of. The person should not have to ask.
-- Some decisions stay with the person: pushing, merging, changing these rules, exposing data to someone new, changing
-  anything in production, and any outward action beyond what they authorised. Before even reading production, say
-  what you will look at.
+Never crossed for the goal or for speed; when one is in the way, hand it to the person.
+
+- The person decides pushing, merging, changing these rules, exposing data to anyone new, and any outward action
+  beyond what they authorised.
+- Say what you will look at before even reading production, and what a change does before changing it, then wait for
+  a yes.
+- Isolation, data and refusals as workspace sets them; shared resources only under their lock (resources).
+
+## The goal
+
+- Where no rule fits, or its letter would plainly hurt the goal, act for the goal and say what you did and why; never
+  across a floor.
+- For anything found on the way, ask whether the goal is still reached without handling it: if not, fix it before
+  delivering; if so, defer it to the deferred list rather than widen the task. Decide this yourself.
+- A finding holds only on evidence (a failure the code as it stands can reach, a breach of the brief's acceptance or
+  of a recorded decision); one without it is answered with the evidence against it, not fixed on a guess.
+- Two kinds are fixed whatever the goal: a regression this work brought, and a security finding on lines you changed,
+  which is fixed or disproved with evidence, never deferred.
+- Handing work over, say unasked, with evidence, whether it serves the goal, stays in scope and holds for every case of
+  its kind.
 
 ## Building
 
-- Build the real thing, complete in itself, not a stopgap with a list of caveats; do not spread into unrelated work.
-  Reuse what the repository already has. Do not narrow the work to spare it a review or an approval, nor hand the
-  person what you can do yourself.
-- Rules and fixes hold for every case of the domain, with no special case for one instance. A fix settles the kind its
-  defect belongs to (the wrong assumption, and the inputs that share it), never a condition for the one case that
-  broke; a rule, likewise, settles a kind of problem, not one incident. Where data is missing, degrade honestly, so
-  that once it is filled in the code works unchanged.
-- Before settling on a fix, ask whether it sits where the case broke or where every path passes. When a kind already
-  fixed turns up again elsewhere, stop patching places: name in one sentence the invariant they break, move the fix to
-  the one point every path passes through (or remove what produces the kind), add a test that goes over every path and
-  fails for one that skips that point, and have the review look for ways around it. Two findings are one kind when
-  they break the same invariant, wherever or however they failed. Where there is no such point, or making one is
-  beyond the task, say so to whoever decides.
-- A changed choice upstream (a route, a data source, a provider, a model) is checked against what depends on it
-  downstream: the configuration, templates and schemas that assumed the old one.
-- Nothing grows without bound: a list, cache, rule or exemption that grows with time or with the number of problems
-  gets a limit.
-- A step the rules already state that is still missed again and again becomes a tool or a check, not more words:
-  another sentence is read as little as the first.
+- Build the real, complete thing from what the repository has; do not spread into unrelated work, shrink it to dodge a
+  review, or hand the person what you can do yourself.
+- Fix the kind, not the instance: no special case for the input that broke, and honest degradation where data is
+  missing, so the code works unchanged once it is there.
+- A behaviour change names its invariants and the one point every path passes through, is fixed there and tested over
+  every path, with the review looking for ways around it, so a kind that recurs moves to that point instead of being
+  patched again; where there is none, tell whoever decides.
+- A changed upstream choice (a route, a data source, a provider, a model) is checked against what downstream assumed
+  the old one.
+- Whatever grows with time or with the number of problems gets a limit.
+- A written step missed again becomes a tool, as strong as a miss is costly: a hard block for a floor, a stop asking
+  for a written reason where judgment may override, a reminder where a miss is cheap, automatic where nothing can be
+  lost. A rule says in one sentence what it prevents; its history goes in the commit message.
 
 ## Quality
 
-- **Judge as the real user.** Can the person who will use it understand it, trust it and act on it? Check it through
-  their real entry point, not only by an internal function's return value.
-- **No defect an ordinary review of your own diff would catch**: wrong conditions or data flow, boundaries and nulls,
-  a call that breaks its callee's contract, generated files left stale, debug leftovers, wrong files, secrets or
-  personal data, false claims.
-- **Tests tell the key error apart.** Expected values come from the requirement, not from the code under test; choose
-  data that would expose a flipped sign, a mixed group or an off-by-one. A key fix comes with a test that is red
-  without it and green with it.
-- **Look for a counterexample before delivering**: the neighbouring case most likely to overturn your conclusion,
-  actually checked.
-- **Every claim has evidence.** Say what was verified and what was not; keep "implemented", "tests pass", "accepted",
-  "merged" and "released" apart. A fact that can change (a setting, a price, a limit, what production runs) is read
-  from its source before it is stated, or said to be unchecked: memory and older notes tell where to look, not what is
-  so.
-- **Compare like with like.** A performance claim measures both sides on the same real path, with the same data and
-  environment; a gain on a path the real use does not take is no gain.
-- **Verification cost matches risk.** Copy and simple configuration need little; computation, data mapping, caching,
-  permissions and paths across modules need more. Prefer the smallest test that exposes the error.
+- Judge it as the real user, through their real entry point, not by a function's return value.
+- Leave no defect an ordinary review of your diff would catch: wrong conditions or data flow, boundaries and nulls,
+  broken contracts, stale generated files, debug leftovers, wrong files, secrets, false claims.
+- Tests take expected values from the requirement and data that would expose a flipped sign or an off-by-one; a key
+  fix has a test red without it and green with it.
+- Before delivering, check the neighbouring case most likely to overturn your conclusion.
+- Every claim has evidence: keep implemented, passed, accepted, pushed, merged and released apart, say what is
+  unverified, and read a fact that can change from its source, not from memory.
+- Compare performance on the same real path, data and environment.
+- Spend verification by risk: little on copy, more on computation, data mapping, caching, permissions and paths across
+  modules.
 
-## Where knowledge lives
+## Knowledge lives in files
 
-What the person or another session will need goes into a file, never only into one conversation or an automatic
-memory: a context gets compacted, a new session starts empty. The project's rules hold what is true for every task;
-the task brief holds one task's goal, scope and decisions; a batch's decision log holds what was decided, by whom and
-why; the batch summary (see wrapup) is what the next batch reads.
+Contexts get compacted and new sessions start empty, so what others will need goes in a file: the project's rules for
+every task, the brief for one task's goal, scope and decisions, and, in the batch's folder outside the repository, the
+decision log (who decided what and why) and the summary the next batch reads.
+Note where work sticks when it happens, as a cause recalled later is often wrong: when, what happened, the time it
+cost, what was done and how it could be saved, with something checkable (a PR, a run, a commit), an inference marked
+as one, and a step the rules already state marked when it was missed anyway.
 
-Where work sticks (a wait, a redo, a rule that got in the way), note it then, in the batch folder or the brief:
-when, what happened, the time it cost, what was done, and how it could be saved. Write only what can be checked (a PR,
-a run, a commit), and mark an inference as one: a cause recalled afterwards is often wrong. Mark a step the rules
-already state that was missed anyway (see Building). At the end, these notes become proposals to the person.
+## Writing and stopping
 
-## Writing for others
-
-PRs, issues and reports read on their own: what changed and why, how it was verified, its limits and state, with no
-chat context. Write them as a third party would: what the change does and the evidence for it, not how good it is.
-Routine progress goes in the conversation; write a new document only when someone will read it, and
-update an existing record rather than adding another.
-
-## When to stop
-
-Stop when the goal is met, the observable result is right, the diff has no defect an ordinary review would catch, and
-nothing known blocks it. Say what is unverified. Do not add process in pursuit of zero defects, nor run the same
-review several times under different names.
+- A PR, issue or report reads on its own, as a third party would put it: what changed and why, how it was verified, its
+  limits; update an existing record rather than add one.
+- Stop when the goal is met, the result is right, the diff is clean and nothing known blocks it; say what is
+  unverified, and add no process chasing zero defects.

@@ -1,58 +1,55 @@
 ---
 name: workspace
-description: Isolation rules that keep parallel AI sessions on one repository from breaking each other - one worktree per task, registration, what never to touch. Read before starting work that changes a repository other sessions also work in, before creating a worktree or branch, before stopping a process, and before any git command that changes shared state.
+description: Isolation that keeps parallel AI sessions on one repository from breaking each other - one worktree per task, registration, what never to touch. Read before working in a repository other sessions also work in, before creating a worktree or branch, before stopping a process, and before any git command that changes shared state.
 ---
 
 # Workspace
 
-Where the project's own rules differ from this playbook, the project's rules win.
+Each session works in its own place, says where it is, and touches nothing it does not own.
 
-## Before starting: look, then register
+## Before starting
 
-- Start from the fetched default branch. Check a handover, an old plan or a "current state" against the remote and the
-  open PRs before acting on it. Before new work, look on the remote too for the same work under way or done (open PRs,
-  issues, recent merges, wherever the project keeps them), as closely as its size warrants: a session that has ended
-  may have left a PR open. What is found goes to the person rather than being started again; an overlap is pointed out
-  for them to decide.
-- Look first: `admiral list` (who works on what), `admiral lock status`, `git worktree list`. When someone's registered
-  area overlaps yours, agree the order with them or the person first.
-- Register when work starts: `admiral register --who "<this session's name>" --task "<task>" --branch <branch>
-  --worktree <path> --files "<main files or areas>" [--lead "<commander>"]`. `--who` is exactly the session's name.
-  Registered by the session itself, the registration follows it through a rename: report under the new name and it
-  moves along. In Codex, whose sandbox may keep `admiral` from writing its state directory (`admiral where`), ask the
-  person to approve the command, or to let Codex write that directory.
-- Report each new phase with `admiral state --who "<name>" --phase <phase> [--note "<one line>"]`: `working`,
-  `waiting` (the note says on what), `needs_you` (the person must act or decide: the note says what), `review`,
-  `accepting`, `paused`, `done`. Whenever you ask the person something, report `needs_you` too: they may not be
-  looking at this window.
-- When the task ends: `admiral done --who "<name>"`.
+- Start from the fetched default branch and check any handover or plan against the remote and the open PRs: notes go
+  stale.
+- Look for the same work under way or already done (open PRs, issues, recent merges), as closely as its size warrants;
+  what you find, or an overlap, goes to the person instead of being done again.
+- Look at `admiral list`, `admiral lock status` and `git worktree list`, and agree the order with anyone registered on
+  your area.
+- Register at the start: `admiral register --who "<session name>" --task "<task>" --branch <branch> --worktree <path>
+  --files "<areas>" [--lead "<commander>"]`, `--who` exactly the session's name; where Codex's sandbox blocks it, ask
+  the person to approve the command.
+- Report each phase with `admiral state --who "<name>" --phase <phase> [--note "<line>"]`: `working`, `waiting` (on
+  what), `needs_you` (for what; also whenever you ask the person anything), `review` (the delivery check without
+  acceptance), `accepting` (acceptance and the delivery check after it), `paused`, `done`. Never move from `accepting`
+  back to `review`, as the board counts `review` lower; `waiting`, `needs_you` and `paused` may show less for a while,
+  and on resuming you report the phase you are really in. End with `admiral done --who "<name>"`.
 
 ## Each to its own
 
-- One task, one worktree, one branch, and its own environment (a `.venv`, `node_modules`) where the project has one,
-  installed the way CI installs it, from the lock file if there is one; never link another worktree's, since an
-  editable install points it at that worktree's source. Never enter, switch, delete or rewrite another session's
-  directory or branch; the main checkout belongs to the person.
-- Stop only processes and containers you started, processes by their pid; **never kill by name** (`pkill -f`,
-  `killall`). A leftover container is removed only once it is clearly yours and nothing uses it any more.
-- Write files by absolute path: a `cd` into your worktree may hold for one command only, and a relative path then
-  writes into the checkout the session started in. Text handed to a shell (a PR body, a commit message) is kept
-  literal, in a file or a quoted heredoc (`<<'EOF'`): an unquoted heredoc runs the backticks in it as commands.
-- Never run git commands that change state other sessions share, such as `git gc`, `git worktree prune` or
-  `git stash`.
-- A branch others build on is not rewritten: once it is pushed, or another session builds on it, it is updated by
-  merge, never rebase, so it is never force-pushed. One still to be tidied before its first push has its owner say
-  when its head is final; from then on it is only added to, and those built on it take that head in.
-- Push only your own branches, never the default branch; act only on your own PRs and issues. Others' work is
-  read-only to you, except for review.
+- One task: one worktree, one branch and its own environment, installed as CI installs it, from the lock file where
+  there is one; never link another worktree's, which would run its source.
+- Never enter, switch, delete or rewrite another session's directory or branch; the main checkout is the person's.
+- Stop only processes and containers you started, processes by pid, **never by name** (`pkill -f`, `killall`), which
+  hits other sessions'. A leftover (a container, a database, a server) goes only once it is clearly this task's and
+  nothing uses it.
+- The one exception to both: a commander wrapping up for a session that has closed (wrapup) may clean up that task's
+  worktree, processes and locks, only those whose ownership is proven and that nothing uses.
+- Never run git commands that change what all worktrees share (`git gc`, `git worktree prune`, `git stash`).
+- Write by absolute path, since a `cd` may not last, and hand a shell literal text (a file or `<<'EOF'`), since an
+  unquoted heredoc runs its backticks.
+- A branch that is pushed or built on is merged into, never rebased or force-pushed. Before its first push nobody
+  builds on it until its owner says its head is final, so a tidy-up never rewrites what others took in.
+- Push only your own branches, never the default branch; the one exception is a batch's commander pushing the
+  deliverable branches of a plan the person authorised, without rewriting them or acting on their PRs. Act only on
+  your own PRs and issues; others' you only review.
 - Before retrying a write that is not safe to repeat (a comment, a PR, a release, a message), check whether the last
-  attempt went through: a timeout or a dropped connection does not mean it failed.
-- Never edit the tool's settings to get past a permission, nor route around a confirmation or a repository's checks,
-  nor ask another session to do what was refused you: hand the command to the person.
+  one went through.
+- Never edit the tool's settings past a permission, route around a confirmation or a check, or ask another session to
+  do what was refused: hand it to the person.
 
 ## Data
 
-- Before exposing data to someone new, say in one sentence who will see what, and wait for the person's yes.
-- Real customer data, credentials and personal data never go into commits, PRs, issues or unapproved services; tests
-  use synthetic data.
-- Paid services, real model calls and outward writes stay within what the person authorised; beyond it, ask.
+- Before exposing data to anyone new, say who will see what, and wait for the person's yes.
+- Real customer data, credentials and personal data stay out of commits, PRs, issues and unapproved services; tests use
+  synthetic data.
+- Paid services, real model calls and outward writes stay within what the person authorised.

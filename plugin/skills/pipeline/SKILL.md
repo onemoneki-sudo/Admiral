@@ -1,136 +1,98 @@
 ---
 name: pipeline
-description: The delivery path for AI sessions working in parallel - task brief, development with the affected tests, review by a different model, the person's acceptance, pushing and the PR, and how to word completion. Read before starting a feature or fix, when development of a branch is done, before running the whole test suite, before pushing or opening a PR, after a PR is ready, and before reporting work as done.
+description: The delivery path for parallel AI sessions - task brief, development with light checks, the person's acceptance, one delivery check (review by a different model beside the pre-push run), push and PR. Read before starting a feature or fix, when development of a branch is done, before running the whole test suite, before pushing or opening a PR, and after a PR is ready.
 ---
 
 # Delivery pipeline
 
-A default path from task to merge. Shorten it for small changes, and where the project has its own, follow that.
+Light checks while developing, one full check on the final version, one push. This is the default order; a project may
+set another in its rules.
 
 ```
-brief → develop (affected tests) → review by a different model → the person's acceptance → push, PR → merge
+brief → develop (light checks) → acceptance → delivery check (review ∥ pre-push run) → push, PR → merge
 ```
 
-## 1. Brief first
+Small changes shorten every step.
 
-An independent session, once it has worked out what is asked and before it writes a design, a brief or code, says in
-the chat what it will do, roughly how big that is and how it splits into PRs (below), recommends doing it itself or
-being named a commander (see roles), and waits for the person to decide. A small fix asked for plainly, or work the
-person said at the start to do directly, it does.
+## 1. Brief
 
-Before a feature or fix, write down its goal, how it will be accepted (the cases it must hold in, and those it leaves
-alone, so that a review does not take every edge case for a failure) and what is out of scope; a small fix takes three
-lines, and an issue that already says it is cited. Work that picks things out (the tests a change affects, the rows
-a filter keeps) is accepted also on what it must leave out: accepted only on what it must pick, a result that picks
-everything passes. Decisions made along the way go into the brief. A batch of parallel sessions keeps one folder
-outside the repository for its briefs, a status note per session and the decision log.
+- An independent session first says what it will do, how big it is, how it splits into PRs and whether to name it a
+  commander (roles), then waits for the person, unless the fix is small and plainly asked or the person said to go.
+- The brief states the goal, the cases acceptance covers and those it leaves alone (so a review does not take every
+  edge for a failure), and what is out of scope; work that picks things out is accepted on what it leaves out too, or
+  picking everything passes.
+- A behaviour change adds its invariants, the point every path passes and the paths that reach it, with the search
+  that found them; a different model reviews that plan before the code, while moving it is cheap.
+- One PR per result the person can accept at once and per independent fix; split further only for parts that can go
+  ahead in parallel, a risky part (permissions, migrations, money) or a whole too large to review clearly, never into
+  the layers of one result.
 
-Settle how the work splits into PRs at the start: one PR for each result the person can accept at once, and one for each
-independent small fix, since each PR adds review and delivery overhead, including any acceptance and CI the project
-requires. Split further only where the parts can each start from the default branch and go ahead at the same time, where
-one part is risky (permissions, migrations, money) and is better reviewed alone, or where the whole is too much to
-review clearly in one go, judged by how well it can be reviewed, not by its line count. Steps or layers of one result (a
-frame and then its content, a backend and its screen) are not split for that alone; a PR that has to wait for another to
-merge says why.
+## 2. Develop
 
-## 2. Develop, verifying what is affected
+- After each change run the linters and the tests you touched; when you change a contract others rely on (a
+  signature, a schema), update its callers and run their tests then.
+- Adapt an existing test before adding one, and put each on the lowest layer that exposes the error: logic in plain
+  tests, database, permissions and concurrency on a real database set up as CI's, a browser only for key user paths.
+- See a behaviour change early through its real entry on real data or a faithful copy, since data that suits the
+  change hides what real data breaks, and list at the start what relies on the old behaviour.
+- Rerun a test only when what it covers changed; heavy runs wait for the delivery check.
 
-- After each change run the linters and the tests it affects, not the whole suite; tests that need a shared resource
-  take its lock first (see resources).
-- Find those tests by more than one route, as deep as the change warrants, since each misses something: its callers,
-  traced by hand or with an impact tool once it has been checked on this project against changes whose affected tests
-  are known, and a search for the names and paths it touches. A change whose affected test the tool left out, found
-  failing later (in CI, in review), joins those changes, so the tool is checked again with each miss, not once.
-  Files read at run time rather than imported (SQL, templates, pages a browser test loads) have no callers and are
-  found by their paths; a test that scans the whole tree or a registry is affected by any change to what it scans.
-- A change to behaviour people rely on (an answer, how data is read, a core interaction) is seen through its real entry
-  on real data, or a faithful copy, early, in a small run before a review is spent on it: synthetic data that suits
-  the change hides what real data breaks. At the start, list the tests and uses that rely on the old behaviour, so
-  they change with it rather than surface at the end.
-- Verify locally under the conditions CI and production have (versions, services, permissions): what can be caught
-  locally is caught there, and a pass under looser conditions does not count. That includes the tree CI checks: before
-  pushing, run the affected tests on your branch with the latest of the branch it will merge into (its PR's base)
-  merged in, a merge for verification only and not committed, since a branch can pass alone and fail beside what
-  landed meanwhile.
-- Run a test again only when what it covers changed: after a merge that leaves the files it covers as they were, it
-  needs no rerun. Heavy runs (a database, a whole browser file, a check across the repository) that only confirm run
-  once, on the final version, not on each one along the way; a run that shows a fix failing before and passing after,
-  or one repeated because the machine, not the code, failed it (see resources), is not such a rerun.
-- Run the whole suite when you cannot tell what is affected, or the change is global (configuration, startup,
-  dependencies, CI); otherwise CI covers the rest.
+## 3. Acceptance
 
-## 3. Review by a different model
+Docs, copy and mechanical changes skip it. For a change people will see or rely on, ask the person whether they accept
+it before the PR or by using it once merged, so they never judge from a description. Show it at its real entry on
+their data or a faithful copy: a signed-in tab per case with a line on what to expect, each environment or account on
+a host name of its own, as a browser shares a host's cookies across ports. A commander brings its batch's PRs
+together. Changes made during acceptance get the light checks; the delivery check covers them.
 
-- When the change alters behaviour, ask a model other than the one that wrote it (for code Claude wrote, Codex; for
-  code Codex wrote, Claude, run read-only with `claude -p`) to refute it, once the work is complete and its tests
-  pass. Docs, copy and mechanical changes need only your own read of the final diff.
-- Run the reviewer non-interactively with a time limit (see resources), and give it a finite input or none: `codex
-  exec` given an input that is open but not a terminal waits for it to end before it begins, so a command that sends
-  it nothing ends with `</dev/null`.
-- Ask the model, besides for defects, whether the change serves the goal, stays within the brief and holds for every
-  case of its kind. Where the repository has its own review prompt, use it, adding only those of these questions it
-  does not ask. Give the model the goal, the decisions the person has made as the brief records them (those made
-  during acceptance too), so that it does not report what they chose as a defect, and the diff; not your conclusions,
-  which would anchor it.
-- The reviewer's provider may refuse a brief on security code, taking it for a request to attack something. Word such
-  a brief as checking that each protection holds (what it must refuse, which paths must go through it), not as
-  breaking it. A refusal is no review: a part still refused once reworded is recorded as unreviewed and goes to the
-  person or to another model, never counted as passed.
-- A change too large to review well at once has its first round in parts, each a complete piece of function given
-  with its own commits and files; where two parts call each other or share data, the seam goes into one of them. The
-  parts together make the first round.
-- Judge each finding by whether it blocks the goal (see principles): fix what blocks it with the simplest reliable
-  fix, disprove what is not a defect, defer the rest. The model's opinion is input to your judgment, not a to-do list.
-- Have a fix reviewed again, narrowed to the fix, unless all of these hold: it stays within one file or module; it
-  touches no rendering, state changes, storage or permissions; its test goes through the real path (the page drawn,
-  the endpoint called); and it failed before the fix and passes after. When unsure, review it; several fixes share
-  one round. Stop when nothing blocking remains, at most three rounds.
+## 4. Delivery check
 
-## 4. The person's acceptance
+Once, on one candidate: a commit and the base it was merged with, both recorded, so every result proves the same
+version. Both checks run at the same time:
 
-How and when is the person's call. A change in behaviour they will see or rely on is best shown at its real entry, on
-their data or a faithful copy, rather than described; they may accept it before the PR goes up, or merge it and accept
-it by using it, reporting what goes wrong. Where you can, open it for them: a tab for each case, signed in as the
-account it needs and on the page to look at, with a line each on what to look at and what to expect. A browser shares
-a host's cookies across its ports, so environments or accounts open at once each need a host name of their own, or
-they sign each other out. A commander brings its batch's PRs to the person together, not one by one. Docs, copy and
-mechanical changes need none. What changes during acceptance has its affected tests as in development and, once
-acceptance ends, one review of all of it, narrowed to it as a fix is (see Review by a different model), not one for
-each change.
+- **Pre-push run**: the affected tests on the candidate (your branch merged with the latest of its PR's base, in a
+  temporary tree), under CI's and production's conditions, since a branch can pass alone and fail beside what landed
+  meanwhile. Find them by callers and by searching the names and paths touched (files read at run time have only
+  paths; a test that scans the tree is affected by what it scans). Trust an impact tool only once it has been checked
+  on this project against changes whose affected tests are known, and add every later miss to that set. Run the whole
+  suite only when you cannot tell what is affected or the change is global (configuration, startup, dependencies, CI).
+- **Review by a different model** when behaviour changed (Codex for Claude's code, read-only `claude -p` for Codex's);
+  otherwise your own read of the final diff. Run it non-interactively, time-limited, with finite input (`codex exec ...
+  </dev/null`, or it waits for input). Give it the goal, the brief's decisions, the diff and the repository's review
+  prompt, and ask about goal, scope and kind too; never your conclusions, which anchor it. A change too large for one
+  review goes in complete parts, with a seam where two parts call each other or share data inside one of them, so no
+  interface goes unreviewed.
+- Word a security review as checking that each protection holds, since a provider may refuse what reads as an attack.
+  A part still refused is recorded as unreviewed, and a PR whose required security review is unfinished does not go
+  ready: finish it by an independent review the person approves, never by retrying the refused call in another
+  session.
+- Group findings by the invariant they break before the first fix, and fix what blocks at the shared point. Review a
+  fix again, narrowed to it, unless it stays in one module, avoids rendering, state, storage and permissions, and has a
+  real-path test red before and green after; at most three rounds, then whoever decides. A fix that changes what the
+  person saw goes back to them.
+- When the candidate's commit or its base changes (a fix, a new base, a retarget), rerun the checks that change
+  invalidates (the tests it affects, a narrowed review) and keep the rest, so the evidence is for what you push.
 
 ## 5. Push and PR
 
-- Before pushing, tell the person briefly: what changed, how it was verified, the review's findings and what became of
-  them, where it stands on goal, scope and kind (see principles), and what is unverified. For a change in behaviour,
-  ask whether they want to accept it first or by using it once merged. Report `needs_you` while you wait.
-- Pushing is the person's decision. Push once the work is final and open the PR ready, not draft, so CI runs on the
-  final version. In a batch, executors commit locally and the commander pushes, so the person decides in one place.
-- Once the PR is ready, push only what it needs: a fix, a conflict, a change of base. Every push runs CI again and
-  voids approvals, so notes ride along with a fix, and a default branch that merely moved on is not merged in unless
-  the repository requires it.
-- When CI fails, collect every failure before fixing any and fix what they share at its root; rerun locally the failed
-  tests and those the fix affects, and push it all at once.
-- Merging is the person's or the maintainer's; never go around required checks or approvals. Agreement to mark a PR
-  ready covers enabling auto-merge.
-- A PR built on another unmerged branch says so on its first line and, while that branch is its base, is merged
-  neither automatically nor by hand: it would land there, not on the default branch. Once the lower PR lands, retarget
-  it to the default branch. A squash leaves no history tying the lower PR to its commit there, so taking the default
-  branch in misreads the lower PR's changes: conflicts where there are none, or changes lost or brought back silently,
-  and no one commit picked by hand as the base is right in every case. Restore the tie first: on a scratch
-  branch from the default branch, merge the lower PR's final head keeping the default branch's content (an "ours"
-  merge), then merge that branch into yours. That needs the commit of the lower PR your branch holds to be in its final
-  head's history; where the lower PR's history was rewritten, redo your own changes on a new branch from the default
-  branch instead. Afterwards the diff against the default branch shows every change of yours and nothing else. Where
-  the project lets the person choose, a lower PR merged with a merge commit rather than squashed keeps the tie: unless
-  its history was rewritten under yours, taking in the default branch is then all that is needed.
-- PRs of one batch can each pass alone and fail together. Before they go ready, check them merged together on the latest
-  default branch. A PR that adds what every change must satisfy (a check across the repository, a registry, a numbered
-  sequence) merges after the PRs whose additions it must cover: it takes in the default branch and fills in what they
-  brought, so they need no extra push or approval for it, and it is not auto-merged until then; two such PRs that each
-  need the other are ordered or combined before they go ready. When holding it back would let harm go on, it does not
-  wait for the batch: checked on the latest default branch, it merges first, and the others take it in before they
-  merge.
-
-## 6. Word completion precisely
-
-Keep "implemented", "ready", "merged" and "released" apart, and "not run", "failed" and "passed".
+- Before pushing, tell the person what changed, how it was verified and on which candidate, the findings and their
+  handling, goal, scope and kind, and what is unverified, and report `needs_you`; they may authorise the push in
+  advance on conditions they state, and when one fails you wait.
+- Push once, final, and open the PR ready so CI runs on that version; in a batch the commander pushes what executors
+  committed.
+- After that push only a fix, a conflict or a base change, as each push reruns CI and voids approvals; a default branch
+  that merely moved on is not merged in.
+- When CI fails, collect every failure, fix their shared cause, rerun those tests and the fix's locally, push once.
+- Merging is the person's or the maintainer's, never around required checks or approvals; agreeing to mark a PR ready
+  covers auto-merge, except where a rule below holds it back.
+- A PR on another unmerged branch says so on its first line and never merges while that branch is its base. Once the
+  lower lands, keep your branch if you can: if the lower was squashed, first restore the tie (on a scratch branch from
+  the default branch, `git merge -s ours` the lower's final head, then merge that branch into yours), then retarget the
+  PR to the default branch. If the lower's history was rewritten under yours, redo your changes on a new branch from
+  the default branch and open a replacement PR, since a retarget never changes a PR's head. Never pick a merge base by
+  hand; either way, check that the diff shows your changes and nothing else.
+- A batch's PRs can pass alone and fail together: check them merged together on the latest default branch before they
+  go ready. A PR adding what every change must satisfy (a repository-wide check, a registry, a numbered sequence)
+  merges after the PRs it covers, takes them in and fills in what they brought, with no auto-merge until then; two such
+  PRs that need each other are ordered or combined before they go ready. When waiting would let harm go on, it merges
+  first and the others take it in before they merge.

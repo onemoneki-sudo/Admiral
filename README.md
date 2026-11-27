@@ -145,7 +145,7 @@ Six skills Claude Code loads when they apply, so dozens of sessions stay out of 
 | roles | commanders plan, decide and accept; executors build; how to size a batch |
 | workspace | one worktree per task; registration; what never to touch (others' branches, shared git state, processes by name) |
 | resources | locks and queues for heavy tests, databases, browsers, ports and model quota |
-| pipeline | from task brief to merge: affected tests, review by a different model, your acceptance, one push to ready |
+| pipeline | from task brief to merge: light checks while developing, your acceptance, one delivery check with review by a different model, one push to ready |
 | wrapup | after the merge: clean up safely, then close; a short summary when a batch ends |
 
 `admiral lock` guards what the sessions share: one full test run at a time, a few database slots, model quota, ports.
@@ -413,7 +413,7 @@ What does take tokens is your sessions' own work with Admiral, and it is small:
 
 - **The playbook.** It is instructions for your sessions, so it sits in their context like any rules: the reminder of
   when to read which skill, about 1 KB, and the six skill descriptions, about 2 KB, in every session; a skill's full
-  text, 2 to 5 KB, once a session opens it. `[playbook] remind = false` drops the reminder.
+  text, 3 to 7 KB, once a session opens it. `[playbook] remind = false` drops the reminder.
 - **A few commands.** Registering (`admiral register`), taking a lock or a commander reading `board.md` is an ordinary
   command, and the session reads its few lines of output.
 - **`/admiral`** leaves one line in the conversation, saying the sidebar opened or closed.
