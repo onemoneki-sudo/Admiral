@@ -5,7 +5,7 @@ Each version says what changed for someone using Admiral. The version lives in `
 Claude Code keeps an installed plugin in its cache, one copy per version, so a change to the sidebar or the playbook
 reaches people only when the version moves.
 
-## Unreleased
+## 0.2.25 (2026-11-27)
 
 **Playbook**
 - All six skills rewritten to their essentials, about 41 KB down to about 29 KB: each opens with what it governs, each
