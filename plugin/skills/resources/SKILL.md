@@ -1,61 +1,45 @@
 ---
 name: resources
-description: How parallel AI sessions share scarce machine resources - locks and queues for heavy test runs, databases, browsers, model quota and ports - and how to tell an infrastructure failure from a real one. Read before running the whole test suite, database or browser tests, real model calls, a service that needs a port, or a job in the background meant to finish, and before deciding whether a failure is caused by the code.
+description: How parallel AI sessions share scarce machine resources - heavy test runs, databases, browsers, model quota, ports - through locks, and tell a machine failure from a real one. Read before running the whole test suite, database or browser tests, real model calls, a service that needs a port or a background job meant to finish, and before deciding whether a failure is caused by the code.
 ---
 
 # Shared resources
 
-Where the project's own rules differ from this playbook, the project's rules win.
+What the machine has too little of is used under a lock for exactly as long as it is used, and a failure under
+contention is not blamed on the code.
 
-## Take a lock first
+## Locks
 
-- Every scarce resource is behind a lock (`admiral lock`). A lock records its holder and pid; one whose holder exited
-  or timed out may be taken over.
-- Run what uses a locked resource with `admiral run --lock <name> --who "<session> <task>" --limit <minutes> --
-  <command>`: it waits its turn, records the command's own pid on the lock, stops the command and everything it
-  started when it ends or its limit is up, and releases the lock. A service (a server, a private database) adds
-  `--port` for a free port, given as `$PORT`, and `--ready "<check>"`: the run returns once the check passes, and
-  `admiral run stop --lock <name>` ends it with its locks. Start a service in the foreground (`postgres -D`, not
-  `pg_ctl start`): one that turns itself into a daemon may slip out of what the run can stop, and the run says so
-  when its port is still taken afterwards. A service that holds nothing scarce still runs under a lock named for it:
-  the name is what stops it, and how the board sees it running.
-- Where a project has several slots for one resource (two database slots, say), `--lock 'db-1|db-2'` (quoted) takes whichever
-  comes free first, given as the run's only lock; the command learns which from `$ADMIRAL_LOCK`. `admiral run stop` names the lock actually held.
-  A job expected to finish soon queues with `--priority` (see Queueing), as `admiral lock acquire` does.
-- Taking a lock by hand instead, give it the pid of what uses the resource for as long as it is needed, at once or
-  with `admiral lock attach` once it starts: without one, past its ttl the lock is kept only while your session runs
-  and is taken over once it ends, even while something still uses it; with the pid of a step that ends sooner it is
-  taken over when that step ends. A lock taken over from you is said so the next time you acquire, attach or release
-  it: stop what still uses the resource, or take another. Stop by its pid whatever you started, and release the
-  lock, when you are done.
-- Spell a lock's name one way: names that differ only in case are one lock on a disk that ignores case, and the tool
-  refuses another spelling of a lock while it is held, naming its holder.
-- If the lock is busy, queue (`admiral lock acquire --wait`); never go around it.
-- Name the locks after what the project actually shares, for example: one heavy slot for whole-suite and browser runs,
-  a few slots for a test database, a few for model quota, and ports handed out by the tool rather than picked by hand.
-  How many slots a resource gets, and whether its line needs any order beyond short jobs first, follow from how often
-  and how long its takers waited (`admiral lock stats`), not from a guess.
+- Use a scarce resource only under its lock, queueing when it is busy, never around it.
+- Run what uses it with `admiral run --lock <name> --who "<session> <task>" --limit <minutes> -- <command>`, which
+  holds the lock exactly while it runs and stops all it started (`admiral run --help`: `--port` gives `$PORT`,
+  `--ready` returns once a service is up, `--lock 'a|b'` takes whichever slot frees first and names it in
+  `$ADMIRAL_LOCK`, `admiral run stop --lock <the one held>` ends a service).
+- Start a service in the foreground (`postgres -D`, not `pg_ctl start`), since a daemon escapes what the run can stop,
+  and under a lock named for it even when it holds nothing scarce, so it can be stopped and seen.
+- A lock taken by hand (`admiral lock acquire|attach|release`) carries the pid of what uses the resource, or it can be
+  taken over while still in use; told it was taken from you, stop using the resource.
+- Spell a lock's name one way: names that differ only in case are one lock on a disk that ignores case.
+- Release locks, ports and services as soon as you are done, not when the PR merges.
+- Name locks after what the project shares (a heavy slot, database slots, model quota, ports from `admiral lock port`)
+  and size them from `admiral lock stats`, not a guess.
 
-## Queueing
+## Queues and background jobs
 
-- Short jobs go first; nobody raises the priority of their own long job.
-- Nothing waits forever: a commander raises a long job that has waited well past its turn (`admiral lock prio`).
-- A job started in the background that is meant to finish gets a time limit from how long it should take (`admiral
-  run --limit`): you hear when a job exits, not when it hangs, and a hung job keeps its lock. A limit put on a shell
-  stops the shell alone, not what it started; `admiral run` stops them all. While you are still working, one making less
-  progress than its expected time and output allow is looked into rather than waited on. Empty output, or no summary
-  line, does not mean a job finished: check that it has exited, and how, before reading a result from it.
+- Short jobs first (`--priority`); nobody raises their own long job, and a commander raises one left waiting (`admiral
+  lock prio`).
+- A background job gets a time limit from how long it should take, since you hear when a job exits, not when it hangs;
+  a shell's limit stops only the shell, `admiral run` stops everything.
+- Look into a job slower than expected, and check that it exited, and how, before reading a result from it.
 
-## When it was the machine, not the code
+## The machine, not the code
 
-When contention crashes a worker, times out a browser or slows everything, the run says nothing about the code: rerun
-it once the resource is free before investigating. A look at the machine as a lock is taken (free memory, a busy
-runner) says nothing of the run that follows; rather than add one, rely on that rerun, and add a check only where
-measurements show the condition happening and the check catching it.
+A crash, a timeout or slowness under contention says nothing about the code: rerun once the resource is free before
+investigating, and add no check of the machine before a run unless measurements show it catching something.
 
 ## Real model calls
 
-- Where the product calls models, test and evaluate with the model and settings production uses now.
-- When the provider starts rate limiting, stop; never push through it.
-- Decide the question first and run the fewest calls that answer it, together at the end of a stage rather than after
-  each small step; report how many calls and which model.
+- Use the model and settings production uses now, read from where they are set.
+- Stop when the provider rate-limits; never push through it.
+- Run the fewest calls that answer a settled question, together at the end of a stage, and report how many and which
+  model.
