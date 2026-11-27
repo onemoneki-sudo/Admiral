@@ -72,6 +72,10 @@ merge says why.
   does not ask. Give the model the goal, the decisions the person has made as the brief records them (those made
   during acceptance too), so that it does not report what they chose as a defect, and the diff; not your conclusions,
   which would anchor it.
+- The reviewer's provider may refuse a brief on security code, taking it for a request to attack something. Word such
+  a brief as checking that each protection holds (what it must refuse, which paths must go through it), not as
+  breaking it. A refusal is no review: a part still refused once reworded is recorded as unreviewed and goes to the
+  person or to another model, never counted as passed.
 - A change too large to review well at once has its first round in parts, each a complete piece of function given
   with its own commits and files; where two parts call each other or share data, the seam goes into one of them. The
   parts together make the first round.

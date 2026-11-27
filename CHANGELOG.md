@@ -5,6 +5,12 @@ Each version says what changed for someone using Admiral. The version lives in `
 Claude Code keeps an installed plugin in its cache, one copy per version, so a change to the sidebar or the playbook
 reaches people only when the version moves.
 
+## Unreleased
+
+**Playbook**
+- pipeline: a review brief on security code is worded as checking that each protection holds, not as attacking it,
+  which a reviewer's provider may refuse; a part still refused is recorded as unreviewed, never as passed.
+
 ## 0.2.24 (2026-11-23)
 
 **Playbook**
