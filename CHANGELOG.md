@@ -5,7 +5,7 @@ Each version says what changed for someone using Admiral. The version lives in `
 Claude Code keeps an installed plugin in its cache, one copy per version, so a change to the sidebar or the playbook
 reaches people only when the version moves.
 
-## Unreleased
+## 0.2.26 (2026-11-28)
 
 **Board**
 - The delivery check has a milestone of its own, **check**, between accept and CI, and a phase to report it,
