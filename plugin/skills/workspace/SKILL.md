@@ -32,6 +32,8 @@ Each session works in its own place, says where it is, and touches nothing it do
 - Stop only processes and containers you started, processes by pid, **never by name** (`pkill -f`, `killall`), which
   hits other sessions'. A leftover (a container, a database, a server) goes only once it is clearly this task's and
   nothing uses it.
+- The one exception to both: a commander wrapping up for a session that has closed (wrapup) may clean up that task's
+  worktree, processes and locks, only those whose ownership is proven and that nothing uses.
 - Never run git commands that change what all worktrees share (`git gc`, `git worktree prune`, `git stash`).
 - Write by absolute path, since a `cd` may not last, and hand a shell literal text (a file or `<<'EOF'`), since an
   unquoted heredoc runs its backticks.

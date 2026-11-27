@@ -63,13 +63,15 @@ version. Both checks run at the same time:
   review goes in complete parts, with a seam where two parts call each other or share data inside one of them, so no
   interface goes unreviewed.
 - Word a security review as checking that each protection holds, since a provider may refuse what reads as an attack.
-  A part still refused is recorded as unreviewed and goes to the person or another model before the PR goes ready.
+  A part still refused is recorded as unreviewed, and a PR whose required security review is unfinished does not go
+  ready: finish it by an independent review the person approves, never by retrying the refused call in another
+  session.
 - Group findings by the invariant they break before the first fix, and fix what blocks at the shared point. Review a
   fix again, narrowed to it, unless it stays in one module, avoids rendering, state, storage and permissions, and has a
   real-path test red before and green after; at most three rounds, then whoever decides. A fix that changes what the
   person saw goes back to them.
-- A fix makes a new candidate: rerun only the checks it invalidates (the tests it affects, a narrowed review) and keep
-  the rest, so the commit you push is the one the evidence is for.
+- When the candidate's commit or its base changes (a fix, a new base, a retarget), rerun the checks that change
+  invalidates (the tests it affects, a narrowed review) and keep the rest, so the evidence is for what you push.
 
 ## 5. Push and PR
 
@@ -84,10 +86,11 @@ version. Both checks run at the same time:
 - Merging is the person's or the maintainer's, never around required checks or approvals; agreeing to mark a PR ready
   covers auto-merge, except where a rule below holds it back.
 - A PR on another unmerged branch says so on its first line and never merges while that branch is its base. Once the
-  lower lands, first, if it was squashed, restore the tie (on a scratch branch from the default branch, `git merge -s
-  ours` the lower's final head, then merge that branch into yours), or redo your changes on a new branch if its
-  history was rewritten; never pick a merge base by hand. Then retarget the PR to the default branch and check that its
-  diff shows your changes and nothing else.
+  lower lands, keep your branch if you can: if the lower was squashed, first restore the tie (on a scratch branch from
+  the default branch, `git merge -s ours` the lower's final head, then merge that branch into yours), then retarget the
+  PR to the default branch. If the lower's history was rewritten under yours, redo your changes on a new branch from
+  the default branch and open a replacement PR, since a retarget never changes a PR's head. Never pick a merge base by
+  hand; either way, check that the diff shows your changes and nothing else.
 - A batch's PRs can pass alone and fail together: check them merged together on the latest default branch before they
   go ready. A PR adding what every change must satisfy (a repository-wide check, a registry, a numbered sequence)
   merges after the PRs it covers, takes them in and fills in what they brought, with no auto-merge until then; two such

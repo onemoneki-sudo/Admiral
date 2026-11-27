@@ -45,8 +45,9 @@ only.
 
 Closing discards a session's context, so it is the person's act. The board (`admiral board`, the sidebar) lists those
 that can close (PR merged and wrapped up: no worktree, no lock), those to wrap up first and those for the person to
-confirm, each with its reason; any other session is kept. A commander closes once every member has wrapped up and every
-deliverable of its plan has merged, as the board shows, since `admiral plan close` checks neither:
+confirm, each with its reason; any other session is kept. A commander archives its plan once every member has wrapped
+up and every deliverable has merged, as the board shows, since `admiral plan close` checks neither. Archiving is not
+closing: then it handles what the board still lists for it (its own locks, a worktree) and reports done.
 
 ```
 admiral plan close --lead "<its name>"

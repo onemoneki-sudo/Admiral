@@ -8,7 +8,7 @@ reaches people only when the version moves.
 ## Unreleased
 
 **Playbook**
-- All six skills rewritten to their essentials, about 41 KB down to about 28 KB: each opens with what it governs, each
+- All six skills rewritten to their essentials, about 41 KB down to about 29 KB: each opens with what it governs, each
   rule is a sentence on what it prevents, and what a tool does is a pointer to its `admiral` command. The floors are
   unchanged: one worktree per task, stopping by pid only, no shared git state changed, pushing and merging left to the
   person, no data exposed, production announced first, locks.
@@ -28,8 +28,9 @@ reaches people only when the version moves.
   session reports its real phase.
 - wrapup: the clean-up is taken from the machine and GitHub, not memory, each item with whose it is, and only steps
   that lose nothing run without the person. A commander checks on the board that its members have wrapped up and its
-  plan has merged before `admiral plan close --lead`, which checks neither.
-- resources: `admiral run stop` stops whatever run holds the lock now, so its holder is checked first.
+  plan has merged before `admiral plan close --lead`, which checks neither, and archiving the plan is not closing.
+- resources: `admiral run stop` stops whatever run holds the lock name now, so a service is stopped only by a lock
+  name its own task uses, never a shared slot's.
 - pipeline: how to word completion moves to principles.
 - pipeline: a review brief on security code is worded as checking that each protection holds, not as attacking it,
   which a reviewer's provider may refuse; a part still refused is recorded as unreviewed, never as passed.

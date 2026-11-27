@@ -31,9 +31,10 @@ tracks; executors build.
 - Follow progress on `admiral board`, with `admiral wait --lead "<commander>"` in the background: it returns when a
   member reports, waits for the person, ends a turn or ends, or at `--timeout` (3600 seconds by default). Each time,
   read `admiral list` and start it again, as it hears only what changes while it runs.
-- While executors work unwatched, add `--quiet <seconds>`, below `--timeout`: it wakes you when one at work has said
-  nothing that long. Silence can be a long job or one going in circles, so read its board row and its log before you
-  let it go on, correct it with `admiral send` or stop it by its pid.
+- While executors work unwatched, add `--quiet <seconds>`, below `--timeout`: it also returns once this wait has
+  heard nothing that long while a member is at work. It measures the wait, not any one member's silence, and silence
+  can be a long job or one going in circles, so read the member's board row and log before you let it go on, correct
+  it with `admiral send` or stop it by its pid.
 - An executor that three different attempts have brought no closer on one problem reports `stuck: <what it tried>;
   next: <what it will try>` as its state note, keeps it until it is past the problem or answered, and may go on; its
   commander decides whether it continues, is corrected or is stopped.
@@ -53,8 +54,8 @@ tracks; executors build.
   block outright. Trust the plugin's hooks in a window after each update.
 - Claude Code's auto mode refuses a full-access `codex exec` written by hand: start it through one launcher script
   that sets the access, the time limit and the empty input itself, takes a time limit only within bounds, and refuses
-  any path that does not resolve to a worktree under the project's worktree folder; give it only the executor's own
-  (never the main checkout or another session's), so the allowed script cannot hand full access to the wrong place.
+  any path that does not resolve to the worktree registered for this task (`admiral list`), so the allowed script
+  cannot hand full access to the main checkout or another session's worktree.
   The person allows that script in `/permissions`, unquoted, or the rule never matches.
 - After a segment stopped by pid, the next first cleans up the servers, runs and locks it left.
 
