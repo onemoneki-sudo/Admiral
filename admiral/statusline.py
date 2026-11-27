@@ -111,13 +111,16 @@ class Lines:
         r, g, b = (round(a + (z - a) * t) for a, z in zip(self.faint, self.full))
         return f"\x1b[38;2;{r};{g};{b}m"
 
-    def bar(self, p, merged=None, n=None):
-        """Cells deepen from faint to full green left to right; then the percentage, and how many PRs merged."""
+    def bar(self, p, merged=None, n=None, states=None):
+        """Cells deepen from faint to full green left to right; then the percentage, and how many PRs merged; with
+        `states` (closed, open), a plan's: how many merged, closed and open, as GitHub has them."""
         if p is None:
             return c(DIM, self.W["no_progress"])
         filled = round(BAR * p / 100)
         cells = "".join(f"{self.shade((i + 1) / BAR)}█" for i in range(filled))
-        prs = c(DIM, "  " + self.W["prs_merged"].format(done=merged, n=n)) if n else ""  # no PR yet: nothing to count
+        said = self.W["pr_states"].format(done=merged, n=n, closed=states[0], open=states[1]) \
+            if states and "pr_states" in self.W else self.W["prs_merged"].format(done=merged, n=n)
+        prs = c(DIM, "  " + said) if n else ""  # no PR yet: nothing to count
         return f"{cells}{RESET}{DIM}{'░' * (BAR - filled)}{RESET} {p:>3}%" + prs
 
     def pips(self, stage, reported=False):
@@ -183,7 +186,8 @@ class Lines:
             mine = me is not None and me["isCommander"] and me["name"] == g["lead"]
             name = names[g["lead"]] if width(names[g["lead"]]) <= cells else fit(names[g["lead"]], cells)
             head = (c(ORANGE, "▸ ") if mine else "  ") + (c(ORANGE, pad(name, cells)) if mine else pad(name, cells))
-            parts = [self.bar(s["pct"], s.get("prsMerged", 0), s.get("prs", 0))]
+            states = (s.get("prsClosed", 0), s.get("prsOpen", 0)) if g.get("batch") else None
+            parts = [self.bar(s["pct"], s.get("prsMerged", 0), s.get("prs", 0), states)]
             if s["total"]:
                 parts.append(self.breakdown(W["members"].format(n=s["total"]), s["waiting"], s["busy"], s["total"]))
             if s["ciFail"]:

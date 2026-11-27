@@ -218,9 +218,13 @@ def plan_add(cfg, lead, branch, title="", owner=""):
     p = plan(cfg, lead)
     item = next((it for it in p["items"] if it["branch"] == branch), None)
     if item:
-        item.update(title=title or item["title"], owner=owner or item.get("owner", ""))
+        changed = dict(item, title=title or item["title"], owner=owner or item.get("owner", ""))
+        if changed == item:
+            return p  # nothing new: the plan, and when it last changed, stay as they were
+        item.update(changed)
     else:
         p["items"].append({"branch": branch, "title": title, "owner": owner, "added": time.time()})
+    p["changed"] = time.time()  # the board reads it: a batch whose plan was just changed is not an old one
     write_json(batch_path(cfg, lead), p)
     return p
 
@@ -231,6 +235,7 @@ def plan_remove(cfg, lead, branch):
     if len(kept) == len(p["items"]):
         return False
     p["items"] = kept
+    p["changed"] = time.time()
     write_json(batch_path(cfg, lead), p)
     return True
 

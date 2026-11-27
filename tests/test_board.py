@@ -91,6 +91,17 @@ class World(unittest.TestCase):
         for branch, title, owner in items:
             registry.plan_add(self.cfg, lead, branch, title, owner)
 
+    def written_at(self, t):
+        """From now on, registrations and plans record `t` as when they were made or changed (else the real clock,
+        far from NOW)."""
+        import time
+        import types
+        from unittest import mock
+        from admiral import registry
+        patch = mock.patch.object(registry, "time", types.SimpleNamespace(time=lambda: t, strftime=time.strftime))
+        patch.start()
+        self.addCleanup(patch.stop)
+
     def lock(self, name, who):
         os.makedirs(os.path.join(self.root, "locks", name))
         with open(os.path.join(self.root, "locks", name, "owner"), "w", encoding="utf-8") as fh:
@@ -1323,7 +1334,7 @@ class Evidence(World):
     def test_the_status_line_shows_reported_done_and_counts_no_merge(self):
         b, g, x = self.batch("done")
         raw, lines = self.status_lines(b, "s3")
-        self.assertTrue(any("100%  PRs merged 0/1" in ln for ln in lines), lines)
+        self.assertTrue(any("100%  merged 0/1 · closed 0 · open 0" in ln for ln in lines), lines)
         self.assertTrue(lines[-1].startswith("this session  ▰▰▰▰▰ reported done"), lines[-1])
         self.assertIn("\x1b[2m▰", raw[-1])  # the last milestone dim: the session's word, not a merge
         b, g, x = self.batch("done", pr(1, "MERGED"))
@@ -1433,6 +1444,7 @@ class FinishedBatches(World):
     def setUp(self):
         super().setUp()
         self.session(4, "elsewhere")  # some session runs, so the board is built and GitHub asked
+        self.written_at(NOW - 600)  # a batch of today: one untouched for days leaves the board too (OldBatches)
 
     def gone(self, *prs_by_branch):
         self.plan("Commander-Gone", *[(b, b, "worker") for b, _ in prs_by_branch])
@@ -1529,6 +1541,190 @@ class FinishedBatches(World):
         self.gone(("feat/a", pr(1, "MERGED")))
         registry.plan_close(self.cfg, "Commander-Gone")
         self.assertFalse([h for h in self.build()["hints"] if "Commander-Gone" in h])
+
+
+class OldBatches(World):
+    """A batch nobody of which runs and nothing of which moved for days leaves the board: named once under To tidy,
+    with the command that puts its plan away, rather than marked commander not running on every refresh."""
+
+    HINT = ('nothing of the batch of Commander-Old has moved for over 3 days and nobody of it runs (merged 1/2): no '
+            'longer shown; admiral plan close --lead "Commander-Old" puts it away, or its commander, opened again, '
+            'takes it up')
+
+    def setUp(self):
+        super().setUp()
+        self.session(4, "elsewhere")  # some session runs, so the board is built
+        self.written_at(NOW - 10 * 86400)
+        self.register("old-worker", branch="feat/b", lead="Commander-Old", phase="review")  # its session has closed
+        self.plan("Commander-Old", ("feat/a", "a", "old-worker"), ("feat/b", "b", "old-worker"))
+        self.prs = {"feat/a": pr(1, "MERGED")}
+
+    def lead_of(self, b):
+        return next((g for g in b["groups"] if g["lead"] == "Commander-Old"), None)
+
+    def shown(self, b):
+        import re
+        from admiral import statusline
+        board.write(self.cfg, b)
+        raw = statusline.admiral_lines(self.cfg.sub("board.json"), "s4", now=NOW)
+        return raw, " ".join(re.sub(r"\x1b\[[0-9;]*m", "", ln) for ln in raw)
+
+    def test_an_old_batch_leaves_the_board_named_once_under_to_tidy(self):
+        from admiral import registry
+        b = self.build()
+        self.assertIsNone(self.lead_of(b))
+        self.assertEqual([h for h in b["hints"] if "Commander-Old" in h], [self.HINT])
+        self.assertEqual((b["prsMerged"], b["prs"]), (0, 0))  # not counted, as a closed plan is not
+        raw, shown = self.shown(b)
+        self.assertNotIn("Old", shown)
+        self.assertNotIn("commander not running", shown)
+        md = board.markdown(b)
+        self.assertNotIn("## Commander-Old", md)
+        self.assertEqual(md.count("Commander-Old"), self.HINT.count("Commander-Old"))  # in the hint alone
+        self.assertIn(f"- {self.HINT}", md)
+        self.assertEqual([p["lead"] for p in registry.plans(self.cfg)], ["Commander-Old"])  # the board closes nothing
+        self.assertEqual(len([h for h in self.build(now=NOW + 60)["hints"] if "Commander-Old" in h]), 1)
+
+    def test_a_batch_that_moved_lately_stays_marked_commander_not_running(self):
+        for when in (NOW - 2 * 86400, NOW - 3 * 86400 + 60):
+            with self.subTest(when=when):
+                self.written_at(when)
+                self.register("old-worker", branch="feat/b", lead="Commander-Old", phase="accepting")
+                b = self.build()
+                self.assertIsNone(self.lead_of(b)["leadRow"])
+                self.assertFalse([h for h in b["hints"] if "Commander-Old" in h])
+                raw, shown = self.shown(b)
+                self.assertIn("\x1b[31mcommander not running", "".join(raw))
+
+    def test_a_deliverable_added_lately_keeps_the_batch(self):
+        self.written_at(NOW - 3600)
+        self.plan("Commander-Old", ("feat/c", "c", ""))
+        self.assertIsNotNone(self.lead_of(self.build()))
+
+    def test_a_plan_changed_lately_keeps_the_batch(self):
+        from admiral import registry
+        for change in ("rm", "add"):
+            with self.subTest(change=change):
+                self.written_at(NOW - 10 * 86400)
+                self.plan("Commander-Old", ("feat/c", "c", "old-worker"))
+                self.assertIsNone(self.lead_of(self.build()))
+                self.written_at(NOW - 3600)
+                if change == "rm":
+                    registry.plan_remove(self.cfg, "Commander-Old", "feat/c")
+                else:  # a planned deliverable retitled, or given another owner
+                    registry.plan_add(self.cfg, "Commander-Old", "feat/c", "c, retitled", "new-worker")
+                self.assertIsNotNone(self.lead_of(self.build()))
+                registry.plan_remove(self.cfg, "Commander-Old", "feat/c")
+
+    def test_a_plan_add_that_changes_nothing_leaves_the_batch_old(self):
+        from admiral import registry
+        self.written_at(NOW - 3600)
+        registry.plan_add(self.cfg, "Commander-Old", "feat/a", "", "")  # as it was: no new title, no new owner
+        registry.plan_add(self.cfg, "Commander-Old", "feat/b", "b", "old-worker")
+        self.assertIsNone(self.lead_of(self.build()))
+
+    def test_anyone_of_it_running_keeps_the_batch(self):
+        for pid, name in ((1, "Commander-Old"), (3, "old-worker")):
+            with self.subTest(name=name):
+                self.session(pid, name)
+                self.assertIsNotNone(self.lead_of(self.build()))
+                os.remove(os.path.join(self.root, "sessions", f"{pid}.json"))
+        self.assertIsNone(self.lead_of(self.build()))
+
+    def test_a_plan_all_merged_is_named_as_finished_not_as_old(self):
+        self.prs["feat/b"] = pr(2, "MERGED")
+        hints = [h for h in self.build()["hints"] if "Commander-Old" in h]
+        self.assertEqual(len(hints), 1)
+        self.assertIn("is all merged", hints[0])
+
+    def test_a_plan_that_records_no_time_is_not_taken_for_an_old_one(self):
+        from admiral import registry
+        registry.done(self.cfg, "old-worker")
+        path = registry.batch_path(self.cfg, "Commander-Old")
+        p = registry.read_json(path)
+        p.pop("created")
+        p.pop("changed")
+        for it in p["items"]:
+            it.pop("added")
+        registry.write_json(path, p)
+        self.assertIsNotNone(self.lead_of(self.build()))
+
+
+class OldBatchesInChinese(World):
+    language = "zh"
+
+    def test_the_hint_reads_in_chinese(self):
+        self.session(4, "elsewhere")
+        self.written_at(NOW - 10 * 86400)
+        self.plan("Commander-Old", ("feat/a", "a", "old-worker"))
+        self.assertIn('Commander-Old 的批次已超过 3 天没有动静，批次里也没有对话在运行（已合并 0/1）：已不再显示；'
+                      '用 admiral plan close --lead "Commander-Old" 收起它，或重新打开总指挥接着做', self.build()["hints"])
+
+
+class PlanPrStates(World):
+    """A plan's PRs counted as GitHub has them, merged, closed and open apart: one closed counts as closed, never as
+    merged, whatever may have carried its work (a train, say)."""
+
+    def setUp(self):
+        super().setUp()
+        self.session(1, "Commander-Checkout")
+        self.plan("Commander-Checkout", ("feat/cart", "cart", ""), ("feat/pay", "pay", ""), ("feat/ship", "ship", ""),
+                  ("feat/tax", "tax", ""))
+        self.prs = {"feat/cart": pr(11, "MERGED"), "feat/pay": pr(12, "CLOSED"), "feat/ship": pr(13, "OPEN")}
+
+    def test_merged_closed_and_open_are_counted_apart(self):
+        import re
+        from admiral import statusline
+        b = self.build()
+        s = self.group(b, "Commander-Checkout")["summary"]
+        self.assertEqual((s["prsMerged"], s["prs"], s["prsClosed"], s["prsOpen"]), (1, 4, 1, 1))
+        self.assertIn("## Commander-Checkout (", board.markdown(b))
+        self.assertIn("plan, merged 1/4 · closed 1 · open 1)", board.markdown(b))
+        board.write(self.cfg, b)
+        with open(self.cfg.sub("board.json"), encoding="utf-8") as fh:
+            shown = json.load(fh)["groups"][0]["summary"]
+        self.assertEqual((shown["prsMerged"], shown["prsClosed"], shown["prsOpen"]), (1, 1, 1))
+        lines = [re.sub(r"\x1b\[[0-9;]*m", "", ln)
+                 for ln in statusline.admiral_lines(self.cfg.sub("board.json"), "s1", now=NOW)]
+        self.assertTrue(any("merged 1/4 · closed 1 · open 1" in ln for ln in lines), lines)
+
+    def test_a_plan_a_train_merged_shows_its_prs_closed_not_merged(self):
+        self.prs = {b: pr(20 + i, "CLOSED") for i, b in enumerate(("feat/cart", "feat/pay", "feat/ship", "feat/tax"))}
+        s = self.group(self.build(), "Commander-Checkout")["summary"]
+        self.assertEqual((s["prsMerged"], s["prsClosed"], s["prsOpen"]), (0, 4, 0))
+
+    def test_without_a_plan_the_count_is_as_before(self):
+        import re
+        from admiral import statusline
+        from admiral import registry
+        registry.plan_close(self.cfg, "Commander-Checkout")
+        self.session(3, "worker")
+        self.register("worker", branch="feat/solo", lead="Commander-Checkout")
+        self.prs = {"feat/solo": pr(5, "MERGED"), "feat/old": pr(4, "CLOSED")}
+        b = self.build()
+        board.write(self.cfg, b)
+        lines = [re.sub(r"\x1b\[[0-9;]*m", "", ln)
+                 for ln in statusline.admiral_lines(self.cfg.sub("board.json"), "s3", now=NOW)]
+        team = next(ln for ln in lines if ln.lstrip().startswith("Checkout"))
+        self.assertIn("PRs merged 1/1", team)
+        self.assertNotIn("closed", team)
+
+
+class PlanPrStatesInChinese(PlanPrStates):
+    language = "zh"
+
+    def test_merged_closed_and_open_are_counted_apart(self):
+        import re
+        from admiral import statusline
+        b = self.build()
+        self.assertIn("交付清单，已合并 1/4 · 已关闭 1 · 进行中 1", board.markdown(b))
+        board.write(self.cfg, b)
+        lines = [re.sub(r"\x1b\[[0-9;]*m", "", ln)
+                 for ln in statusline.admiral_lines(self.cfg.sub("board.json"), "s1", now=NOW)]
+        self.assertTrue(any("已合并 1/4 · 已关闭 1 · 进行中 1" in ln for ln in lines), lines)
+
+    def test_without_a_plan_the_count_is_as_before(self):
+        pass  # the English one says it
 
 
 class OneConversation(World):

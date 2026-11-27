@@ -11,6 +11,17 @@ reaches people only when the version moves.
 - pipeline: a review brief on security code is worded as checking that each protection holds, not as attacking it,
   which a reviewer's provider may refuse; a part still refused is recorded as unreviewed, never as passed.
 
+**Board**
+- A plan's PRs are counted as GitHub has them, merged, closed and open apart: a batch's line in the status line and its
+  heading in `admiral board` read "merged 5/13 · closed 8 · open 0" (was "PRs merged 5/13"), so a deliverable whose PR
+  was closed, its work perhaps carried by another PR, shows as closed, never as merged and never as missing. The board's
+  JSON adds `prsClosed` and `prsOpen` to each batch's summary; the other fields keep their names.
+- A batch nobody of which runs, and nothing of which (its plan made or changed, its sessions' registrations and phases)
+  moved for `idle_flag_days` (3 by default), leaves the board rather than show "commander not running" in red on every
+  refresh: it is named once under To tidy, with the `admiral plan close` that puts it away. Opening its commander again
+  shows it again. `admiral plan add` and `admiral plan rm` now record when the plan changed; a `plan add` that changes
+  nothing leaves the plan as it was.
+
 ## 0.2.24 (2026-11-23)
 
 **Playbook**

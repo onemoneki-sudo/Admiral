@@ -344,7 +344,12 @@ admiral plan close --lead "<commander>"
 
 A commander closes its plan when the batch is over. If it was closed first, the batch leaves the board once every
 deliverable has merged and no session of it runs, and the to-tidy list suggests `admiral plan close`; until then the
-batch shows, marked commander not running. The board never closes a plan itself.
+batch shows, marked commander not running. A batch nobody of which runs and nothing of which has moved for
+`idle_flag_days` (3 by default) leaves it too, named once under To tidy with the same command. The board never closes a
+plan itself.
+
+A plan's PRs are counted as GitHub has them: "merged 5/13 · closed 8 · open 0". A deliverable whose PR was closed counts
+as closed, even when another PR (a train of several, say) carried its work.
 
 **Commands.**
 
