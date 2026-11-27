@@ -15,7 +15,10 @@ own for a session to be closed.
 Each milestone is worth a share (config `progress`) and a percentage is the mean worth. A commander's progress counts
 its plan's deliverables when it has one (a merged deliverable keeps counting after its session closes), else its
 live members. Grouping: a registered `--lead` wins; otherwise the commander whose cross-session message the session
-received last.
+received last. A batch with nobody of it running leaves the board, its plan named under To tidy for `admiral plan
+close`, once every deliverable merged, or once nothing of it moved for `idle_flag_days`.
+A plan's PRs are counted as GitHub has them, merged, closed and open apart: a deliverable whose PR was closed counts as
+closed, whatever else may have carried its work.
 """
 
 import copy
@@ -60,6 +63,9 @@ TEXT = words_mod.phrases({
         "h_twice": "{name} is open {n} times ({where}): close all but one, as each writes the same conversation",
         "h_plan_finished": "the plan of {lead} is all merged and nobody of its batch runs: no longer shown; "
                            "admiral plan close --lead \"{lead}\" puts it away",
+        "h_plan_dormant": "nothing of the batch of {lead} has moved for over {days} days and nobody of it runs "
+                          "(merged {done}/{n}): no longer shown; admiral plan close --lead \"{lead}\" puts it away, "
+                          "or its commander, opened again, takes it up",
         "h_gone": "registered but the session has ended: {who} (`admiral done --who \"{who}\"` once confirmed)",
         "h_worktree_gone": "worktree no longer exists: {who} -> {wt}",
         "h_pr_done": "{label}, still registered: {who}; wrap it up",
@@ -77,7 +83,7 @@ TEXT = words_mod.phrases({
         "waiting_head": "## Waiting for you ({n})", "none": "- none", "teams_head": "## Commanders",
         "team_line": "- {lead} ({own}): {pct}{how} · {n} {n:member|members} · {busy} working · {waiting} waiting · {ci} CI failing",
         "live_members": " (live members)", "team_head": "## {lead} ({pct}; {how})",
-        "how_plan": "plan, merged {done}/{n}", "how_live": "live members, no plan",
+        "how_plan": "plan, merged {done}/{n} · closed {closed} · open {open}", "how_live": "live members, no plan",
         "no_member_rows": "(no members: executors register with --lead, or receive a message from this commander)",
         "independent": "## Independent sessions ({n}, no commander)", "close_head": "## Wrap-up (after a PR merges, wrap up, then close)",
         "close": "can close", "wrapup": "wrap up first", "confirm": "for you to confirm", "close_none": "- no session to close",
@@ -115,6 +121,8 @@ TEXT = words_mod.phrases({
         "h_twice": "{name} 同时开了 {n} 份（{where}）：只留一个，它们写的是同一份对话记录",
         "h_plan_finished": "{lead} 的交付清单已全部合并，批次里也没有对话在运行：已不再显示；"
                            "用 admiral plan close --lead \"{lead}\" 收起它",
+        "h_plan_dormant": "{lead} 的批次已超过 {days} 天没有动静，批次里也没有对话在运行（已合并 {done}/{n}）：已不再显示；"
+                          "用 admiral plan close --lead \"{lead}\" 收起它，或重新打开总指挥接着做",
         "h_gone": "已登记但对话已结束：{who}（确认后 admiral done --who \"{who}\"）",
         "h_worktree_gone": "worktree 已不存在：{who} → {wt}",
         "h_pr_done": "{label}，但仍在登记中：{who}，可以收尾",
@@ -132,7 +140,7 @@ TEXT = words_mod.phrases({
         "waiting_head": "## 待处理（{n}）", "none": "- 无", "teams_head": "## 各总指挥",
         "team_line": "- {lead}（{own}）：{pct}{how} · 成员 {n} 个 · 工作 {busy} · 待处理 {waiting} · CI 失败 {ci}",
         "live_members": "（在线成员）", "team_head": "## {lead}（{pct}；{how}）",
-        "how_plan": "交付清单，合并 {done}/{n}", "how_live": "在线成员，未登记交付清单",
+        "how_plan": "交付清单，已合并 {done}/{n} · 已关闭 {closed} · 进行中 {open}", "how_live": "在线成员，未登记交付清单",
         "no_member_rows": "（暂无成员对话：执行对话登记时加 --lead，或收到过本总指挥的消息）",
         "independent": "## 独立对话（{n}，没有总指挥）", "close_head": "## 收尾（PR 合并后先收尾再关闭）",
         "close": "可以关闭", "wrapup": "待收尾后关闭", "confirm": "需要你确认", "close_none": "- 暂无可关闭的对话",
@@ -210,6 +218,15 @@ def pr_count(group):
     return sum(s == "MERGED" for s in seen.values()), len(seen)
 
 
+def pr_states(group, read=True):
+    """(PRs closed unmerged, PRs open) of a plan's deliverables, as GitHub has them; (0, 0) without a plan. (None,
+    None) when a deliverable with no PR found may have one: GitHub's PRs were not read this time (`read` False)."""
+    states = [(i["pr"] or {}).get("state") for i in (group.get("batch") or {}).get("items", [])]
+    if not read and None in states:
+        return None, None
+    return states.count("CLOSED"), states.count("OPEN")
+
+
 def counted(group):
     """What a group's progress counts: its plan's deliverables when it has one, else its members past not started."""
     return group["batch"]["items"] if group.get("batch") else [x for x in group["members"] if x["stage"]]
@@ -285,6 +302,18 @@ def closing(x, locks, groups, now, cfg, T):
     return "keep", T["developing"]
 
 
+def moved(plan, regs):
+    """When anything of a batch last moved, as its plan and its sessions' registrations record it: the plan made or
+    changed (a deliverable added, changed or removed), a registration made, a phase reported. None when none of them
+    records a time."""
+    def number(t):
+        return (isinstance(t, int) and not isinstance(t, bool)) or (isinstance(t, float) and math.isfinite(t))
+    times = [plan.get("created"), plan.get("changed")] \
+        + [it.get("added") for it in plan["items"] if isinstance(it, dict)] \
+        + [r.get(k) for r in regs for k in ("since", "phaseAt")]
+    return max((t for t in times if number(t)), default=None)
+
+
 def began(s):
     """Whether a session has done anything since it started: its status changed half a minute or more after its
     start, or it works or waits now. One with no start recorded, or times that do not read as numbers, is taken to
@@ -339,8 +368,9 @@ def build(cfg, use_gh=True, now=None, starts=sessions.proc_starts, fetch=github.
     views = [cfg.for_project(p) for p in cfg.projects]
     regs, plans, anyone = owned(cfg, views, starts)
     # while any project has a session running, the board is read: every project's GitHub is asked as always
-    return combine(cfg, views, [build_one(v, regs=regs[v.project], plans=plans[v.project], read=anyone, **kw)
-                                for v in views])
+    every = [r for v in views for r in regs[v.project]]  # whether anyone of a batch runs is asked of all of them
+    return combine(cfg, views, [build_one(v, regs=regs[v.project], plans=plans[v.project], read=anyone,
+                                          every_reg=every, **kw) for v in views])
 
 
 def owned(cfg, views, starts):
@@ -475,12 +505,13 @@ def attach(live, regs, current, elsewhere=()):
 
 def build_one(cfg, use_gh=True, now=None, starts=sessions.proc_starts, fetch=github.prs_by_branch,
               commits=sessions.last_commit, fetch_mine=github.my_prs, checked_out=sessions.worktree_branch,
-              worktrees=sessions.worktrees, regs=None, plans=None, read=None):
+              worktrees=sessions.worktrees, regs=None, plans=None, read=None, every_reg=None):
     now = time.time() if now is None else now
     T, W = TEXT[cfg.language], words(cfg.language)
     live, broken, shapeless, elsewhere = sessions.load(cfg, starts)
     regs = registry.registrations(cfg) if regs is None else regs
     plans = registry.plans(cfg) if plans is None else plans
+    every_reg = regs if every_reg is None else every_reg  # with several projects, every project's registrations
     # Sessions outside the configured projects are not shown, but they run: a name running anywhere is never taken
     # for a session that ended, nor its batch for one with nobody of it running.
     running_elsewhere = {n for s in elsewhere for n in [s.get("name")] + [f.get("name") for f in s.get("formerNames") or []]
@@ -552,6 +583,7 @@ def build_one(cfg, use_gh=True, now=None, starts=sessions.proc_starts, fetch=git
             guessed.setdefault(sid, []).append(b)
     branches = claimed | {b for bs in guessed.values() for b in bs}
     prs, gh_ok, reused, mine = {}, None, False, None
+    prs_read = False  # whether GitHub's PRs were read this time: then a branch with no PR found has none
     quiet = all(c["status"] not in ("busy", "shell", "waiting") and now - c["statusSince"] > cfg.quiet_s for c in convs)
     # with no session running nothing reads the board, so GitHub is left alone; `read` says so for several projects
     if use_gh and (live if read is None else read) and cfg.repo_dir:
@@ -562,6 +594,7 @@ def build_one(cfg, use_gh=True, now=None, starts=sessions.proc_starts, fetch=git
         except (FileNotFoundError, NotADirectoryError):  # a repository that is not there: as GitHub not answering,
             prs, mine, reused = None, None, False  # rather than stopping the whole board
         gh_ok = prs is not None and mine is not None
+        prs_read = prs is not None
         prs = prs or {}
     unknown = gh_ok is False  # GitHub failed: a branch with no PR found may still have one
     for c in convs:
@@ -650,12 +683,18 @@ def build_one(cfg, use_gh=True, now=None, starts=sessions.proc_starts, fetch=git
     finished = []  # plans of batches over, with nobody of them running: not shown, left to `admiral plan close`
     # a planned PR's owner may run ungrouped, or outside the projects
     running = {n for c in convs for n in [c["name"]] + c["former"]} | running_elsewhere
-    heard = set(read["heard"].values())  # commanders a running session last heard from, gone or not
+    # commanders a running session last heard from, gone or not, unless it is registered under another: grouping goes
+    # by a registered --lead first, and so does whose batch it is
+    row_lead = {x["sessionId"]: x["lead"] for x in rows if x["leadFrom"] == "registered"}
+    heard = {n for sid, n in read["heard"].items() if row_lead.get(sid, n) == n}
+    # a session runs by the session its registration records, wherever it runs, as well as by any name it has or had
+    live_ids = {s.get("sessionId") for s in live + elsewhere} - {None, ""}
     mem_by_who = {}  # owners that deregistered since, by the name each registered under and its session's name now
     for c in convs:
         m = memory.get(c["sessionId"])
         for n in ({m.get("who"), c["name"], *(m.get("aka") or [])} if m else set()) - {None, ""}:
             mem_by_who.setdefault(n, []).append(m)
+    dormant = []  # plans of batches nobody of which runs or moved for days: not shown either, left to `plan close`
     for p in plans:
         lead = alias.get(p["lead"], p["lead"])
         g = next((g for g in groups if g["lead"] == lead), None)  # None: neither the commander nor a member runs
@@ -677,11 +716,21 @@ def build_one(cfg, use_gh=True, now=None, starts=sessions.proc_starts, fetch=git
                           "pr": github.pr_label(pr, cfg.language), "ci": ci_text, "ciLevel": ci_level})
         # of the batch: its owners, its commander, and the sessions registered under it, wherever they run
         ours = {i["owner"] for i in items} | {p["lead"], lead} | {r["who"] for r in regs if r.get("lead") in (p["lead"], lead)}
-        if g is None and items and all((i["pr"] or {}).get("state") == "MERGED" for i in items) \
-                and not ours & running and p["lead"] not in heard and lead not in heard:
+        # its sessions' registrations in any project: a member may work in another project, under the same --lead
+        theirs = [r for r in every_reg if set(registry.names_of(r)) & ours or r.get("lead") in (p["lead"], lead)]
+        alive = ours & running or any(r.get("sessionId") in live_ids or set(registry.names_of(r)) & running
+                                      for r in theirs)
+        gone = g is None and not alive and p["lead"] not in heard and lead not in heard
+        if gone and items and all((i["pr"] or {}).get("state") == "MERGED" for i in items):
             # the batch is over: every deliverable merged, and nobody of it runs. It leaves the board rather than show
             # its commander not running; its plan is the commander's or the person's to close, never the board's
             finished.append(p["lead"])
+            continue
+        last = moved(p, theirs)
+        if gone and last is not None and now - last > cfg.idle_flag_s:
+            # nobody of it runs and nothing of it moved for days: an old batch, shown once under To tidy rather than
+            # as a commander not running on every refresh; its plan stays, for `plan close`, or for its commander
+            dormant.append((p["lead"], sum((i["pr"] or {}).get("state") == "MERGED" for i in items), len(items)))
             continue
         if g is None:  # the commander is not running and the batch is not over: its plan still counts
             g = {"lead": lead, "leadRow": None, "members": []}
@@ -692,9 +741,11 @@ def build_one(cfg, use_gh=True, now=None, starts=sessions.proc_starts, fetch=git
         m, bt, counts = g["members"], g.get("batch"), counted(g)
         d = dist([x["stage"] for x in counts])
         merged_prs, all_prs = pr_count(g)
+        closed_prs, open_prs = pr_states(g, prs_read)
         g["summary"] = {"total": len(m), "done": sum(x["done"] for x in m), "dist": d, "pct": pct(d, cfg.weights),
                         "reported": sum(x["reportedDone"] for x in counts),
                         "items": len(bt["items"]) if bt else 0, "prsMerged": merged_prs, "prs": all_prs,
+                        "prsClosed": closed_prs, "prsOpen": open_prs,
                         "itemsDone": sum(i["stage"] == 5 for i in bt["items"]) if bt else 0,
                         "busy": sum(x["status"] in ("busy", "shell") for x in m),
                         "waiting": sum(x["status"] == "waiting" for x in m),
@@ -731,7 +782,8 @@ def build_one(cfg, use_gh=True, now=None, starts=sessions.proc_starts, fetch=git
     hints += [T["h_lead_gone"].format(lead=lead) for lead in orphans]
     hints += [T["h_twice"].format(name=name, n=n, where=", ".join(where)) for name, n, where in open_twice]
     hints += [T["h_plan_finished"].format(lead=lead) for lead in finished]
-    live_ids = {s.get("sessionId") for s in live + elsewhere}
+    hints += [T["h_plan_dormant"].format(lead=lead, days=cfg.idle_flag_s // 86400, done=done, n=n)
+              for lead, done, n in dormant]
     running_here = {n for c in convs for n in [c["name"]] + c["former"]}  # every name a session here has or had
     nameless = any(not s.get("name") for s in live + elsewhere)  # by name, whether one ended cannot then be told
     for r in regs:
@@ -815,6 +867,11 @@ def stage_word(x, W):
     return W["reported_done"] if x.get("reportedDone") else W["stages"][x["stage"]]
 
 
+def known(n):
+    """A count, or "?" when GitHub was not read for it."""
+    return "?" if n is None else n
+
+
 def markdown(b, live=False):
     """The board as Markdown; `live` when it was built for this one command rather than read from the snapshot."""
     lang = b["language"]
@@ -860,7 +917,8 @@ def markdown(b, live=False):
         out.append(T["none"])
     for g in b["groups"]:
         s = g["summary"]
-        how = T["how_plan"].format(done=s["prsMerged"], n=s["items"]) if g.get("batch") else T["how_live"]
+        how = T["how_plan"].format(done=s["prsMerged"], n=s["items"], closed=known(s["prsClosed"]),
+                                   open=known(s["prsOpen"])) if g.get("batch") else T["how_live"]
         out += ["", T["team_head"].format(lead=g["lead"], pct=f"{s['pct']}%" if s["pct"] is not None else "-", how=how)]
         if g.get("batch"):
             out += [T["item_cols"], "|---|---|---|---|---|---|"]

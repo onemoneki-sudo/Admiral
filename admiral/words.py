@@ -38,6 +38,7 @@ WORDS = {
                    "accepting": "accepting", "paused": "paused", "done": "done"},
         "maybe_waiting": "may be waiting for you: ", "reported_waiting": "needs you: ",
         "github_prs": "GitHub PRs: {open} open · {merged} merged today", "prs_merged": "PRs merged {done}/{n}",
+        "pr_states": "merged {done}/{n} · closed {closed} · open {open}",  # a plan's PRs, as GitHub has them
         "overall": "progress", "no_owner": "no owner", "no_terminal": "no terminal found for {name}",
         "no_tab": "no terminal tab found for {name} ({tty})", "pane_closed": "Admiral board hidden.",
         "pane_opened": "Admiral board shown.", "pane_waits": "Admiral board opened; it docks on the right once the terminal is 110 columns wide.",
@@ -66,6 +67,7 @@ WORDS = {
                    "accepting": "验收中", "paused": "暂停", "done": "完成"},
         "maybe_waiting": "可能在等你：", "reported_waiting": "等你：",
         "github_prs": "GitHub PR：开着 {open} · 今天合并 {merged}", "prs_merged": "PR 已合并 {done}/{n}",
+        "pr_states": "已合并 {done}/{n} · 已关闭 {closed} · 进行中 {open}",
         "overall": "总进度", "no_owner": "未指定负责对话", "no_terminal": "未找到「{name}」所在的终端",
         "no_tab": "未找到「{name}」所在的终端标签页（{tty}）", "pane_closed": "Admiral 面板已收起。",
         "pane_opened": "Admiral 面板已展开。", "pane_waits": "Admiral 面板已打开，终端宽度达到 110 列后显示在右侧。",

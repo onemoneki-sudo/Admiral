@@ -111,13 +111,17 @@ class Lines:
         r, g, b = (round(a + (z - a) * t) for a, z in zip(self.faint, self.full))
         return f"\x1b[38;2;{r};{g};{b}m"
 
-    def bar(self, p, merged=None, n=None):
-        """Cells deepen from faint to full green left to right; then the percentage, and how many PRs merged."""
+    def bar(self, p, merged=None, n=None, states=None):
+        """Cells deepen from faint to full green left to right; then the percentage, and how many PRs merged; with
+        `states` (closed, open), a plan's: how many merged, closed and open, as GitHub has them."""
         if p is None:
             return c(DIM, self.W["no_progress"])
         filled = round(BAR * p / 100)
         cells = "".join(f"{self.shade((i + 1) / BAR)}█" for i in range(filled))
-        prs = c(DIM, "  " + self.W["prs_merged"].format(done=merged, n=n)) if n else ""  # no PR yet: nothing to count
+        said = self.W["pr_states"].format(done=merged, n=n, closed="?" if states[0] is None else states[0],
+                                          open="?" if states[1] is None else states[1]) \
+            if states and "pr_states" in self.W else self.W["prs_merged"].format(done=merged, n=n)
+        prs = c(DIM, "  " + said) if n else ""  # no PR yet: nothing to count
         return f"{cells}{RESET}{DIM}{'░' * (BAR - filled)}{RESET} {p:>3}%" + prs
 
     def pips(self, stage, reported=False):
@@ -140,7 +144,8 @@ class Lines:
         return f"{RED}✗{RESET}{DIM} {n} {self.W['ci']}{RESET}" if n else c(DIM, f"✗ 0 {self.W['ci']}")
 
     def render(self, session_id, cols=None):
-        """The lines; with `cols`, a first line too wide drops the waiting sessions' names before anything else."""
+        """The lines; with `cols`, a first line too wide drops the waiting sessions' names before anything else, and a
+        batch's line its closed and open counts."""
         b, W = self.b, self.W
         label = c(ORANGE, "Admiral")
         rows = [x for g in b["groups"] for x in ([g["leadRow"]] if g["leadRow"] else []) + g["members"]] + b["unassigned"]
@@ -183,14 +188,19 @@ class Lines:
             mine = me is not None and me["isCommander"] and me["name"] == g["lead"]
             name = names[g["lead"]] if width(names[g["lead"]]) <= cells else fit(names[g["lead"]], cells)
             head = (c(ORANGE, "▸ ") if mine else "  ") + (c(ORANGE, pad(name, cells)) if mine else pad(name, cells))
-            parts = [self.bar(s["pct"], s.get("prsMerged", 0), s.get("prs", 0))]
+            states = (s.get("prsClosed", 0), s.get("prsOpen", 0)) if g.get("batch") else None
+            rest = []
             if s["total"]:
-                parts.append(self.breakdown(W["members"].format(n=s["total"]), s["waiting"], s["busy"], s["total"]))
+                rest.append(self.breakdown(W["members"].format(n=s["total"]), s["waiting"], s["busy"], s["total"]))
             if s["ciFail"]:
-                parts.append(self.ci_count(s["ciFail"]))
+                rest.append(self.ci_count(s["ciFail"]))
             if not g.get("leadRow"):
-                parts.append(c(RED, W["commander_gone"]))
-            lines.append(head + "  " + SEP.join(parts))
+                rest.append(c(RED, W["commander_gone"]))
+            # too wide, the closed and open counts go first, so what the line always said keeps its room
+            line = head + "  " + SEP.join([self.bar(s["pct"], s.get("prsMerged", 0), s.get("prs", 0), states)] + rest)
+            if states and cols is not None and width(line) > cols:
+                line = head + "  " + SEP.join([self.bar(s["pct"], s.get("prsMerged", 0), s.get("prs", 0))] + rest)
+            lines.append(line)
         if len(teams) > TEAMS:
             lines.append(c(DIM, "  " + W["more_commanders"].format(n=len(teams) - TEAMS)))
 
