@@ -3,7 +3,8 @@ export type Row = {
   sessionId: string
   tty: string
   done: boolean
-  stage: number
+  stage: number  // on the scale before check had a milestone (0 to 5), for sidebars from before
+  milestone?: number  // 0 to 6, from the boards that have check
   reportedDone?: boolean
   leadFrom: string
   lead: string
@@ -26,6 +27,7 @@ export type Item = {
   title: string
   owner: string
   stage: number
+  milestone?: number
   reportedDone?: boolean
   pr: { number: number; state: string; label: string } | null
   ci: string
@@ -37,12 +39,13 @@ export type Group = {
   leadRow: Row | null
   members: Row[]
   batch?: { items: Item[] }
-  summary: { total: number; done: number; dist: number[]; pct: number | null; reported?: number; prs?: number; prsMerged?: number; progressFrom: string; items: number; itemsDone: number; busy: number; waiting: number; ciFail: number }
+  summary: { total: number; done: number; dist: number[]; milestones?: number[]; pct: number | null; reported?: number; prs?: number; prsMerged?: number; progressFrom: string; items: number; itemsDone: number; busy: number; waiting: number; ciFail: number }
 }
 
 export type Board = {
   generated: number
   dist: number[]
+  milestones?: number[]
   pct: number | null
   prs?: number
   prsMerged?: number

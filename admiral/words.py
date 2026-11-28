@@ -24,18 +24,22 @@ def phrases(table):
     return Phrase(table) if isinstance(table, str) else table
 
 
-# Milestones, in order: 0 is a planned deliverable not started yet, 5 is merged.
-STAGE_KEYS = ["not_started", "develop", "review", "accept", "ci", "merged"]
+# Milestones, in order: 0 is a planned deliverable not started yet, the last is merged. `check` is the delivery check
+# (review by a different model beside the pre-push run), which the playbook runs after acceptance.
+STAGE_KEYS = ["not_started", "develop", "review", "accept", "check", "ci", "merged"]
 
 # Phases a session reports with `admiral state`. The keys are stored; either language's name is accepted.
-PHASE_KEYS = ["working", "waiting", "needs_you", "review", "accepting", "paused", "done"]
+PHASE_KEYS = ["working", "waiting", "needs_you", "review", "accepting", "checking", "paused", "done"]
 
 WORDS = {
     "en": {
+        # the milestones, one per STAGE_KEYS; `stages` names the six from before check had one, which `stage` counts in
+        # a snapshot, for a status line or sidebar not updated yet
+        "milestones": ["not started", "develop", "review", "accept", "check", "CI", "merged"],
         "stages": ["not started", "develop", "review", "accept", "CI", "merged"],
         "reported_done": "reported done",  # the last milestone by the session's own word, with no merged PR
         "phases": {"working": "working", "waiting": "waiting", "needs_you": "needs you", "review": "in review",
-                   "accepting": "accepting", "paused": "paused", "done": "done"},
+                   "accepting": "accepting", "checking": "delivery check", "paused": "paused", "done": "done"},
         "maybe_waiting": "may be waiting for you: ", "reported_waiting": "needs you: ",
         "github_prs": "GitHub PRs: {open} open · {merged} merged today", "prs_merged": "PRs merged {done}/{n}",
         "pr_states": "merged {done}/{n} · closed {closed} · open {open}",  # a plan's PRs, as GitHub has them
@@ -61,10 +65,11 @@ WORDS = {
         "commander_gone": "commander not running", "more_commanders": "{n} more {n:commander|commanders}: /admiral shows all",
     },
     "zh": {
+        "milestones": ["未开始", "开发", "审查", "验收", "检查", "CI", "合并"],
         "stages": ["未开始", "开发", "审查", "验收", "CI", "合并"],
         "reported_done": "已报告完成",
         "phases": {"working": "进行中", "waiting": "等待", "needs_you": "等你", "review": "审查中",
-                   "accepting": "验收中", "paused": "暂停", "done": "完成"},
+                   "accepting": "验收中", "checking": "交付检查", "paused": "暂停", "done": "完成"},
         "maybe_waiting": "可能在等你：", "reported_waiting": "等你：",
         "github_prs": "GitHub PR：开着 {open} · 今天合并 {merged}", "prs_merged": "PR 已合并 {done}/{n}",
         "pr_states": "已合并 {done}/{n} · 已关闭 {closed} · 进行中 {open}",
@@ -95,7 +100,8 @@ WORDS = {
 PHASE_ALIASES = {**{k: k for k in PHASE_KEYS},
                  **{name: k for table in WORDS.values() for k, name in table["phases"].items()},
                  "进行中": "working", "等待": "waiting", "等你": "needs_you", "Codex审查": "review", "审查": "review",
-                 "验收中": "accepting", "暂停": "paused", "完成": "done"}
+                 "验收中": "accepting", "暂停": "paused", "完成": "done",
+                 "check": "checking", "检查": "checking", "交付检查中": "checking"}
 
 
 WORDS = phrases(WORDS)

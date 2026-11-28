@@ -22,19 +22,20 @@ def plain(s):
 
 
 def row(name, sid, status="idle", commander=False, stage=0, ci="none", pr=None, lead="", registered=True):
-    return {"name": name, "sessionId": sid, "status": status, "isCommander": commander, "stage": stage,
+    return {"name": name, "sessionId": sid, "status": status, "isCommander": commander, "milestone": stage,
+            "stage": [0, 1, 2, 3, 3, 4, 5][stage],
             "ciLevel": ci, "ci": "tests (1)" if ci == "fail" else "", "pr": pr, "lead": lead,
             "registered": registered, "phase": None, "note": ""}
 
 
 def board(language="en", **over):
     cmd = row("Commander-A", "s1", commander=True)
-    workers = [row("one", "s3", status="busy", stage=4, ci="fail", pr={"label": "#7 in review"}, lead="Commander-A"),
+    workers = [row("one", "s3", status="busy", stage=5, ci="fail", pr={"label": "#7 in review"}, lead="Commander-A"),
                row("two", "s4", status="waiting", stage=1, lead="Commander-A")]
-    s = {"total": 2, "done": 0, "dist": [0, 1, 0, 0, 1, 0], "pct": 53, "items": 0, "itemsDone": 0,
+    s = {"total": 2, "done": 0, "milestones": [0, 1, 0, 0, 0, 1, 0], "dist": [0, 1, 0, 0, 1, 0], "pct": 53, "items": 0, "itemsDone": 0,
          "prsMerged": 0, "prs": 1, "busy": 1, "waiting": 1, "ciFail": 1}
     b = {"generated": time.time(), "count": 3, "language": language, "words": words(language),
-         "commanderPrefix": "Commander", "dist": [0, 1, 0, 0, 1, 0], "pct": 53, "prsMerged": 0, "prs": 1, "mine": None,
+         "commanderPrefix": "Commander", "milestones": [0, 1, 0, 0, 0, 1, 0], "dist": [0, 1, 0, 0, 1, 0], "pct": 53, "prsMerged": 0, "prs": 1, "mine": None,
          "groups": [{"lead": "Commander-A", "leadRow": cmd, "members": workers, "summary": s}],
          "unassigned": [], "waiting": [workers[1]], "closable": {"close": [], "wrapup": [], "confirm": []}, "health": []}
     b.update(over)
@@ -230,9 +231,20 @@ class Lines(unittest.TestCase):
 
     def test_a_worker_sees_its_own_milestone_pr_and_ci(self):
         mine = self.lines(board(), "s3")[-1]
-        self.assertTrue(mine.startswith("this session  ▰▰▰▰▱ CI"))
+        self.assertTrue(mine.startswith("this session  ▰▰▰▰▰▱ CI"))
         self.assertIn("#7 in review", mine)
         self.assertIn("under Commander-A", mine)
+
+    def test_a_snapshot_from_before_check_had_a_milestone_still_reads_right(self):
+        old_words = dict(words("en"), stages=["not started", "develop", "review", "accept", "CI", "merged"])
+        b = board(words=old_words, dist=[0, 1, 0, 0, 0, 1])
+        b.pop("milestones")
+        for x in b["groups"][0]["members"]:
+            x.pop("milestone")
+        b["groups"][0]["members"][0].update(stage=5, ci="none", ciLevel="none")  # merged, on the old scale
+        b["groups"][0]["summary"].pop("milestones")
+        mine = self.lines(b, "s3")[-1]
+        self.assertTrue(mine.startswith("this session  ▰▰▰▰▰ merged"), mine)
 
     def test_a_stale_board_says_so(self):
         self.assertIn("background job may have stopped", self.lines(board(generated=time.time() - 600), "s1")[0])

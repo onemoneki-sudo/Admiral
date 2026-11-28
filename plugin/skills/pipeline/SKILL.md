@@ -39,16 +39,16 @@ Small changes shorten every step.
 
 ## 3. Acceptance
 
-Docs, copy and mechanical changes skip it. For a change people will see or rely on, ask the person whether they accept
-it before the PR or by using it once merged, so they never judge from a description. Show it at its real entry on
-their data or a faithful copy: a signed-in tab per case with a line on what to expect, each environment or account on
-a host name of its own, as a browser shares a host's cookies across ports. A commander brings its batch's PRs
-together. Changes made during acceptance get the light checks; the delivery check covers them.
+Phase `accepting`. Docs, copy and mechanical changes skip it. For a change people will see or rely on, ask the person
+whether they accept it before the PR or by using it once merged, so they never judge from a description. Show it at
+its real entry on their data or a faithful copy: a signed-in tab per case with a line on what to expect, each
+environment or account on a host name of its own, as a browser shares a host's cookies across ports. A commander
+brings its batch's PRs together. Changes made during acceptance get the light checks; the delivery check covers them.
 
 ## 4. Delivery check
 
-Once, on one candidate: a commit and the base it was merged with, both recorded, so every result proves the same
-version. Both checks run at the same time:
+Phase `checking`, once, on one candidate: a commit and the base it was merged with, both recorded, so every result
+proves the same version. Both checks run at the same time:
 
 - **Pre-push run**: the affected tests on the candidate (your branch merged with the latest of its PR's base, in a
   temporary tree), under CI's and production's conditions, since a branch can pass alone and fail beside what landed

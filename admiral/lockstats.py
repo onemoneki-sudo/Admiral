@@ -134,11 +134,18 @@ def table(records, start, now, locks_dir):
 
 
 def main(cfg, argv):
-    ap = argparse.ArgumentParser(prog="admiral lock stats", description=__doc__.split("\n\n")[0])
-    ap.add_argument("--days", type=float, default=30, help="how far back to look (default 30)")
+    """`cfg`: the config, or what loads it, called once the arguments parse (so --help needs none)."""
+    ap = argparse.ArgumentParser(
+        prog="admiral lock stats", formatter_class=argparse.RawDescriptionHelpFormatter,
+        description="How often each lock was waited for, and how long it was waited for and held, from the history\n"
+                    "the lock tool keeps of every take and release: size a resource's slots and order its line from\n"
+                    f"this, not a guess. A take counts as waited when its taker was in line {WAITED} seconds or more.",
+        epilog="example:\n  admiral lock stats --days 7")
+    ap.add_argument("--days", type=float, default=30, metavar="N", help="how far back to look, in days (default 30)")
     a = ap.parse_args(argv)
     if not math.isfinite(a.days) or a.days <= 0:
         ap.error("--days is a number of days above 0")
+    cfg = cfg() if callable(cfg) else cfg
     now = int(time.time())
     days = f"{a.days:g}"
     records = read(cfg.locks_dir)

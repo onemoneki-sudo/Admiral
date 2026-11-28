@@ -18,7 +18,7 @@ import sys
 import time
 import unicodedata
 
-from .words import phrases
+from .words import STAGE_KEYS, phrases
 
 STALE_S = 180
 RUN_S = 600  # a refresh running longer than this is taken for stuck, not slow
@@ -124,11 +124,12 @@ class Lines:
         prs = c(DIM, "  " + said) if n else ""  # no PR yet: nothing to count
         return f"{cells}{RESET}{DIM}{'░' * (BAR - filled)}{RESET} {p:>3}%" + prs
 
-    def pips(self, stage, reported=False):
-        """Filled to the milestone; reported done fills the last one dim, as the session's word, not a merge."""
+    def pips(self, stage, reported=False, last=len(STAGE_KEYS) - 1):
+        """Filled to the milestone; reported done fills the last one dim, as the session's word, not a merge. One pip
+        per milestone after not started: `last`, as many as the snapshot's own words count."""
         lit = stage - 1 if reported else stage
-        return ("".join(f"{self.shade((i + 1) / 5)}▰" for i in range(lit)) + (f"{RESET}{DIM}▰" if reported else "")
-                + f"{RESET}{DIM}{'▱' * (5 - stage)}{RESET}")
+        return ("".join(f"{self.shade((i + 1) / last)}▰" for i in range(lit)) + (f"{RESET}{DIM}▰" if reported else "")
+                + f"{RESET}{DIM}{'▱' * (last - stage)}{RESET}")
 
     def count(self, n, mark, word, color):
         return c(color if n else DIM, f"{mark} {n} {word}")
@@ -163,7 +164,7 @@ class Lines:
         zh = b.get("language") == "zh"
         names = ("、" if zh else ", ").join(short(x["name"]) for x in waiting[:3]) + ("…" if len(waiting) > 3 else "")
         who = c(YELLOW, ("（" if zh else " (") + names + ("）" if zh else ")")) if waiting else ""
-        d = b["dist"]
+        d = b.get("milestones") or b["dist"]  # an older snapshot has only dist
         if b.get("mine") is not None:  # the person's own PRs as GitHub has them, whatever the registrations say
             head = ([self.bar(b["pct"])] if sum(d) else []) + [
                 c(DIM, W["github_prs"].format(open=b["mine"]["open"], merged=b["mine"]["mergedToday"]))]
@@ -205,9 +206,12 @@ class Lines:
             lines.append(c(DIM, "  " + W["more_commanders"].format(n=len(teams) - TEAMS)))
 
         if me and not me["isCommander"] and (me["registered"] or me.get("finished")):
-            st = me.get("stage") or 0
-            word = W["reported_done"] if me.get("reportedDone") else W["stages"][st]
-            parts = [self.pips(st, me.get("reportedDone")) + " " + word + (f" {me['note']}" if me.get("note") else "")]
+            # milestone and its words, or in a snapshot from before check had one, stage and the words of its six
+            new = "milestone" in me and "milestones" in W
+            st, names = (me["milestone"], W["milestones"]) if new else (me.get("stage"), W["stages"])
+            st = st or 0
+            word = W["reported_done"] if me.get("reportedDone") else names[st]
+            parts = [self.pips(st, me.get("reportedDone"), len(names) - 1) + " " + word + (f" {me['note']}" if me.get("note") else "")]
             if me.get("pr"):
                 parts.append(me["pr"]["label"])
             if me["ciLevel"] == "fail":

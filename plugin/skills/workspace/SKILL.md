@@ -15,14 +15,13 @@ Each session works in its own place, says where it is, and touches nothing it do
   what you find, or an overlap, goes to the person instead of being done again.
 - Look at `admiral list`, `admiral lock status` and `git worktree list`, and agree the order with anyone registered on
   your area.
-- Register at the start: `admiral register --who "<session name>" --task "<task>" --branch <branch> --worktree <path>
-  --files "<areas>" [--lead "<commander>"]`, `--who` exactly the session's name; where Codex's sandbox blocks it, ask
-  the person to approve the command.
-- Report each phase with `admiral state --who "<name>" --phase <phase> [--note "<line>"]`: `working`, `waiting` (on
-  what), `needs_you` (for what; also whenever you ask the person anything), `review` (the delivery check without
-  acceptance), `accepting` (acceptance and the delivery check after it), `paused`, `done`. Never move from `accepting`
-  back to `review`, as the board counts `review` lower; `waiting`, `needs_you` and `paused` may show less for a while,
-  and on resuming you report the phase you are really in. End with `admiral done --who "<name>"`.
+- Register at the start (`admiral register --help`): your task, branch, worktree and areas, `--who` exactly the
+  session's name; where Codex's sandbox blocks it, ask the person to approve the command.
+- Report the phase you are in (`admiral state --help`): `working` while developing, `accepting` while the person
+  accepts, `checking` for the delivery check (after acceptance, or in its place for a change that skips it),
+  `needs_you` whenever you ask the person anything, `waiting` on anyone or anything else, `paused`, `done`. The board
+  shows less while you need the person, wait or pause, so on resuming report the phase you are really in. End with
+  `admiral done --who "<name>"`.
 
 ## Each to its own
 

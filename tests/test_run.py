@@ -143,6 +143,18 @@ class Run(unittest.TestCase):
         self.assertEqual(self.visible(), [])
         self.assertNotEqual(self.admiral("run", "stop", "--lock", "web").returncode, 0)  # nothing to stop now
 
+    def test_the_ready_line_names_the_first_lock_given_not_the_first_taken(self):
+        seen = os.path.join(self.root, "lock-seen")
+        r = self.admiral("run", "--lock", "z-task-server", "--lock", "a-shared-db", "--who", "s t", "--ready",
+                         f"test -s {seen}", "--", "sh", "-c", f'echo "$ADMIRAL_LOCK" > {seen}; exec sleep 600')
+        self.assertEqual(r.returncode, 0, r.stderr)
+        self.assertIn("holding z-task-server, a-shared-db", r.stdout)
+        self.assertIn("`admiral run stop --lock z-task-server`", r.stdout)
+        with open(seen) as fh:
+            self.assertEqual(fh.read().strip(), "z-task-server")  # $ADMIRAL_LOCK, the first given, as well
+        self.assertEqual(self.admiral("run", "stop", "--lock", "z-task-server").returncode, 0)
+        self.assertEqual(self.visible(), [])
+
     def test_a_service_whose_supervisor_was_killed_is_still_stopped(self):
         import glob
         r = self.admiral("run", "--lock", "web", "--who", "s t", "--ready", "true", "--", "sleep", "600")

@@ -1,31 +1,15 @@
 """`admiral run`: a command run under locks, held for exactly as long as it runs and stopped whole.
 
-    admiral run --lock <name>[|<name>]... [--lock ...]... [--port] --who "<session> <task>" [--limit <minutes>]
-                [--priority <n>] [--ready "<check>" [--ready-timeout <seconds>]] [--log <file>] -- <command>...
-    admiral run stop --lock <the lock it holds>
+What it does and takes is told to its users by HELP below (`admiral run --help`); what follows here is how it is done.
 
-Each --lock is taken (all of them); `--lock 'pg-1|pg-2'` (quoted: | is the shell's) takes whichever of those comes
-free first, and is then the run's only --lock (waiting on a choice while holding another lock could deadlock two
-runs). The command, and the --ready check, get the locks taken as $ADMIRAL_LOCK (the first) and $ADMIRAL_LOCKS (all,
-space-separated). --priority places it in each lock's line as `admiral lock acquire --priority` does. `admiral run
-stop` names a lock the run actually holds (pg-1, not pg-1|pg-2), as `admiral lock status` and the ready line show it.
-
-It waits its turn for each lock (`admiral lock acquire --wait`), with --port also claims a free port (given to the
-command as $PORT), starts the command in a process group of its own, records the command's pid on every lock, and
-when the command ends, its time limit is up (`--limit`, 180 minutes by default) or it is told to stop, stops the whole
-group (TERM, then KILL after a grace period), then releases the locks. Without --ready it stays in the foreground and
-exits with the command's code (124 at the time limit). With --ready it runs the command as a service: it returns once
-the check succeeds and leaves a supervisor holding the service and its locks in the background, until `admiral run
-stop` or the limit.
-
-A process that leaves the group (a daemon, as `pg_ctl start` starts one) is still stopped when it was seen as a
-descendant of the command; the group cannot hold it, so one that left before it was seen is not, and a port still
-listened on afterwards is reported. Run services in the foreground (`postgres -D`, not `pg_ctl start`).
+It takes each lock with `admiral lock acquire --wait`, records the command's pid on every lock, and with --ready
+leaves a detached supervisor (this module again, `--supervise <id>`) holding the service. A process that leaves the
+group (a daemon, as `pg_ctl start` starts one) is still stopped when it was seen as a descendant of the command; the
+group cannot hold it, so one that left before it was seen is not, and a port still listened on afterwards is reported.
 
 Every process is known by its pid and its start time, so a pid used again by another process is never signalled.
 The command is not collected until everything is stopped: until then its pid, and its group's, stay its own, and
-its locks do not look abandoned. Each run holds its locks under its own name (`<who> [run <id>]`), so two runs given
-the same --who never release each other's.
+its locks do not look abandoned.
 """
 
 import argparse
@@ -101,6 +85,13 @@ def groups(locks):
         if names and names not in out:
             out.append(names)
     return sorted(out, key=sorted)
+
+
+def as_given(held, locks):
+    """The locks held in the order the --lock options gave them (a choice where it was given), whatever order they
+    were taken in: the first is the task's own name, which the ready line and a stop name."""
+    order = [n.strip() for given in locks for n in given.split("|") if n.strip()]
+    return sorted(held, key=lambda n: order.index(n) if n in order else len(order))
 
 
 def holders(cfg, names):
@@ -422,7 +413,7 @@ def supervise(cfg, a, run_id):
         if err or stop["why"]:
             say(err or stop["why"])
             return 1
-        chosen = [n for n in held if not (port and n == f"port-{port}")]
+        chosen = as_given([n for n in held if not (port and n == f"port-{port}")], a.lock)
         env = dict(os.environ, ADMIRAL_LOCK=chosen[0], ADMIRAL_LOCKS=" ".join(chosen),
                    **({"PORT": str(port)} if port else {}))
         try:
@@ -566,8 +557,9 @@ def serve(cfg, a, argv):
                 and alive(rec.get("pid"), rec.get("pidStart"))
             if ok and not cut["why"]:
                 port = f" on port {rec['port']}" if rec.get("port") else ""
-                stop_with = f"admiral run stop --lock {shlex.quote(rec['locks'][0])}"
-                print(f"ready{port}: pid {rec['pid']}, holding {', '.join(rec['locks'])}; output in {log}; stop it "
+                mine = as_given(rec["locks"], a.lock)
+                stop_with = f"admiral run stop --lock {shlex.quote(mine[0])}"
+                print(f"ready{port}: pid {rec['pid']}, holding {', '.join(mine)}; output in {log}; stop it "
                       f"with `{stop_with}` (it stops by itself after {a.limit:g} minutes)")
                 ready = True
                 return 0
@@ -646,29 +638,86 @@ def stop_run(cfg, name):
     return True, f"stopped the run holding {locks} (its supervisor was gone)"
 
 
+VERBATIM = argparse.RawDescriptionHelpFormatter  # the help texts are laid out by hand
+
+HELP = """Run a command under locks, holding them for exactly as long as it runs.
+
+It waits its turn in each lock's line, takes them all under the run's own pid, with --port also claims a free port,
+and runs the command (not through a shell: for pipes or &&, give bash -c '...') in a process group of its own, then
+records the command's pid on every lock. Where that recording fails, the lock keeps the run's pid, which lives as long
+as the run, and the run goes on.
+When the command ends, its --limit is up or it is stopped, the run stops the command and everything it started (TERM,
+then KILL after %d seconds), then releases the locks. Without --ready it stays in the foreground and exits with the
+command's code, 124 at the limit.
+
+The wait in line has no limit of its own: --limit counts from when the command starts, once every lock (and the port)
+is taken, and --ready-timeout from when the run is seen running, a moment later: the command started and the
+recording of its pid on the locks done, whether or not it succeeded. A run waits as long as the locks stay busy,
+saying whom it waits for; to give up sooner, stop it (Ctrl-C, or a signal to it), which leaves the line.
+
+A service adds --ready: the run returns once the check succeeds, saying the pid, the locks held and the stop command,
+and a supervisor keeps the service and its locks in the background until `admiral run stop --lock <name>` or the
+limit. Keep the service itself in the foreground (postgres -D rather than pg_ctl start): a daemon leaves the group,
+and one that left before it was seen cannot be stopped.
+
+`--lock 'db-1|db-2'` (quoted: | is the shell's) takes whichever comes free first, and must then be the run's only
+--lock, as waiting on a choice while holding another lock can deadlock two runs. The command and the check read the
+locks taken from $ADMIRAL_LOCK (the first --lock given) and $ADMIRAL_LOCKS (all, as given), and the port from $PORT.
+The ready line, and its stop command, name the first --lock given: give the task's own name first. Each
+run holds its locks as "<who> [run <id>]", so two runs given one --who never release each other's."""
+
+EXAMPLES = """examples:
+  admiral run --lock heavy --who "Checkout-API suite" --limit 40 -- make test
+  admiral run --lock 'db-1|db-2' --who "Checkout-API db tests" -- bash -c 'DB=$ADMIRAL_LOCK make db-test'
+  admiral run --lock checkout-ui-server --port --who "Checkout-UI dev server" \\
+      --ready 'curl -fs localhost:$PORT/health' -- bash -c 'exec npm run dev -- --port "$PORT"'
+  admiral run stop --lock checkout-ui-server"""
+
+
 def main(cfg, argv):
+    """`cfg`: the config, or what loads it, called once the arguments parse (so --help needs none)."""
+    load = cfg if callable(cfg) else lambda: cfg
     if argv[:1] == ["stop"]:
-        ap = argparse.ArgumentParser(prog="admiral run stop")
-        ap.add_argument("--lock", required=True)
+        ap = argparse.ArgumentParser(
+            prog="admiral run stop", formatter_class=VERBATIM,
+            description="Stop the run holding a lock: the command, everything it started, then its locks. It stops "
+                        "whatever\nrun holds that name now, not necessarily the one you started: stop a service by "
+                        "a lock name only its\ntask uses, given first in its --lock, as its ready line names it.",
+            epilog="example:\n  admiral run stop --lock checkout-ui-server")
+        ap.add_argument("--lock", required=True,
+                        help="a lock the run holds, as admiral lock status and the ready line show it (db-1, not "
+                             "db-1|db-2)")
         a = ap.parse_args(argv[1:])
-        ok, msg = stop_run(cfg, a.lock)
+        ok, msg = stop_run(load(), a.lock)
         print(msg, file=sys.stdout if ok else sys.stderr)
         return 0 if ok else 1
     run_id = argv[1] if argv[:1] == ["--supervise"] and len(argv) > 1 else ""
     args = argv[2:] if run_id else argv
-    ap = argparse.ArgumentParser(prog="admiral run", description=__doc__.split("\n\n")[0])
-    ap.add_argument("--lock", action="append", default=[],
-                    help="a lock to hold while it runs (repeatable: all of them); 'a|b', quoted: whichever comes "
-                         "free first")
-    ap.add_argument("--priority", type=int, default=None,
-                    help="its place in each lock's line, as for admiral lock acquire (higher first; default 0)")
-    ap.add_argument("--port", action="store_true", help="also claim a free port, given to the command as $PORT")
+    ap = argparse.ArgumentParser(prog="admiral run", description=HELP % GRACE, epilog=EXAMPLES,
+                                 formatter_class=VERBATIM,
+                                 usage="admiral run --lock NAME [--lock NAME]... --who WHO [options] -- COMMAND...")
+    ap.add_argument("--lock", action="append", default=[], metavar="NAME",
+                    help="a lock to hold while it runs (repeatable: all of them; at least one, the name the run is "
+                         "held and stopped by); 'a|b', quoted: whichever comes free first")
+    ap.add_argument("--priority", type=int, default=None, metavar="N",
+                    help="its place in each lock's line, -99 to 99, higher first (default 0), as for admiral lock "
+                         "acquire")
+    ap.add_argument("--port", action="store_true",
+                    help="also claim a free port (8100 on, held as the lock port-<n>), given as $PORT")
     ap.add_argument("--who", required=True, help='"<session> <task>", as for admiral lock')
-    ap.add_argument("--limit", type=float, default=LIMIT, help=f"minutes before it is stopped (default {LIMIT})")
-    ap.add_argument("--ready", default="", help="a check run until it succeeds; then return, leaving it running")
-    ap.add_argument("--ready-timeout", type=float, default=120, help="seconds to wait for --ready (default 120)")
-    ap.add_argument("--log", default="", help="with --ready, where its output goes")
-    ap.add_argument("command", nargs=argparse.REMAINDER)
+    ap.add_argument("--limit", type=float, default=LIMIT, metavar="MIN",
+                    help=f"minutes the command may run, counted from its start once the locks are taken, before "
+                         f"it is stopped whatever it is doing (default {LIMIT})")
+    ap.add_argument("--ready", default="", metavar="CHECK",
+                    help="a shell command run until it succeeds: the run then returns, leaving the command running "
+                         "as a service")
+    ap.add_argument("--ready-timeout", type=float, default=120, metavar="SECONDS",
+                    help="how long --ready may take to succeed, counted from when the run is seen running (the "
+                         "command started, the recording of its pid on the locks done), before it is all stopped "
+                         "(default 120)")
+    ap.add_argument("--log", default="", metavar="FILE",
+                    help="with --ready, where the service's output goes (default <state dir>/runs/<first lock>.log)")
+    ap.add_argument("command", nargs=argparse.REMAINDER, metavar="-- COMMAND...", help="what to run, after --")
     a = ap.parse_args(args)
     if a.command[:1] == ["--"]:
         a.command = a.command[1:]
@@ -685,6 +734,7 @@ def main(cfg, argv):
     if len(groups(a.lock)) > 1 and any(len(g) > 1 for g in groups(a.lock)):
         # waiting on a choice while holding another lock, two runs could each hold what the other waits for
         ap.error("a choice of locks (a|b) is taken on its own: give it no other --lock")
+    cfg = load()
     if a.ready and not run_id:
         return serve(cfg, a, args)
     return supervise(cfg, a, run_id or uuid.uuid4().hex[:8])
